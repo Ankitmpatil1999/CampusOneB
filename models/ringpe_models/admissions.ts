@@ -1,0 +1,161 @@
+/** Admissions (migration 0043; SRS 7.8, 19; RC-21, RC-34). */
+import type { ColumnType, Generated } from 'kysely';
+
+type Ref = string;
+type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
+type NullableTimestamp = ColumnType<
+  Date | null,
+  Date | string | null | undefined,
+  Date | string | null
+>;
+type Paise = ColumnType<string, number | string, number | string>;
+type Flag = ColumnType<number, number | boolean | undefined, number | boolean>;
+type NullableDate = ColumnType<Date | string | null, string | null | undefined, string | null>;
+type Json<T> = ColumnType<T, string, string>;
+
+export type ApplicationStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+export type AdmissionPaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
+export type AdmissionFeeType = 'APPLICATION' | 'ADMISSION';
+export type AdmissionDocType = 'PHOTO' | 'BIRTH' | 'ADDRESS' | 'REPORT' | 'TC' | 'OTHER';
+
+export interface AdmissionLinksTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  token: string;
+  year_id: Ref | null;
+  status: ColumnType<
+    'ACTIVE' | 'REPLACED',
+    'ACTIVE' | 'REPLACED' | undefined,
+    'ACTIVE' | 'REPLACED'
+  >;
+  expires_at: NullableTimestamp;
+  created_by: Buffer | null;
+  created_at: Timestamp;
+  replaced_at: NullableTimestamp;
+  live_key: ColumnType<string | null, never, never>;
+}
+
+export interface AdmissionApplicationsTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  application_no: string;
+  source: 'PUBLIC' | 'COUNSELLOR' | 'IMPORT';
+  status: ColumnType<ApplicationStatus, ApplicationStatus | undefined, ApplicationStatus>;
+  year_id: Ref;
+  class_id: Ref | null;
+  section_id: Ref | null;
+  mid_term: Flag;
+  joining_date: NullableDate;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
+  gender: 'MALE' | 'FEMALE' | 'OTHER' | null;
+  dob: NullableDate;
+  id_number_enc: Buffer | null;
+  id_number_bidx: Buffer | null;
+  id_number_last4: string | null;
+  primary_name: string | null;
+  primary_relation: 'FATHER' | 'MOTHER' | 'GUARDIAN' | null;
+  primary_mobile: string | null;
+  primary_email: string | null;
+  data: Json<unknown>;
+  step: ColumnType<number, number | undefined, number>;
+  tc_mode: 'TC' | 'UNDERTAKING' | null;
+  tc_number: string | null;
+  tc_date: NullableDate;
+  tc_due: NullableDate;
+  declared_at: NullableTimestamp;
+  declared_by: string | null;
+  submitted_at: NullableTimestamp;
+  decided_at: NullableTimestamp;
+  decided_by: Buffer | null;
+  rejection_reason: string | null;
+  rejection_remarks: string | null;
+  admission_no: string | null;
+  member_profile_id: Ref | null;
+  payment_status: ColumnType<
+    'PENDING' | 'COMPLETED',
+    'PENDING' | 'COMPLETED' | undefined,
+    'PENDING' | 'COMPLETED'
+  >;
+  row_version: Generated<number>;
+  created_by: Buffer | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface AdmissionApplicationSeqTable {
+  institution_id: Ref;
+  year_number: number;
+  last_no: number;
+}
+
+export interface AdmissionReferencesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  application_id: Ref;
+  name: string;
+  relation: string | null;
+  mobile: string;
+  email: string | null;
+  created_at: Timestamp;
+}
+
+export interface AdmissionDocumentsTable {
+  application_id: Ref;
+  doc_type: AdmissionDocType;
+  file_id: Ref;
+  added_at: Timestamp;
+}
+
+export interface AdmissionPaymentsTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  application_id: Ref;
+  fee_type: AdmissionFeeType;
+  amount_paise: Paise;
+  status: ColumnType<
+    AdmissionPaymentStatus,
+    AdmissionPaymentStatus | undefined,
+    AdmissionPaymentStatus
+  >;
+  mode: 'ONLINE' | 'CASH' | null;
+  gateway_order_id: string | null;
+  gateway_payment_id: string | null;
+  link_token_hash: Buffer | null;
+  receipt_no: string | null;
+  paid_by: string | null;
+  collected_by: Buffer | null;
+  paid_at: NullableTimestamp;
+  failure_reason: string | null;
+  attempts: ColumnType<number, number | undefined, number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  row_version: Generated<number>;
+}
+
+export interface AdmissionImportsTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  file_name: string;
+  rows_total: number;
+  rows_imported: number;
+  rows_rejected: number;
+  report: Json<unknown>;
+  created_by: Buffer | null;
+  created_at: Timestamp;
+}
+
+export interface AdmissionTables {
+  admission_links: AdmissionLinksTable;
+  admission_applications: AdmissionApplicationsTable;
+  admission_application_seq: AdmissionApplicationSeqTable;
+  admission_references: AdmissionReferencesTable;
+  admission_documents: AdmissionDocumentsTable;
+  admission_payments: AdmissionPaymentsTable;
+  admission_imports: AdmissionImportsTable;
+}

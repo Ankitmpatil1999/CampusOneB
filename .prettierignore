@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+logs
+package-lock.json
+config/openapi.yaml
+*.md
+keys
+uploads

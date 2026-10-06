@@ -1,0 +1,344 @@
+/**
+ * Configuration validated at start-up (brief §7.3: fail fast). Every key is documented in
+ * `.env.example`. Defaults for limits come from the limits register
+ * (`config/registers`, docs/01 §5); values are never echoed in errors (they may be secrets).
+ */
+import { z } from 'zod';
+import { LIMITS } from './registers';
+
+const csv = z
+  .string()
+  .default('')
+  .transform((s) =>
+    s
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean),
+  );
+const bool = (def: boolean) =>
+  z
+    .enum(['true', 'false'])
+    .default(def ? 'true' : 'false')
+    .transform((v) => v === 'true');
+const port = (def: number) => z.coerce.number().int().min(1).max(65535).default(def);
+const mysqlUrl = z.string().regex(/^mysql:\/\/[^\s]+$/, 'must be a mysql:// connection URL');
+
+export const envSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    APP_ENV: z.enum(['local', 'ci', 'dev', 'uat', 'prod']).default('local'),
+    APP_VERSION: z.string().default('0.0.0-local'),
+    GIT_COMMIT: z.string().default('unknown'),
+
+    HTTP_HOST: z.string().default('0.0.0.0'),
+    HTTP_PORT: port(3000),
+    WORKER_HEALTH_PORT: port(3001),
+    TRUST_PROXY: z.string().default('loopback'),
+    INTERNAL_ALLOWLIST: csv,
+    TRUST_INBOUND_CORRELATION_ID: bool(false),
+    CORS_ORIGINS: csv,
+    // Web session cookies are `__Host-` and Secure, which browsers keep only over HTTPS or on
+    // localhost. A plain-HTTP test server on the LAN (client 2026-10-06) needs them without: unset,
+    // they are Secure everywhere except development. Production always keeps them Secure.
+    COOKIE_SECURE: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
+    API_DOCS_ENABLED: bool(false),
+
+    LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug']).default('info'),
+    LOG_DIR: z.string().optional(),
+    LOG_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(365),
+
+    DATABASE_URL: mysqlUrl,
+    DB_POOL_SIZE: z.coerce.number().int().min(1).max(200).default(20),
+    DB_MIGRATOR_URL: mysqlUrl.optional(),
+
+    REDIS_URL: z
+      .string()
+      .regex(/^rediss?:\/\/[^\s]+$/, 'must be a redis:// or rediss:// URL')
+      .optional(),
+
+    AUTH_ISSUER: z.string().default('ringpe'),
+    // ES256 private keys (JWK set; the first key signs, the rest still verify during rotation).
+    // The back office has its own keys and audience (ADR-0011). Local: `npm run keys:generate`.
+    AUTH_SIGNING_KEYS_FILE: z.string().optional(),
+    AUTH_OPS_SIGNING_KEYS_FILE: z.string().optional(),
+    // Field encryption and blind-index keys (ADR-0012); KMS wrapping arrives with Q3.
+    FIELD_KEYS_FILE: z.string().optional(),
+
+    // One-time codes go to the log instead of a phone in development only (never in production).
+    OTP_DEV_ECHO: bool(false),
+    // Test environments: return one-time codes in the API response so the apps show them on the
+    // sign-in screens until an SMS provider is connected (client, Q17). Unset, it is on in
+    // development — any test server, on this machine or the LAN (client 2026-10-06) — and off
+    // otherwise. Production refuses it unless OTP_TEST_SHOW_CODE_IN_PRODUCTION confirms it (client
+    // 2026-10-06: "enable now, will change later"); switch both off before real people use it.
+    OTP_TEST_SHOW_CODE: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
+    OTP_TEST_SHOW_CODE_IN_PRODUCTION: bool(false),
+    SMS_PROVIDER: z.enum(['log', 'kaleyra']).default('log'),
+    SOCIAL_MODE: z.enum(['test', 'live']).default('test'),
+    BANK_VERIFY_MODE: z.enum(['test', 'live']).default('test'),
+    // The sponsor bank that holds the virtual accounts (C-11, Q14 M12): example values until chosen.
+    VA_BANK_NAME: z.string().trim().min(2).default('Example Bank (example)'),
+    VA_BANK_IFSC: z
+      .string()
+      .trim()
+      .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+      .default('EXMP0000001'),
+    // The fee-financing partner (13.11–13.12, OQ-03): an example until the client names it. test =
+    // registrations are acknowledged at once and decisions arrive on the signed webhook; live = the
+    // partner's API once known. Refused in production: test.
+    FINANCING_PARTNER_MODE: z.enum(['test', 'live']).default('test'),
+    // The online payment gateway for application and admission fees (Q17): test = in-app test
+    // checkout; live = the gateway once chosen. Refused in production: test.
+    PAYMENT_GATEWAY_MODE: z.enum(['test', 'live']).default('test'),
+    ACCOUNTING_MODE: z.enum(['test', 'off']).default('test'),
+    FINANCING_PARTNER_NAME: z.string().trim().min(2).max(120).default('Example Finance (example)'),
+    // Address of the web application, for links sent by e-mail (staff password reset).
+    PUBLIC_WEB_URL: z.url().default('http://localhost:4200'),
+    SOCIAL_PROVIDERS: z.string().default('google,apple'),
+    EMAIL_PROVIDER: z.enum(['log', 'smtp']).default('log'),
+
+    // Uploads (CR-07): private storage and antivirus scan.
+    STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
+    UPLOAD_DIR: z.string().default('uploads'),
+    FILE_SCAN_MODE: z.enum(['skip', 'clamav']).default('skip'),
+    FILE_URL_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
+
+    RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
+    // Per network address: a school's Wi-Fi puts hundreds of phones behind one (S-05).
+    RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).default(3000),
+    // Per signed-in session (surface and account).
+    RATE_LIMIT_SESSION_MAX: z.coerce.number().int().min(1).default(300),
+    RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(20),
+    RATE_LIMIT_EXEMPT_IPS: csv,
+
+    JSON_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(LIMITS.jsonBodyMaxBytes.value),
+    HEALTH_CHECK_TIMEOUT_MS: z.coerce.number().int().min(100).default(2000),
+    SHUTDOWN_GRACE_SECONDS: z.coerce.number().int().min(1).max(120).default(20),
+  })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV !== 'production') return;
+    const problem = (path: string, message: string) =>
+      ctx.addIssue({ code: 'custom', path: [path], message });
+    if (env.API_DOCS_ENABLED) problem('API_DOCS_ENABLED', 'must be false in production');
+    if (!env.REDIS_URL) problem('REDIS_URL', 'is required in production (several instances)');
+    if (env.CORS_ORIGINS.length === 0) problem('CORS_ORIGINS', 'is required in production');
+    if (env.COOKIE_SECURE === false) {
+      problem('COOKIE_SECURE', 'must be true in production (sessions only over HTTPS)');
+    }
+    if (env.CORS_ORIGINS.some((o) => !o.startsWith('https://'))) {
+      problem('CORS_ORIGINS', 'must list https origins only in production');
+    }
+    if (!env.AUTH_SIGNING_KEYS_FILE) problem('AUTH_SIGNING_KEYS_FILE', 'is required in production');
+    if (!env.AUTH_OPS_SIGNING_KEYS_FILE) {
+      problem('AUTH_OPS_SIGNING_KEYS_FILE', 'is required in production');
+    }
+    if (!env.FIELD_KEYS_FILE) problem('FIELD_KEYS_FILE', 'is required in production');
+    if (env.OTP_DEV_ECHO) problem('OTP_DEV_ECHO', 'must be false in production');
+    if (env.OTP_TEST_SHOW_CODE && !env.OTP_TEST_SHOW_CODE_IN_PRODUCTION) {
+      problem(
+        'OTP_TEST_SHOW_CODE',
+        'must be false in production (a test server may confirm it with OTP_TEST_SHOW_CODE_IN_PRODUCTION=true)',
+      );
+    }
+    if (!env.PUBLIC_WEB_URL.startsWith('https://'))
+      problem('PUBLIC_WEB_URL', 'must be the https address of the web application in production');
+    if (env.BANK_VERIFY_MODE === 'test')
+      problem('BANK_VERIFY_MODE', 'must be live in production (test bank-account checks)');
+    if (env.PAYMENT_GATEWAY_MODE === 'test')
+      problem('PAYMENT_GATEWAY_MODE', 'must be live in production (test checkout)');
+    if (env.ACCOUNTING_MODE === 'test')
+      problem(
+        'ACCOUNTING_MODE',
+        'must be off in production until the accounting package is chosen (test package)',
+      );
+    if (env.FINANCING_PARTNER_MODE === 'test')
+      problem('FINANCING_PARTNER_MODE', 'must be live in production (test financing partner)');
+    if (env.SOCIAL_MODE === 'test')
+      problem('SOCIAL_MODE', 'must be live in production (test sign-in providers)');
+    if (env.SMS_PROVIDER === 'log')
+      problem('SMS_PROVIDER', 'must be a real provider in production');
+    if (env.EMAIL_PROVIDER === 'log') {
+      problem('EMAIL_PROVIDER', 'must be a real provider in production');
+    }
+    if (env.STORAGE_PROVIDER === 'local') {
+      problem('STORAGE_PROVIDER', 'must be object storage in production');
+    }
+    if (env.FILE_SCAN_MODE === 'skip') problem('FILE_SCAN_MODE', 'must scan uploads in production');
+    // Local development may use the MySQL root login (client choice, 2026-10-02); production
+    // must connect as the least-privilege app user (brief §6.4: the app user has no DDL).
+    if (/^mysql:\/\/root[:@]/i.test(env.DATABASE_URL)) {
+      problem('DATABASE_URL', 'must not use the root account in production');
+    }
+  });
+
+export type Env = z.infer<typeof envSchema>;
+
+export interface Config {
+  readonly nodeEnv: Env['NODE_ENV'];
+  readonly appEnv: Env['APP_ENV'];
+  readonly version: string;
+  readonly commit: string;
+  readonly http: {
+    readonly host: string;
+    readonly port: number;
+    readonly workerHealthPort: number;
+    readonly trustProxy: string;
+    readonly internalAllowlist: readonly string[];
+    readonly trustInboundCorrelationId: boolean;
+    readonly corsOrigins: readonly string[];
+    /** `__Host-` Secure session cookies (false only on a plain-HTTP development server). */
+    readonly secureCookies: boolean;
+    readonly apiDocsEnabled: boolean;
+    readonly jsonBodyLimitBytes: number;
+  };
+  readonly log: {
+    readonly level: Env['LOG_LEVEL'];
+    readonly dir?: string;
+    readonly retentionDays: number;
+  };
+  readonly db: { readonly url: string; readonly poolSize: number; readonly migratorUrl?: string };
+  readonly redis: { readonly url?: string };
+  readonly auth: {
+    readonly issuer: string;
+    readonly signingKeysFile?: string;
+    readonly opsSigningKeysFile?: string;
+  };
+  readonly fieldKeysFile?: string;
+  /** Social sign-in (CR-03): test = the in-app test provider (client Q17); live = real providers. */
+  /** Bank-account check (penny drop): test answers at once (client Q17); live = the provider. */
+  readonly bankVerifyMode: Env['BANK_VERIFY_MODE'];
+  /** The bank holding the virtual accounts (example values until the client names it). */
+  readonly vaBank: { readonly name: string; readonly ifsc: string; readonly example: boolean };
+  /** The fee-financing partner (OQ-03): test until the client names it; refused in production. */
+  readonly financing: {
+    readonly mode: Env['FINANCING_PARTNER_MODE'];
+    readonly partnerName: string;
+  };
+  /** Vouchers to the accounting package (OQ-04): test, or off (vouchers wait); test refused in production. */
+  readonly accountingMode: Env['ACCOUNTING_MODE'];
+  /** The online payment gateway (Q17): test until chosen; refused in production. */
+  readonly paymentGatewayMode: Env['PAYMENT_GATEWAY_MODE'];
+  /** Address of the web application (links in e-mails). */
+  readonly publicWebUrl: string;
+  readonly social: {
+    readonly mode: Env['SOCIAL_MODE'];
+    readonly providers: readonly string[];
+  };
+  readonly notify: {
+    readonly otpDevEcho: boolean;
+    readonly otpTestShowCode: boolean;
+    readonly sms: Env['SMS_PROVIDER'];
+    readonly email: Env['EMAIL_PROVIDER'];
+  };
+  readonly files: {
+    readonly storage: Env['STORAGE_PROVIDER'];
+    readonly uploadDir: string;
+    readonly scanMode: Env['FILE_SCAN_MODE'];
+    readonly urlTtlSeconds: number;
+  };
+  readonly rateLimit: {
+    readonly windowMs: number;
+    readonly globalMax: number;
+    readonly sessionMax: number;
+    readonly authMax: number;
+    readonly exemptIps: readonly string[];
+  };
+  readonly health: { readonly timeoutMs: number };
+  readonly shutdownGraceMs: number;
+}
+
+export class ConfigError extends Error {
+  constructor(readonly problems: readonly string[]) {
+    super(`Invalid configuration:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
+    this.name = 'ConfigError';
+  }
+}
+
+/** Parses and validates the environment. Problems name the key, never its value. */
+export function loadConfig(source: Readonly<Record<string, string | undefined>>): Config {
+  const parsed = envSchema.safeParse(source);
+  if (!parsed.success) {
+    throw new ConfigError(
+      parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
+    );
+  }
+  const e = parsed.data;
+  return {
+    nodeEnv: e.NODE_ENV,
+    appEnv: e.APP_ENV,
+    version: e.APP_VERSION,
+    commit: e.GIT_COMMIT,
+    http: {
+      host: e.HTTP_HOST,
+      port: e.HTTP_PORT,
+      workerHealthPort: e.WORKER_HEALTH_PORT,
+      trustProxy: e.TRUST_PROXY,
+      internalAllowlist: e.INTERNAL_ALLOWLIST.length ? e.INTERNAL_ALLOWLIST : ['127.0.0.1', '::1'],
+      trustInboundCorrelationId: e.TRUST_INBOUND_CORRELATION_ID,
+      corsOrigins: e.CORS_ORIGINS,
+      secureCookies: e.COOKIE_SECURE ?? e.NODE_ENV !== 'development',
+      apiDocsEnabled: e.API_DOCS_ENABLED,
+      jsonBodyLimitBytes: e.JSON_BODY_LIMIT_BYTES,
+    },
+    log: {
+      level: e.LOG_LEVEL,
+      ...(e.LOG_DIR ? { dir: e.LOG_DIR } : {}),
+      retentionDays: e.LOG_RETENTION_DAYS,
+    },
+    db: {
+      url: e.DATABASE_URL,
+      poolSize: e.DB_POOL_SIZE,
+      ...(e.DB_MIGRATOR_URL ? { migratorUrl: e.DB_MIGRATOR_URL } : {}),
+    },
+    redis: e.REDIS_URL ? { url: e.REDIS_URL } : {},
+    auth: {
+      issuer: e.AUTH_ISSUER,
+      ...(e.AUTH_SIGNING_KEYS_FILE ? { signingKeysFile: e.AUTH_SIGNING_KEYS_FILE } : {}),
+      ...(e.AUTH_OPS_SIGNING_KEYS_FILE ? { opsSigningKeysFile: e.AUTH_OPS_SIGNING_KEYS_FILE } : {}),
+    },
+    ...(e.FIELD_KEYS_FILE ? { fieldKeysFile: e.FIELD_KEYS_FILE } : {}),
+    bankVerifyMode: e.BANK_VERIFY_MODE,
+    vaBank: {
+      name: e.VA_BANK_NAME,
+      ifsc: e.VA_BANK_IFSC,
+      example: e.VA_BANK_IFSC === 'EXMP0000001',
+    },
+    financing: { mode: e.FINANCING_PARTNER_MODE, partnerName: e.FINANCING_PARTNER_NAME },
+    paymentGatewayMode: e.PAYMENT_GATEWAY_MODE,
+    accountingMode: e.ACCOUNTING_MODE,
+    publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/+$/, ''),
+    social: {
+      mode: e.SOCIAL_MODE,
+      providers: e.SOCIAL_PROVIDERS.split(',')
+        .map((p) => p.trim().toLowerCase())
+        .filter(Boolean),
+    },
+    notify: {
+      otpDevEcho: e.OTP_DEV_ECHO,
+      otpTestShowCode: e.OTP_TEST_SHOW_CODE ?? e.NODE_ENV === 'development',
+      sms: e.SMS_PROVIDER,
+      email: e.EMAIL_PROVIDER,
+    },
+    files: {
+      storage: e.STORAGE_PROVIDER,
+      uploadDir: e.UPLOAD_DIR,
+      scanMode: e.FILE_SCAN_MODE,
+      urlTtlSeconds: e.FILE_URL_TTL_SECONDS,
+    },
+    rateLimit: {
+      windowMs: e.RATE_LIMIT_WINDOW_SECONDS * 1000,
+      globalMax: e.RATE_LIMIT_GLOBAL_MAX,
+      sessionMax: e.RATE_LIMIT_SESSION_MAX,
+      authMax: e.RATE_LIMIT_AUTH_MAX,
+      exemptIps: e.RATE_LIMIT_EXEMPT_IPS,
+    },
+    health: { timeoutMs: e.HEALTH_CHECK_TIMEOUT_MS },
+    shutdownGraceMs: e.SHUTDOWN_GRACE_SECONDS * 1000,
+  };
+}

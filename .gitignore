@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# build and test output
+dist/
+coverage/
+*.tsbuildinfo
+
+# environment and secrets — only .env.example is committed (brief §6)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+infra/.env
+infra/keys/
+
+# runtime
+logs/
+*.log
+Uploads/
+
+# local development keys (npm run keys:generate) — never commit
+keys/
+# local private upload storage (STORAGE_PROVIDER=local)
+uploads/

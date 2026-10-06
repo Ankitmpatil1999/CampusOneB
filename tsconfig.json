@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node", "vitest/globals"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "noEmit": true
+  },
+  "include": [
+    "*.ts",
+    "config/**/*.ts",
+    "controllers/**/*.ts",
+    "db/**/*.ts",
+    "functions/**/*.ts",
+    "integrations/**/*.ts",
+    "middlewares/**/*.ts",
+    "models/**/*.ts",
+    "repositories/**/*.ts",
+    "routes/**/*.ts",
+    "schedulers/**/*.ts",
+    "schemas/**/*.ts",
+    "scripts/**/*.ts",
+    "services/**/*.ts",
+    "tests/**/*.ts",
+    "types/**/*.ts",
+    "utils/**/*.ts"
+  ]
+}

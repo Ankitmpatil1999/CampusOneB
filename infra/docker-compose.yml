@@ -1,0 +1,81 @@
+# Local development stack (brief §7.7; docs/03 §12, §14). Requires Docker Desktop or Podman (Q4).
+#   docker compose -f infra/docker-compose.yml up -d                      # core services
+#   docker compose -f infra/docker-compose.yml --profile av up -d         # + ClamAV
+#   docker compose -f infra/docker-compose.yml --profile observability up -d
+# Passwords below are for local development only; copy infra/.env.example to infra/.env to change them.
+name: ringpe
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-local-only}
+      MYSQL_DATABASE: ringpe
+      RINGPE_APP_PASSWORD: ${RINGPE_APP_PASSWORD:-app-local-only}
+      RINGPE_MIGRATOR_PASSWORD: ${RINGPE_MIGRATOR_PASSWORD:-migrator-local-only}
+      RINGPE_REPORT_PASSWORD: ${RINGPE_REPORT_PASSWORD:-report-local-only}
+    ports:
+      - '127.0.0.1:3307:3306' # 3307 so it does not clash with a local MySQL service on 3306
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1000']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ringpe-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ringpe-local-secret}
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - minio-data:/data
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:1025:1025' # SMTP
+      - '127.0.0.1:8025:8025' # web UI
+
+  clamav:
+    image: clamav/clamav:stable
+    profiles: ['av']
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3310:3310'
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    profiles: ['observability']
+    ports:
+      - '127.0.0.1:4317:4317'
+      - '127.0.0.1:4318:4318'
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:

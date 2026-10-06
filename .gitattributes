@@ -1,0 +1,20 @@
+# Development is on Windows: normalise text to LF in the repository (brief §7.7).
+* text=auto eol=lf
+
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary assets
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.xlsx  binary
+*.xls   binary
+*.ttf   binary
+*.woff  binary
+*.woff2 binary

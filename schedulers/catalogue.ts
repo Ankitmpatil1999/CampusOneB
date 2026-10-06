@@ -1,0 +1,277 @@
+/**
+ * The scheduled processes of SRS 26.6 as the back office shows them (prototype o.jobs; RNG-GOV-021,
+ * RNG-GOV-024/025): what each does, its schedule, window, catch-up and re-run behaviour. A process
+ * runs only once its module registers a runner in `JOBS` (./index.ts); until then the catalogue says
+ * which phase brings it. Where the client decided differently from the old system, the decision is
+ * shown (M9 tuition retry, OQ-14 auto-absent, Q15 retention).
+ */
+export interface JobCatalogueEntry {
+  /** Stable id (job_runs.job_id). */
+  readonly id: string;
+  readonly name: string;
+  /** SRS section and functional requirement. */
+  readonly module: string;
+  readonly ref: string;
+  /** Daily time in IST, or null when the schedule is not a single daily time. */
+  readonly time: string | null;
+  /** How it is scheduled when not a daily time (or why it is not scheduled). */
+  readonly scheduleNote: string | null;
+  /** Two short lines for the table when the schedule is not a daily time. */
+  readonly scheduleLabel: string | null;
+  readonly scheduleDetail: string | null;
+  readonly scheduled: boolean;
+  /** Moves money (period-derived idempotency keys, alert on any failure). */
+  readonly money: boolean;
+  /** Delivery phase that brings the runner. */
+  readonly phase: number;
+  /** What a run counts (settlements, wallets …). */
+  readonly unit: string;
+  readonly does: string;
+  readonly window: string;
+  readonly previous: string;
+  readonly twice: string;
+}
+
+export const JOB_CATALOGUE: readonly JobCatalogueEntry[] = [
+  {
+    id: 'settlement-run',
+    name: 'Merchant settlement run',
+    module: 'STL 14.7',
+    ref: 'FR-SET-01',
+    time: '23:30',
+    scheduleNote: null,
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: true,
+    phase: 6,
+    unit: 'settlements',
+    does: "Computes each merchant's gross, platform fee and net for the window, creates a Pending settlement per institution, writes the four statements and marks tuition collections settled.",
+    window: "Previous day's 23:30 cut-off to today's 23:30 cut-off",
+    previous: "The next run completes the missed date first, then today's.",
+    twice:
+      'A non-failed settlement for the same institution and date is never recreated (FR-SET-01); a re-run only fills gaps.',
+  },
+  {
+    id: 'wallet-rollover',
+    name: 'Wallet balance roll-over',
+    module: 'WAL 8.15',
+    ref: 'FR-WAL-10',
+    time: '23:45',
+    scheduleNote: null,
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: true,
+    phase: 3,
+    unit: 'wallets',
+    does: 'Opening balance ← previous closing; closing balance ← current balance, for every campus, allowance and personal wallet.',
+    window: 'The calendar day ending at 23:45',
+    previous: "Rolls the missed day before today's, using the balances as at each cut-off.",
+    twice: 'Idempotent per wallet and date: a wallet already rolled for the date is skipped.',
+  },
+  {
+    id: 'event-status',
+    name: 'Event status update',
+    module: 'FEE 13.16',
+    ref: 'FR-FEE-10',
+    time: '23:50',
+    scheduleNote: null,
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: false,
+    phase: 4,
+    unit: 'events',
+    does: 'Deactivates events whose end date has passed (the rebuild uses the end date, not the start date).',
+    window: 'Events ending on the run date',
+    previous: 'Catches up every event that ended since the last run.',
+    twice: 'Setting an inactive event inactive again changes nothing.',
+  },
+  {
+    id: 'coupon-expiry',
+    name: 'Coupon expiry',
+    module: 'CPN 11.7',
+    ref: 'FR-CPN-02',
+    time: '00:00',
+    scheduleNote: null,
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: false,
+    phase: 4,
+    unit: 'coupons',
+    does: 'Marks Active coupons dated before today as Expired.',
+    window: 'Coupons dated before the run date',
+    previous: 'Expires every stale coupon regardless of date.',
+    twice: 'Expired coupons are skipped.',
+  },
+  {
+    id: 'allowance-cycle',
+    name: 'Allowance credit and expiry',
+    module: 'ALW 10.6',
+    ref: 'FR-ALW-02',
+    time: '00:05',
+    scheduleNote: null,
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: true,
+    phase: 4,
+    unit: 'allowances',
+    does: "Zeroes allowances expiring today (recorded in history), then credits allowances starting today. Also runs at start-up if it hasn't run today.",
+    window: 'Allowances starting or expiring on the run date',
+    previous: 'Runs once at start-up for the missed day.',
+    twice:
+      'At most once per day per allowance: a credit or expiry already in the history is not repeated.',
+  },
+  {
+    id: 'trip-generation',
+    name: 'Trip generation',
+    module: 'TRN 22.17',
+    ref: 'FR-TRN-05, OI-TRN-09',
+    time: '00:10',
+    scheduleNote: null,
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: false,
+    phase: 7,
+    unit: 'trips',
+    does: "Cancels stale Scheduled trips and creates today's trips from active vehicle assignments, respecting each session's days and skipping holidays for everyone; stops in travel order with planned times.",
+    window: 'The run date',
+    previous: "Generates today's trips only; stale ones are cancelled.",
+    twice: 'A trip already generated for the assignment and date is not duplicated.',
+  },
+  {
+    id: 'comm-log-purge',
+    name: 'Communication log purge',
+    module: 'INT 18.6',
+    ref: 'FR-COM-07',
+    time: '02:00',
+    scheduleNote:
+      'Runs nightly; deletes nothing until the purge is switched on (com.log.purge.enabled) once retention is decided (Q15)',
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: false,
+    phase: 8,
+    unit: 'rows',
+    does: 'Deletes communication log rows past retention (settings: 30 days for sent or skipped, 90 days for failed; 0 keeps them) once the purge is switched on.',
+    window: 'Rows past retention on the run date',
+    previous: 'Purges everything past retention.',
+    twice: 'Nothing left to purge on a second run.',
+  },
+  {
+    id: 'tuition-autodebit',
+    name: 'Tuition auto-debit (retry)',
+    module: 'FEE 13.15',
+    ref: 'FR-FEE-08',
+    time: null,
+    scheduleNote: 'Every 30 minutes 08:00–20:00 IST, and after each top-up (client M9)',
+    scheduleLabel: 'Every 30 min',
+    scheduleDetail: '08:00–20:00 · IST',
+    scheduled: true,
+    money: true,
+    phase: 5,
+    unit: 'payments',
+    does: 'Re-attempts every pending fee payment, closes the earlier pending attempt and posts the accounting entry.',
+    window: 'Fee records due and unpaid at the run time',
+    previous: 'The next run picks up every record still pending.',
+    twice: 'Idempotent per fee record (BR-34): a paid record is never debited again.',
+  },
+  {
+    id: 'announcement-dispatch',
+    name: 'Announcement dispatch',
+    module: 'COM 23.2',
+    ref: 'FR-COM-01, FR-COM-02, CR-16',
+    time: null,
+    scheduleNote: 'Every minute, for announcements whose send time has come',
+    scheduleLabel: 'Every minute',
+    scheduleDetail: 'and on demand',
+    scheduled: true,
+    money: false,
+    phase: 8,
+    unit: 'announcements',
+    does: 'Sends announcements whose send time has come (high importance first): resolves and keeps the recipients, sends one message per account and channel through the channels on for the platform and the school, and logs every attempt (CR-16).',
+    window: 'Announcements due now, and any left processing for 10 minutes',
+    previous: 'Each run takes every due announcement, so nothing is missed.',
+    twice: 'An announcement is claimed once; a re-run sends nothing twice.',
+  },
+  {
+    id: 'auto-absent',
+    name: 'Auto-absent marking',
+    module: 'ATT 21.16',
+    ref: 'FR-ATT-06, OQ-14, OI-ATT-20',
+    time: null,
+    scheduleNote:
+      "Every 15 minutes, once each institution's cut-off has passed; off until the institution sets it (OQ-14)",
+    scheduleLabel: 'At cut-off',
+    scheduleDetail: 'per institution',
+    scheduled: true,
+    money: false,
+    phase: 7,
+    unit: 'members',
+    does: 'After the institution’s cut-off on a school day (not a Sunday or a holiday for everyone), marks Absent every active student enrolled this year — and staff, if chosen — who has no attendance that day, and tells the families (OI-ATT-21).',
+    window: 'Today (IST), for each institution whose cut-off has passed',
+    previous:
+      'A missed run is made up by the next run the same day; earlier days are corrected by hand.',
+    twice:
+      'Once per institution and day (a unique run row); a member already marked for the day is skipped.',
+  },
+  {
+    id: 'subscription-billing',
+    name: 'Subscription billing',
+    module: 'SAS 25',
+    ref: 'FR-SAS-07, FR-SAS-08',
+    time: '00:20',
+    scheduleNote: null,
+    scheduleLabel: null,
+    scheduleDetail: null,
+    scheduled: true,
+    money: false,
+    phase: 2,
+    unit: 'institutions',
+    does: "Starts each renewing institution's next period (with a plan change scheduled for renewal, or the plan's current terms), issues renewal invoices ahead of the renewal date (setting sas.renewal.billDaysBefore) and moves unpaid invoices to Grace and then Overdue, e-mailing a reminder at each step. Suspension stays an operator's decision.",
+    window: 'The run date (IST)',
+    previous: 'Renewals due on earlier dates roll over and missed renewal invoices are issued.',
+    twice:
+      'One renewal invoice per institution and period; renewals are guarded by the renewal date and reminders by their stage, so a re-run changes nothing.',
+  },
+  {
+    id: 'held-credit-release',
+    name: 'Held bank credits',
+    module: 'WAL 8.13',
+    ref: 'CR-08, RC-12',
+    time: null,
+    scheduleNote: 'Every 15 minutes',
+    scheduleLabel: 'Every 15 min',
+    scheduleDetail: 'and on demand',
+    scheduled: true,
+    money: true,
+    phase: 3,
+    unit: 'credits',
+    does: 'Credits money that arrived for a suspended or inactive wallet, and was held, once the wallet is active again (held suspense → wallet), and tells the member and their guardians.',
+    window: 'Every held credit whose wallet is active at the time of the run',
+    previous: 'Nothing is missed: every run takes all held credits that can be released.',
+    twice: 'Each credit is released once (its own idempotency key); a re-run changes nothing.',
+  },
+  {
+    id: 'accounting-vouchers',
+    name: 'Accounting vouchers',
+    module: 'FEE 13.13',
+    ref: 'FR-INT-06, Q14 M15',
+    time: null,
+    scheduleNote: 'Every 15 minutes, for institutions that turned transfers on',
+    scheduleLabel: 'Every 15 min',
+    scheduleDetail: 'and on demand',
+    scheduled: true,
+    money: false,
+    phase: 6,
+    unit: 'vouchers',
+    does: 'Writes one voucher per mapped ledger posting (fee collections, event payments, allowance funding, refunds) and sends it to the institution’s accounting package; a refused voucher is retried after a pause (acc.transfer.*). The package is simulated until it is chosen (OQ-04).',
+    window: 'Postings since transfers were turned on, and vouchers due to be sent',
+    previous: 'Every posting without a voucher is taken, so nothing is missed.',
+    twice: 'One voucher per posting (unique key); a transferred voucher is never sent again.',
+  },
+];

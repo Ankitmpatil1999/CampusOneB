@@ -1,0 +1,111 @@
+# Alert rules for RingPe (Phase 9.5). Each alert names its runbook (docs/runbooks/README.md §4).
+# Thresholds are starting values for the first weeks of production; tune them from the dashboards.
+groups:
+  - name: ringpe-availability
+    rules:
+      - alert: RingPeTargetDown
+        expr: up{job=~"ringpe-api|ringpe-worker"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: 'RingPe {{ $labels.job }} on {{ $labels.instance }} is not answering'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Process down)'
+      - alert: RingPeReadinessDown
+        expr: probe_success{job="ringpe-readiness"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: 'RingPe is not ready on {{ $labels.instance }} (database, Redis or storage)'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Readiness down)'
+
+  - name: ringpe-api
+    rules:
+      - alert: RingPeHighErrorRate
+        expr: |
+          sum(rate(ringpe_http_errors_total[5m]))
+            / clamp_min(sum(rate(ringpe_http_request_duration_seconds_count[5m])), 1) > 0.02
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: 'More than 2 % of API requests fail with a server error'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Error rate)'
+      - alert: RingPeSlowReads
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(ringpe_http_request_duration_seconds_bucket{method="GET"}[5m]))) > 0.3
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'API reads p95 above 300 ms (docs/03 §1 target)'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Slow requests)'
+      - alert: RingPeSlowPayments
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(ringpe_http_request_duration_seconds_bucket{method="POST", route=~".*(pay|payment|transfer|collect).*"}[5m]))) > 0.7
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: 'Payment authorisation p95 above 700 ms (docs/03 §1 target)'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Slow requests)'
+      - alert: RingPeSlowDatabase
+        expr: histogram_quantile(0.95, sum by (le) (rate(ringpe_db_query_duration_seconds_bucket[5m]))) > 0.2
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Database queries p95 above 200 ms'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Slow requests)'
+      - alert: RingPeRateLimitSurge
+        expr: sum by (limiter) (rate(ringpe_rate_limited_total[5m])) > 5
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Many requests refused by the {{ $labels.limiter }} rate limit'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Rate limit surge)'
+      - alert: RingPeEventLoopLag
+        expr: ringpe_nodejs_eventloop_lag_p99_seconds > 0.5
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Event loop lag p99 above 500 ms on {{ $labels.instance }}'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Slow requests)'
+
+  - name: ringpe-money
+    rules:
+      - alert: RingPePaymentRefusalSpike
+        expr: sum by (check) (increase(ringpe_payment_refusals_total[15m])) > 100
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Payment check {{ $labels.check }} refused more than 100 payments in 15 minutes'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Payment refusals)'
+
+  - name: ringpe-jobs-and-messaging
+    rules:
+      - alert: RingPeJobFailed
+        expr: sum by (job) (increase(ringpe_job_runs_total{status!="SUCCESS"}[1h])) > 0 or ringpe_job_runs_failed_last_day > 0
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: 'Job {{ $labels.job }} failed or partly failed'
+          runbook: 'docs/runbooks/README.md#3-scheduled-jobs'
+      - alert: RingPeOutboxLag
+        expr: max(ringpe_outbox_oldest_pending_seconds) > 60
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: 'Outbox events waiting more than a minute (realtime updates delayed)'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Outbox lag)'
+      - alert: RingPeOutboxDead
+        expr: max(ringpe_outbox_dead_events) > 0
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Outbox events gave up after their attempts'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Outbox lag)'
+      - alert: RingPeMessageFailures
+        expr: |
+          sum(rate(ringpe_comm_messages_total{outcome="FAILED"}[15m]))
+            / clamp_min(sum(rate(ringpe_comm_messages_total{channel!="IN_APP"}[15m])), 0.001) > 0.1
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'More than 10 % of SMS / e-mail sends fail (provider problem?)'
+          runbook: 'docs/runbooks/README.md#4-alerts-and-what-to-do (Message failures)'
