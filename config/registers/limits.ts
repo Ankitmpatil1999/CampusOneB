@@ -950,6 +950,19 @@ export const LIMITS = {
     ],
   }),
 
+  staffPasswordShown: def({
+    key: 'idn.staff.passwordShownOnce',
+    value: 1,
+    unit: 'flag',
+    adjustable: { min: 0, max: 1 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: [
+      'client 2026-10-07: show onboarded staff passwords once while e-mail is not integrated',
+      'OI-IDN-20',
+    ],
+  }),
+
   // --- approvals (ADR-0015, client Q9) -----------------------------------------------------------
   approvalsAdminSelfApply: def({
     key: 'mkr.adminSelfApply',

@@ -151,7 +151,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/staff',
   summary:
-    'Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password e-mailed and changed at first sign-in; employee ID EMP… when not given',
+    'Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given',
   tags,
   auth: 'members.onboard',
   request: staffSchema,

@@ -85,6 +85,8 @@ export function membersController(
     }),
     staff: wrap(async (req, res) => {
       const body = staffSchema.parse(req.body ?? {});
+      // Shown once: an idempotent replay answers without the temporary password.
+      res.locals['idempotencyOmit'] = ['temporaryPassword'];
       res.status(201).json(await members.onboardStaff(principal(req), body));
     }),
     status: wrap(async (req, res) => {
@@ -144,6 +146,7 @@ export function membersController(
     }),
     commit: wrap(async (req, res) => {
       const body = commitSchema.parse(req.body ?? {});
+      res.locals['idempotencyOmit'] = ['passwords'];
       res.json(await uploads.commit(principal(req), param(req, 'uploadId'), body));
     }),
 

@@ -419,7 +419,7 @@ export class MemberUploadsService {
   async commit(p: Principal, uploadId: string, input: { mode: 'ALL' | 'ACCEPTED' }) {
     if (!isUuid(uploadId)) throw new NotFoundError();
     const by = isUuid(p.subject) ? uuidToBin(p.subject) : null;
-    const staffMails: Parameters<MembersService['welcome']>[0][number][] = [];
+    const staffMails: Awaited<ReturnType<MembersService['createStaff']>>[] = [];
     const created = await this.deps.db.transaction().execute(async (trx) => {
       const inst = await this.own(p, trx, true);
       const u = await repo.upload(trx, inst.id, uuidToBin(uploadId), true);
@@ -476,7 +476,28 @@ export class MemberUploadsService {
       });
       return rows.length;
     });
-    await this.deps.members.welcome(staffMails);
-    return { created, skipped: (await this.status(p, uploadId)).rejected };
+    const shown = await this.deps.members.passwordsShown();
+    await this.deps.members.welcome(staffMails, shown);
+    return {
+      created,
+      skipped: (await this.status(p, uploadId)).rejected,
+      // New staff accounts' temporary passwords, shown once (client 2026-10-07).
+      ...(shown && staffMails.length
+        ? {
+            passwords: staffMails.flatMap((x) =>
+              x.password
+                ? [
+                    {
+                      name: x.name,
+                      email: x.email,
+                      employeeNo: x.employeeNo,
+                      temporaryPassword: x.password,
+                    },
+                  ]
+                : [],
+            ),
+          }
+        : {}),
+    };
   }
 }

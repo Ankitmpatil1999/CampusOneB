@@ -457,29 +457,36 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
         customFields: { [blood]: 'O+' },
       });
     expect(young.body.errors[0].code).toBe('IDN.STAFF_UNDER_18');
-    const r = await request(app)
-      .post('/api/v1/console/staff')
-      .set(a.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({
-        userTypeId: teacher.id,
-        departmentId: dep,
-        firstName: 'Kavya',
-        lastName: 'Rao',
-        gender: 'FEMALE',
-        dateOfBirth: '1990-07-12',
-        mobile: mobile(),
-        email,
-        joinedOn: '2026-06-01',
-        customFields: { [blood]: 'O+' },
-      });
+    const key = randomUUID();
+    const body = {
+      userTypeId: teacher.id,
+      departmentId: dep,
+      firstName: 'Kavya',
+      lastName: 'Rao',
+      gender: 'FEMALE',
+      dateOfBirth: '1990-07-12',
+      mobile: mobile(),
+      email,
+      joinedOn: '2026-06-01',
+      customFields: { [blood]: 'O+' },
+    };
+    const send = () =>
+      request(app).post('/api/v1/console/staff').set(a.con).set('Idempotency-Key', key).send(body);
+    const r = await send();
     expect(r.status).toBe(201);
     expect(r.body).toMatchObject({ newAccount: true });
     expect(r.body.employeeNo).toMatch(/^EMP\d{5}$/);
+    // Shown once in the answer (client 2026-10-07: e-mail not integrated), not in the e-mail.
+    const temp = r.body.temporaryPassword as string;
+    expect(temp).toMatch(/^.{10}@1$/);
     const mail = h.email.sent.at(-1)!;
     expect(mail.to).toBe(email);
-    const temp = /temporary password: (\S+)/.exec(mail.text)?.[1];
-    expect(temp).toBeTruthy();
+    expect(mail.text).not.toContain(temp);
+    expect(mail.text).toContain('the temporary password your institution gave you');
+    // A replay of the same request answers without it.
+    const again = await send();
+    expect(again.headers['idempotent-replayed']).toBe('true');
+    expect(again.body).not.toHaveProperty('temporaryPassword');
 
     // The staff member needs a console role to enter the console.
     const role = await t.db
@@ -511,6 +518,57 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       expect(reset.status).toBe(204);
       await signedIn('console', email, 'Kavya@2026');
     }
+  });
+
+  it('onboards staff from a sheet and lists their temporary passwords once (client 2026-10-07)', async () => {
+    const teacher = await userType(a.con, 'Teacher');
+    const tpl = await request(app)
+      .get('/api/v1/console/members/uploads/templates/staff')
+      .set(a.con);
+    expect(tpl.status).toBe(200);
+    const header = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
+    const cols = header.split(',');
+    const row = (v: Record<string, string>) => cols.map((c) => v[c] ?? '').join(',');
+    const person = (first: string) => ({
+      'User type': 'Teacher',
+      Department: teacher.departments[0]!.name,
+      'First name': first,
+      'Last name': 'Hegde',
+      Gender: 'Female',
+      'Date of birth': '12/07/1990',
+      Mobile: mobile(),
+      'E-mail': `${first.toLowerCase()}.${randomInt(0, 1e9)}@school.example.in`,
+      'Joining date': '01/06/2026',
+      'Blood group': 'O+',
+    });
+    const csv = [header, row(person('Asha')), row(person('Bhavya'))].join('\r\n');
+    const up = await request(app)
+      .post('/api/v1/console/members/uploads')
+      .set(a.con)
+      .set('Idempotency-Key', randomUUID())
+      .field('kind', 'staff')
+      .attach('file', Buffer.from(csv), { filename: 'staff.csv', contentType: 'text/csv' });
+    expect(up.status).toBe(201);
+    expect(up.body).toMatchObject({ total: 2, accepted: 2 });
+    const key = randomUUID();
+    const commit = () =>
+      request(app)
+        .post(`/api/v1/console/members/uploads/${up.body.id}/commit`)
+        .set(a.con)
+        .set('Idempotency-Key', key)
+        .send({ mode: 'ALL' });
+    const done = await commit();
+    expect(done.status).toBe(200);
+    expect(done.body.created).toBe(2);
+    expect(done.body.passwords).toHaveLength(2);
+    expect(done.body.passwords[0]).toMatchObject({
+      name: 'Asha Hegde',
+      employeeNo: expect.stringMatching(/^EMP\d{5}$/),
+      temporaryPassword: expect.stringMatching(/^.{10}@1$/),
+    });
+    const again = await commit();
+    expect(again.headers['idempotent-replayed']).toBe('true');
+    expect(again.body).toEqual({ created: 2, skipped: 0 });
   });
 
   it('checks a sheet row by row and onboards the accepted rows only', async () => {

@@ -275,9 +275,13 @@ export const staffResultSchema = z
     id: z.uuid(),
     memberNo: z.string(),
     employeeNo: z.string(),
-    newAccount: z
-      .boolean()
-      .describe('A RingPe account was created; a temporary password was e-mailed'),
+    newAccount: z.boolean().describe('A RingPe account was created with a temporary password'),
+    temporaryPassword: z
+      .string()
+      .optional()
+      .describe(
+        'Shown once (setting idn.staff.passwordShownOnce; never stored, not in a replay); changed at first sign-in',
+      ),
   })
   .meta({ id: 'StaffOnboarded' });
 
@@ -386,7 +390,21 @@ export const commitSchema = z
   .meta({ id: 'MemberUploadCommit' });
 
 export const commitResultSchema = z
-  .object({ created: z.number().int(), skipped: z.number().int() })
+  .object({
+    created: z.number().int(),
+    skipped: z.number().int(),
+    passwords: z
+      .array(
+        z.object({
+          name: z.string(),
+          email: z.string(),
+          employeeNo: z.string(),
+          temporaryPassword: z.string(),
+        }),
+      )
+      .optional()
+      .describe('New staff accounts, shown once (setting idn.staff.passwordShownOnce)'),
+  })
   .meta({ id: 'MemberUploadCommitted' });
 
 // --- academic structure ------------------------------------------------------------------------------

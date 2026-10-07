@@ -908,12 +908,15 @@ export class MembersService {
       const inst = await this.own(p, trx, true);
       return this.createStaff(trx, inst, pub, input, by);
     });
-    await this.welcome([out]);
+    const shown = await this.passwordsShown();
+    await this.welcome([out], shown);
     return {
       id: pub.id,
       memberNo: out.memberNo,
       employeeNo: out.employeeNo,
       newAccount: out.password !== null,
+      // Shown once: never stored, left out of an idempotent replay (the controller).
+      ...(shown && out.password ? { temporaryPassword: out.password } : {}),
     };
   }
 
@@ -929,6 +932,15 @@ export class MembersService {
     if (eighteen > today) throw new ValidationError([{ field, code: 'IDN.STAFF_UNDER_18' }]);
   }
 
+  /**
+   * Whether a new staff member's temporary password is shown once in the console (setting
+   * idn.staff.passwordShownOnce; client 2026-10-07: e-mail is not integrated yet). Then the
+   * welcome e-mail leaves it out.
+   */
+  async passwordsShown() {
+    return (await this.limit(LIMITS.staffPasswordShown)) === 1;
+  }
+
   /** E-mails onboarded staff after the commit: a temporary password, or the new link. */
   async welcome(
     list: readonly {
@@ -937,12 +949,15 @@ export class MembersService {
       employeeNo: string;
       password: string | null;
     }[],
+    shown = false,
   ) {
     if (!this.deps.email) return;
     const link = `${this.deps.webUrl ?? 'http://localhost:4200'}/console/signin`;
     for (const x of list) {
       const text = x.password
-        ? `Welcome to RingPe at ${x.institution}. Sign in at ${link} with ${x.email} and this temporary password: ${x.password} — you'll choose your own password at first sign-in. Your employee ID is ${x.employeeNo}.`
+        ? shown
+          ? `Welcome to RingPe at ${x.institution}. Sign in at ${link} with ${x.email} and the temporary password your institution gave you — you'll choose your own password at first sign-in. Your employee ID is ${x.employeeNo}.`
+          : `Welcome to RingPe at ${x.institution}. Sign in at ${link} with ${x.email} and this temporary password: ${x.password} — you'll choose your own password at first sign-in. Your employee ID is ${x.employeeNo}.`
         : `Your RingPe account is now linked to ${x.institution} as staff (employee ID ${x.employeeNo}). Sign in with your usual password.`;
       await this.deps.email
         .send({ to: x.email, purpose: 'staff.onboarded', text })
@@ -1049,6 +1064,7 @@ export class MembersService {
       .executeTakeFirstOrThrow();
     return {
       email,
+      name: [input.firstName.trim(), input.lastName?.trim()].filter(Boolean).join(' '),
       institution: inst.name,
       employeeNo,
       password: generated,

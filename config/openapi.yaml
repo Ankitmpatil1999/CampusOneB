@@ -7431,7 +7431,7 @@ paths:
   /api/v1/console/staff:
     post:
       operationId: IDN-053
-      summary: "Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password e-mailed and changed at first sign-in; employee ID EMP… when not given"
+      summary: "Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given"
       tags:
         - Members
       x-ringpe-auth: members.onboard
@@ -34302,6 +34302,26 @@ components:
           type: integer
           minimum: -9007199254740991
           maximum: 9007199254740991
+        passwords:
+          description: New staff accounts, shown once (setting idn.staff.passwordShownOnce)
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              email:
+                type: string
+              employeeNo:
+                type: string
+              temporaryPassword:
+                type: string
+            required:
+              - name
+              - email
+              - employeeNo
+              - temporaryPassword
+            additionalProperties: false
       required:
         - created
         - skipped
@@ -43997,7 +44017,10 @@ components:
           type: string
         newAccount:
           type: boolean
-          description: A RingPe account was created; a temporary password was e-mailed
+          description: A RingPe account was created with a temporary password
+        temporaryPassword:
+          description: Shown once (setting idn.staff.passwordShownOnce; never stored, not in a replay); changed at first sign-in
+          type: string
       required:
         - id
         - memberNo
