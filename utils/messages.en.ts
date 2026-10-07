@@ -489,6 +489,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'IDN.WARD_REQUIRED': 'Choose at least one student for the parent.',
   'INS.ADDRESS_FORMAT':
     "address contains invalid characters. Only alphanumeric characters, spaces, single quotes ('), hyphens (-), commas (,), dots (.), underscores (_), ampersands (&) and brackets ( ) are allowed.",
+  'INS.ADMIN_ACCOUNT_INACTIVE':
+    'The RingPe account with this e-mail is not active. Use another e-mail, or reactivate the account first.',
   'INS.ADMIN_EMAIL_FORMAT': 'Invalid admin_contact_email: must be a valid email address.',
   'INS.ADMIN_EMAIL_UNKNOWN': 'Admin email not registered in RingPe',
   'INS.ADMIN_IN_INSTITUTION': 'User already mapped to a CUG organization',

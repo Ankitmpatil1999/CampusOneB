@@ -479,7 +479,8 @@ export class InstitutionsService {
     // administrator profile waits for it and is linked once that person creates their account on
     // the customer site and confirms the e-mail (claimPendingAdministrator).
     if (admin && admin.status !== 'ACTIVE') {
-      throw new CustomAPIError(422, 'INS.ADMIN_EMAIL_UNKNOWN');
+      // Only a closed or blocked account; an unknown e-mail is never refused (client 2026-10-06/07).
+      throw new CustomAPIError(409, 'INS.ADMIN_ACCOUNT_INACTIVE');
     }
     if (admin && (await repo.hasInstitutionProfile(this.deps.db, String(admin.id)))) {
       throw new CustomAPIError(409, 'INS.ADMIN_IN_INSTITUTION');

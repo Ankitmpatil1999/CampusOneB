@@ -351,6 +351,16 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
   });
 
   it('refuses operator administrators and bad fields with the old messages', async () => {
+    // A deactivated account isn't "not registered" (client 2026-10-07): it has its own message.
+    const closed = await account('GIRISH');
+    await t.db
+      .updateTable('platform_accounts')
+      .set({ status: 'DEACTIVATED' })
+      .where('id', '=', closed.id)
+      .execute();
+    const inactive = await register({ adminEmail: closed.email });
+    expect(inactive.r.status).toBe(409);
+    expect(inactive.r.body.code).toBe('INS.ADMIN_ACCOUNT_INACTIVE');
     const op = await operator('SUPPORT_OFFICER');
     expect((await register({ adminEmail: op.email })).r.body).toMatchObject({
       code: 'INS.ADMIN_IS_OPERATOR',

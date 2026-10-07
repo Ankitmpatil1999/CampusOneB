@@ -105,6 +105,12 @@ export const INSTITUTION_MESSAGES = [
     'BR-01',
   ]),
   n(
+    'INS.ADMIN_ACCOUNT_INACTIVE',
+    409,
+    'The RingPe account with this e-mail is not active. Use another e-mail, or reactivate the account first.',
+    ['RNG-ONB-034', 'client 2026-10-07: an unknown e-mail is never refused'],
+  ),
+  n(
     'INS.ADMIN_MOBILE_TAKEN',
     409,
     "This mobile number already has a RingPe account. Use that account's e-mail as the administrator's e-mail, or another mobile number.",
