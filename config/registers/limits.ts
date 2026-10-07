@@ -935,6 +935,21 @@ export const LIMITS = {
     refs: ['6.18', 'OI-IDN-21', 'RNG-GOV-019'],
   }),
 
+  // --- institution registration (client 2026-10-07: e-mail not integrated yet) -------------------
+  institutionAdminPasswordShown: def({
+    key: 'ins.admin.passwordShownOnce',
+    value: 1,
+    unit: 'flag',
+    adjustable: { min: 0, max: 1 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: [
+      'client 2026-10-07: show the password once when the institution is registered',
+      'RNG-ONB-034',
+      'OI-IDN-20',
+    ],
+  }),
+
   // --- approvals (ADR-0015, client Q9) -----------------------------------------------------------
   approvalsAdminSelfApply: def({
     key: 'mkr.adminSelfApply',

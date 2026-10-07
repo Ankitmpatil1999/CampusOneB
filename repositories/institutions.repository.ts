@@ -554,18 +554,89 @@ export const institutionsRepository = {
   },
 
   // --- people ---------------------------------------------------------------------------------------
-  /** The account holding the Institution Administrator role (the registered administrator). */
+  /**
+   * The registered administrator: the account holding the Institution Administrator role, or —
+   * until that person creates their RingPe account (client 2026-10-06) — the profile waiting for
+   * it, with the e-mail it was registered for (`pending`).
+   */
   async administrator(db: Db, institutionId: string) {
-    return db
+    const r = await db
       .selectFrom('profile_roles as pr')
       .innerJoin('roles as r', 'r.id', 'pr.role_id')
       .innerJoin('member_profiles as m', 'm.id', 'pr.profile_id')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
-      .select(['a.email', 'a.first_name', 'a.last_name'])
+      .leftJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .select([
+        'a.email',
+        'a.first_name',
+        'a.last_name',
+        'm.account_id',
+        'm.contact_email',
+        'm.first_name as profile_first',
+        'm.last_name as profile_last',
+      ])
       .where('pr.institution_id', '=', institutionId)
       .where('r.code', '=', 'INSTITUTION_ADMIN')
       .orderBy('pr.created_at')
       .executeTakeFirst();
+    if (!r) return undefined;
+    const pending = r.account_id === null;
+    return {
+      email: pending ? r.contact_email : r.email,
+      first_name: pending ? r.profile_first : r.first_name,
+      last_name: pending ? r.profile_last : r.last_name,
+      pending,
+    };
+  },
+
+  /**
+   * The oldest administrator profile waiting for an account with this e-mail (an institution the
+   * back office registered before its administrator had a RingPe account).
+   */
+  async pendingAdministrator(db: Db, email: string) {
+    return db
+      .selectFrom('member_profiles as m')
+      .innerJoin('profile_roles as pr', 'pr.profile_id', 'm.id')
+      .innerJoin('roles as r', 'r.id', 'pr.role_id')
+      .innerJoin('institutions as i', 'i.id', 'm.institution_id')
+      .select(['m.id', 'm.institution_id', 'i.name', 'i.identifier', 'i.public_id'])
+      .where('m.account_id', 'is', null)
+      .where('m.contact_email', '=', email.trim().toLowerCase())
+      .where('r.code', '=', 'INSTITUTION_ADMIN')
+      .where('i.status', '!=', 'CANCELLED')
+      .orderBy('m.id')
+      .executeTakeFirst();
+  },
+
+  /**
+   * Gives the waiting administrator profile to an account whose e-mail is verified. The account
+   * must not belong to an institution or the back office already (BR-01); returns the
+   * institution, or null when there is nothing to link.
+   */
+  async claimPendingAdministrator(
+    db: Db,
+    account: { id: string; email: string; firstName: string; lastName: string | null },
+  ) {
+    const pending = await this.pendingAdministrator(db, account.email);
+    if (!pending) return null;
+    if (
+      (await this.hasInstitutionProfile(db, account.id)) ||
+      (await this.isOperator(db, account.id))
+    ) {
+      return null;
+    }
+    const r = await db
+      .updateTable('member_profiles')
+      .set({
+        account_id: account.id,
+        first_name: account.firstName,
+        last_name: account.lastName,
+        updated_at: sql<Date>`UTC_TIMESTAMP(3)`,
+        row_version: sql<number>`row_version + 1`,
+      })
+      .where('id', '=', pending.id)
+      .where('account_id', 'is', null)
+      .executeTakeFirst();
+    return Number(r.numUpdatedRows) === 1 ? pending : null;
   },
 
   async hasInstitutionProfile(db: Db, accountId: string) {

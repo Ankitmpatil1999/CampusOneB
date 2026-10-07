@@ -40,6 +40,8 @@ export function institutionsController(service: InstitutionsService) {
     register: wrap(async (req, res) => {
       const body = registerSchema.parse(req.body ?? {});
       const out = await service.register(principal(req), body);
+      // Shown once: an idempotent replay of this request answers without it.
+      res.locals['idempotencyOmit'] = ['administrator.temporaryPassword'];
       setEtag(res, out.version);
       res.status(201).json(out);
     }),

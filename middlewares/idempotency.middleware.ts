@@ -116,7 +116,10 @@ export function idempotency(opts: IdempotencyOptions): RequestHandler {
               ? idempotencyRepository.release(opts.db, ref)
               : idempotencyRepository.complete(opts.db, ref, {
                   status,
-                  body: text !== null && isJson(text) ? text : null,
+                  body:
+                    text !== null && isJson(text)
+                      ? omit(text, res.locals['idempotencyOmit'] as unknown)
+                      : null,
                 });
           done.catch(() => undefined);
         }
@@ -130,6 +133,25 @@ export function idempotency(opts: IdempotencyOptions): RequestHandler {
       next(e);
     }
   };
+}
+
+/**
+ * Leaves one-time values (a temporary password shown once) out of the stored copy: the handler
+ * names them as dot paths in `res.locals.idempotencyOmit`.
+ */
+export function omit(text: string, paths: unknown): string {
+  if (!Array.isArray(paths) || !paths.length) return text;
+  const body = JSON.parse(text) as unknown;
+  for (const path of paths) {
+    if (typeof path !== 'string') continue;
+    const keys = path.split('.');
+    let at: unknown = body;
+    for (const k of keys.slice(0, -1)) {
+      at = at && typeof at === 'object' ? (at as Record<string, unknown>)[k] : undefined;
+    }
+    if (at && typeof at === 'object') delete (at as Record<string, unknown>)[keys.at(-1)!];
+  }
+  return JSON.stringify(body);
 }
 
 const isJson = (s: string) => {

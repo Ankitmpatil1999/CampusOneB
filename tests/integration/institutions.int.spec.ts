@@ -67,8 +67,12 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
     return a;
   }
 
-  async function signedIn(surface: 'ops' | 'console', email: string) {
-    const base = surface === 'ops' ? '/api/v1/ops/auth' : '/api/v1/auth/console';
+  async function signedIn(surface: 'ops' | 'console' | 'portal', email: string) {
+    const base = {
+      ops: '/api/v1/ops/auth',
+      console: '/api/v1/auth/console',
+      portal: '/api/v1/portal/auth',
+    }[surface];
     const step1 = await request(app).post(`${base}/signin`).send({ email, password: PASSWORD });
     expect(step1.status).toBe(202);
     const r = await request(app)
@@ -108,6 +112,101 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
   }
 
   const detail = (id: string) => request(app).get(`/api/v1/ops/institutions/${id}`).set(ops);
+
+  /** ins.admin.passwordShownOnce: 1 makes the account with a temporary password, 0 waits for it. */
+  async function passwordShown(value: 0 | 1) {
+    const s = (await request(app).get('/api/v1/ops/settings').set(ops)).body.items.find(
+      (x: { key: string }) => x.key === 'ins.admin.passwordShownOnce',
+    );
+    const r = await request(app)
+      .put('/api/v1/ops/settings/ins.admin.passwordShownOnce')
+      .set(ops)
+      .set('If-Match', `"v${s.version}"`)
+      .send({ value, reason: 'Testing the administrator account paths' });
+    expect(r.status).toBe(200);
+  }
+
+  const newMobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
+
+  it('makes the administrator account with a temporary password shown once (client 2026-10-07)', async () => {
+    const email = `suma.${randomInt(0, 1e9)}@hps.example.in`;
+    const mobile = newMobile();
+    const key = randomUUID();
+    const tag = randomInt(0, 1e9);
+    const body = {
+      name: `Kodachadri Vidya Mandira ${tag}`,
+      address: `Temple Road ${tag}, Kollur, Karnataka 576220`,
+      city: 'Kollur',
+      primaryContact: { name: 'Suma Bhat', email, mobile },
+      adminEmail: email,
+    };
+    const send = () =>
+      request(app).post('/api/v1/ops/institutions').set(ops).set('Idempotency-Key', key).send(body);
+    const r = await send();
+    expect(r.status).toBe(201);
+    expect(r.body.administrator).toMatchObject({ email, pending: false, accountCreated: true });
+    const password = r.body.administrator.temporaryPassword as string;
+    expect(password).toMatch(/^.{10}@1$/);
+    // Never stored: a replay of the same request answers without it.
+    const again = await send();
+    expect(again.headers['idempotent-replayed']).toBe('true');
+    expect(again.body.administrator).toEqual({ email, pending: false, accountCreated: true });
+    const stored = await t.db
+      .selectFrom('idempotency_records')
+      .select('response_body')
+      .where('idempotency_key', '=', key)
+      .executeTakeFirstOrThrow();
+    expect(JSON.stringify(stored.response_body)).not.toContain(password);
+
+    const account = await t.db
+      .selectFrom('platform_accounts')
+      .select(['id', 'first_name', 'last_name', 'mobile'])
+      .where('email', '=', email)
+      .executeTakeFirstOrThrow();
+    expect(account).toMatchObject({ first_name: 'SUMA', last_name: 'BHAT', mobile });
+    expect((await detail(r.body.id)).body.administrator).toMatchObject({ email, pending: false });
+
+    // The temporary password signs in to the customer site and must be changed first.
+    const step1 = await request(app).post('/api/v1/portal/auth/signin').send({ email, password });
+    expect(step1.status).toBe(202);
+    const step2 = await request(app)
+      .post('/api/v1/portal/auth/otp/verify')
+      .send({ challengeId: step1.body.challengeId, otp: codeOf(h.sms.sent.at(-1)) });
+    expect(step2.status).toBe(200);
+    expect(step2.body).toMatchObject({ passwordChangeRequired: true });
+  });
+
+  it("asks for the new administrator's name and mobile, and refuses a mobile with an account", async () => {
+    const email = `office.${randomInt(0, 1e9)}@hps.example.in`;
+    const none = await register({ adminEmail: email });
+    expect(none.r.status).toBe(422);
+    expect(none.r.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
+      'adminMobile',
+      'adminName',
+    ]);
+    const someone = await account('MOHAN');
+    const mob = (
+      await t.db
+        .selectFrom('platform_accounts')
+        .select('mobile')
+        .where('id', '=', someone.id)
+        .executeTakeFirstOrThrow()
+    ).mobile;
+    const taken = await register({
+      adminEmail: email,
+      adminName: 'Office Admin',
+      adminMobile: mob,
+    });
+    expect(taken.r.status).toBe(409);
+    expect(taken.r.body.code).toBe('INS.ADMIN_MOBILE_TAKEN');
+    const ok = await register({
+      adminEmail: email,
+      adminName: 'Office Admin',
+      adminMobile: newMobile(),
+    });
+    expect(ok.r.status).toBe(201);
+    expect(ok.r.body.administrator.temporaryPassword).toBeTruthy();
+  });
 
   it('registers an institution in one transaction with its defaults (INS-002)', async () => {
     const plus = (await plans()).find((p: { code: string }) => p.code === 'PL-PLUS');
@@ -189,13 +288,69 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
     expect(taken.r.body).toMatchObject({ code: 'INS.ADMIN_IN_INSTITUTION' });
   });
 
-  it('refuses unknown or operator administrators and bad fields with the old messages', async () => {
-    const unknown = await register({ adminEmail: `nobody.${randomInt(0, 1e9)}@x.example.in` });
-    expect(unknown.r.status).toBe(422);
-    expect(unknown.r.body).toMatchObject({
-      code: 'INS.ADMIN_EMAIL_UNKNOWN',
-      detail: 'Admin email not registered in RingPe',
+  it('registers for an administrator without an account yet, who claims it on sign-in', async () => {
+    // Client 2026-10-06: the back office may register before the administrator's RingPe account
+    // exists; with the password setting off, the institution waits for the e-mail.
+    await passwordShown(0);
+    const email = `kavya.${randomInt(0, 1e9)}@hps.example.in`;
+    const mails = h.email.sent.length;
+    const { r } = await register({
+      adminEmail: email.toUpperCase(),
+      primaryContact: { name: 'Kavya Hegde', email, mobile: '9845012399' },
     });
+    expect(r.status).toBe(201);
+    expect(r.body.administrator).toEqual({ email, pending: true, accountCreated: false });
+    const welcome = h.email.sent.slice(mails).find((m) => m.to === email);
+    expect(welcome?.text ?? '').toContain('/portal/signup');
+    expect(welcome?.text ?? '').toContain('/portal/signin');
+    const d = await detail(r.body.id);
+    expect(d.body.administrator).toMatchObject({ email, pending: true });
+
+    // The same e-mail can't wait for a second institution.
+    const twice = await register({ adminEmail: email });
+    expect(twice.r.status).toBe(409);
+    expect(twice.r.body.code).toBe('INS.ADMIN_IN_INSTITUTION');
+
+    // The account made later with that e-mail: an unverified e-mail claims nothing.
+    const pub = newPublicIdPair();
+    const made = await t.db
+      .insertInto('platform_accounts')
+      .values({
+        public_id: pub.bin,
+        mobile: `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`,
+        email,
+        first_name: 'KAVYA',
+        last_name: 'HEGDE',
+      })
+      .executeTakeFirstOrThrow();
+    const accountId = String(made.insertId);
+    await t.db
+      .insertInto('account_credentials')
+      .values({ account_id: accountId, kind: 'PASSWORD', hash })
+      .execute();
+    const early = await request(app)
+      .post('/api/v1/portal/auth/signin')
+      .send({ email, password: PASSWORD });
+    expect(early.status).not.toBe(202);
+    expect((await detail(r.body.id)).body.administrator).toMatchObject({ pending: true });
+
+    // Verified, signing in links it; the customer site opens the institution while it is set up.
+    await t.db
+      .updateTable('platform_accounts')
+      .set({ email_verified_at: new Date() })
+      .where('id', '=', accountId)
+      .execute();
+    await signedIn('portal', email);
+    const linked = await detail(r.body.id);
+    expect(linked.body.administrator).toMatchObject({
+      email,
+      pending: false,
+      name: expect.stringMatching(/kavya/i),
+    });
+    await passwordShown(1);
+  });
+
+  it('refuses operator administrators and bad fields with the old messages', async () => {
     const op = await operator('SUPPORT_OFFICER');
     expect((await register({ adminEmail: op.email })).r.body).toMatchObject({
       code: 'INS.ADMIN_IS_OPERATOR',

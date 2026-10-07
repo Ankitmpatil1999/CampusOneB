@@ -8,6 +8,9 @@ import {
   goLiveSchema,
   portalPaymentSchema,
   portalPlanChangeSchema,
+  signupAccountSchema,
+  signupEmailCodeSchema,
+  signupEmailVerifySchema,
   signupOtpSchema,
   signupSchema,
   signupVerifySchema,
@@ -97,6 +100,20 @@ export function portalController(
       res.status(202).json({ ...out, expiresAt: out.expiresAt.toISOString() });
     }),
     signupVerify: json((req) => portal.signupVerify(signupVerifySchema.parse(req.body ?? {}))),
+    // A RingPe account made on the customer site, and its e-mail confirmed (client 2026-10-06).
+    signupAccount: wrap(async (req, res) => {
+      const out = await portal.createAccount(signupAccountSchema.parse(req.body ?? {}));
+      fresh(res);
+      res.status(201).json(out);
+    }),
+    signupEmailCode: wrap(async (req, res) => {
+      const out = await portal.emailCode(signupEmailCodeSchema.parse(req.body ?? {}));
+      fresh(res);
+      res.status(202).json({ ...out, expiresAt: out.expiresAt.toISOString() });
+    }),
+    signupEmailVerify: json((req) =>
+      portal.emailVerify(signupEmailVerifySchema.parse(req.body ?? {})),
+    ),
     signup: wrap(async (req, res) => {
       const out = await portal.signup(signupSchema.parse(req.body ?? {}), {
         ip: req.ip,

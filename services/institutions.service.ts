@@ -13,7 +13,7 @@
  * - Features: a feature outside the plan stays locked (FR-SAS-05); switching one off also switches
  *   off what needs it; every change is recorded with who, when and why (FR-INS-04).
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Kysely } from 'kysely';
 import {
   CHANNELS,
@@ -28,6 +28,7 @@ import {
   type ChannelKey,
   type ChecklistKey,
   type LifecycleAction,
+  type MessageKey,
 } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { MessageSender } from '../integrations/sms.provider';
@@ -45,6 +46,7 @@ import {
 } from '../utils/CustomAPIError';
 import type { FieldCipher } from '../utils/fieldEncryption';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
+import { hashSecret } from '../utils/password';
 import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
 import type { FileService } from './file.service';
@@ -87,6 +89,9 @@ export interface RegisterInput {
   readonly primaryContact: ContactInput;
   readonly secondaryContact?: ContactInput | undefined;
   readonly adminEmail: string;
+  /** For an e-mail without an account (client 2026-10-07); else the primary contact's. */
+  readonly adminName?: string | undefined;
+  readonly adminMobile?: string | undefined;
   readonly planId?: string | undefined;
 }
 
@@ -382,7 +387,11 @@ export class InstitutionsService {
       planRequests: requests,
       contacts,
       administrator: admin
-        ? { name: personName(admin.first_name, admin.last_name), email: admin.email }
+        ? {
+            name: personName(admin.first_name, admin.last_name),
+            email: admin.email,
+            pending: admin.pending,
+          }
         : null,
       members,
       checklist,
@@ -405,6 +414,45 @@ export class InstitutionsService {
   }
 
   // --- INS-002 ------------------------------------------------------------------------------------
+  /**
+   * The new administrator's account details: the name and mobile given, or the primary contact's
+   * when it is the same e-mail. A mobile that already has an account is refused — that account's
+   * e-mail is used instead (BR-01).
+   */
+  private async newAdministrator(input: RegisterInput, adminEmail: string) {
+    const primary = input.primaryContact.email.trim().toLowerCase() === adminEmail;
+    const name = input.adminName?.trim() || (primary ? input.primaryContact.name.trim() : '');
+    const mobile = input.adminMobile?.trim() || (primary ? input.primaryContact.mobile.trim() : '');
+    const errors: { field: string; code: MessageKey }[] = [];
+    if (!name) errors.push({ field: 'adminName', code: 'VALIDATION.REQUIRED' });
+    if (!mobile) errors.push({ field: 'adminMobile', code: 'VALIDATION.REQUIRED' });
+    if (errors.length) throw new ValidationError(errors);
+    const taken = await this.deps.db
+      .selectFrom('platform_accounts')
+      .select('id')
+      .where('mobile', '=', mobile)
+      .executeTakeFirst();
+    if (taken) {
+      throw new CustomAPIError(409, 'INS.ADMIN_MOBILE_TAKEN', {
+        errors: [{ field: 'adminMobile', code: 'INS.ADMIN_MOBILE_TAKEN' }],
+      });
+    }
+    const space = name.indexOf(' ');
+    return {
+      name,
+      mobile,
+      first: (space > 0 ? name.slice(0, space) : name).slice(0, 60).toUpperCase(),
+      last:
+        space > 0
+          ? name
+              .slice(space + 1)
+              .trim()
+              .slice(0, 60)
+              .toUpperCase()
+          : null,
+    };
+  }
+
   async register(p: Principal, input: RegisterInput) {
     const name = input.name.trim();
     const address = input.address.trim();
@@ -427,15 +475,33 @@ export class InstitutionsService {
       .select(['id', 'public_id', 'first_name', 'last_name', 'status'])
       .where('email', '=', adminEmail)
       .executeTakeFirst();
-    if (!admin || admin.status !== 'ACTIVE') {
+    // An e-mail without a RingPe account no longer stops registration (client 2026-10-06): the
+    // administrator profile waits for it and is linked once that person creates their account on
+    // the customer site and confirms the e-mail (claimPendingAdministrator).
+    if (admin && admin.status !== 'ACTIVE') {
       throw new CustomAPIError(422, 'INS.ADMIN_EMAIL_UNKNOWN');
     }
-    if (await repo.hasInstitutionProfile(this.deps.db, String(admin.id))) {
+    if (admin && (await repo.hasInstitutionProfile(this.deps.db, String(admin.id)))) {
       throw new CustomAPIError(409, 'INS.ADMIN_IN_INSTITUTION');
     }
-    if (await repo.isOperator(this.deps.db, String(admin.id))) {
+    if (admin && (await repo.isOperator(this.deps.db, String(admin.id)))) {
       throw new CustomAPIError(409, 'INS.ADMIN_IS_OPERATOR');
     }
+    if (!admin && (await repo.pendingAdministrator(this.deps.db, adminEmail))) {
+      // One institution per person (BR-01): an e-mail already waiting for another institution.
+      throw new CustomAPIError(409, 'INS.ADMIN_IN_INSTITUTION');
+    }
+    // E-mail is not integrated yet (client 2026-10-07): the account is made now with a temporary
+    // password shown once to the operator, changed at first sign-in (OI-IDN-20). With the setting
+    // off, the profile waits for the account to be made on the customer site (client 2026-10-06).
+    const newAdmin =
+      !admin && (await this.limit(LIMITS.institutionAdminPasswordShown)) === 1
+        ? await this.newAdministrator(input, adminEmail)
+        : null;
+    const temporaryPassword = newAdmin
+      ? `${randomBytes(9).toString('base64url').slice(0, 10)}@1`
+      : null;
+    const temporaryHash = temporaryPassword ? await hashSecret(temporaryPassword) : null;
     const plan = input.planId
       ? (await plansRepository.plans(this.deps.db)).find(
           (x) => isUuid(input.planId!) && binToUuid(x.public_id) === input.planId!.toLowerCase(),
@@ -449,7 +515,24 @@ export class InstitutionsService {
     const at = this.now();
     const inst = newPublicIdPair();
     const consent = await this.limit(LIMITS.feeConsentValidityMonths);
-    const adminName = personName(admin.first_name, admin.last_name) ?? adminEmail;
+    // The waiting administrator is named after the primary contact when it is the same e-mail.
+    const contactName =
+      input.primaryContact.email.trim().toLowerCase() === adminEmail
+        ? input.primaryContact.name.trim()
+        : null;
+    const space = contactName?.indexOf(' ') ?? -1;
+    const waiting = {
+      first: (contactName && space > 0
+        ? contactName.slice(0, space)
+        : (contactName ?? adminEmail.split('@')[0] ?? adminEmail)
+      ).slice(0, 60),
+      last: contactName && space > 0 ? contactName.slice(space + 1).slice(0, 60) : null,
+    };
+    const adminName = admin
+      ? (personName(admin.first_name, admin.last_name) ?? adminEmail)
+      : newAdmin
+        ? newAdmin.name
+        : (contactName ?? adminEmail);
     const out = await this.deps.db.transaction().execute(async (trx) => {
       const id = await repo.insert(trx, {
         publicId: inst.bin,
@@ -510,16 +593,51 @@ export class InstitutionsService {
           name: 'Administration',
         })
         .executeTakeFirstOrThrow();
+      let accountId = admin ? String(admin.id) : null;
+      if (newAdmin && temporaryHash) {
+        const acc = newPublicIdPair();
+        const made = await trx
+          .insertInto('platform_accounts')
+          .values({
+            public_id: acc.bin,
+            mobile: newAdmin.mobile,
+            email: adminEmail,
+            first_name: newAdmin.first,
+            last_name: newAdmin.last,
+            created_by: by,
+            updated_by: by,
+          })
+          .executeTakeFirstOrThrow();
+        accountId = String(made.insertId);
+        await trx
+          .insertInto('account_credentials')
+          .values({ account_id: accountId, kind: 'PASSWORD', hash: temporaryHash, must_change: 1 })
+          .execute();
+        await recordAudit(trx, {
+          institutionId: id,
+          action: 'ACCOUNT_CREATED',
+          entityType: 'platform_account',
+          entityRef: acc.id,
+          after: { email: adminEmail, via: 'institution registration', password: 'temporary' },
+        });
+      }
       const profile = await trx
         .insertInto('member_profiles')
         .values({
           public_id: newPublicIdPair().bin,
           institution_id: id,
-          account_id: String(admin.id),
+          account_id: accountId,
+          contact_email: accountId ? null : adminEmail,
           user_type_id: String(userType.insertId),
           department_id: String(dep.insertId),
-          first_name: admin.first_name ?? adminEmail,
-          last_name: admin.last_name,
+          first_name: admin
+            ? (admin.first_name ?? adminEmail)
+            : (newAdmin?.first ?? waiting.first.toUpperCase()),
+          last_name: admin
+            ? admin.last_name
+            : newAdmin
+              ? newAdmin.last
+              : (waiting.last?.toUpperCase() ?? null),
           employee_no: null,
           admission_no: null,
         })
@@ -564,16 +682,34 @@ export class InstitutionsService {
         entityRef: inst.id,
         after: { identifier, name, plan: plan?.code ?? null },
       });
-      return { id: inst.id, identifier, version: row.row_version };
+      return {
+        id: inst.id,
+        identifier,
+        version: row.row_version,
+        administrator: {
+          email: adminEmail,
+          pending: !accountId,
+          accountCreated: Boolean(newAdmin),
+          // Shown once: never stored, left out of an idempotent replay (the controller).
+          ...(temporaryPassword ? { temporaryPassword } : {}),
+        },
+      };
     });
 
     if (this.deps.email) {
-      const link = `${this.deps.webUrl ?? 'http://localhost:4200'}/console/signin`;
+      const web = this.deps.webUrl ?? 'http://localhost:4200';
+      const link = `${web}/console/signin`;
+      // Without an account yet: create it on the customer site with this e-mail first.
+      const next = admin
+        ? `Sign in to the console: ${link}`
+        : newAdmin
+          ? `Your RingPe account has been created for this e-mail address. Sign in to the customer site with it and the temporary password RingPe gave you: ${web}/portal/signin — you'll choose your own password at first sign-in. Once it is live, sign in to the console: ${link}`
+          : `Create your RingPe account on the customer site with this e-mail address: ${web}/portal/signup\nYou become the administrator of ${name} once the e-mail is confirmed. Then sign in to the customer site while it is being set up: ${web}/portal/signin\nOnce it is live, sign in to the console: ${link}`;
       await this.deps.email
         .send({
           to: adminEmail,
           purpose: 'institution.registered',
-          text: `${renderMessage('INS.REGISTERED_EMAIL_SUBJECT', { name })}\n\n${name}\n${address}\nOrganization ID: ${out.identifier}\nSign in to the console: ${link}`,
+          text: `${renderMessage('INS.REGISTERED_EMAIL_SUBJECT', { name })}\n\n${name}\n${address}\nOrganization ID: ${out.identifier}\n${next}`,
         })
         .catch((e: unknown) =>
           this.deps.loggers.app.warn('institution.welcome_email_failed', { error: String(e) }),
@@ -1181,7 +1317,11 @@ export class InstitutionsService {
       status: row.status,
       contacts,
       administrator: admin
-        ? { name: personName(admin.first_name, admin.last_name), email: admin.email }
+        ? {
+            name: personName(admin.first_name, admin.last_name),
+            email: admin.email,
+            pending: admin.pending,
+          }
         : null,
       corporateCode: row.corporate_code,
       consentValidityMonths: settings?.consent_validity_months ?? 3,

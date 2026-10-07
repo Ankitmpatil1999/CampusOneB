@@ -53,14 +53,42 @@ export const registerSchema = z
     primaryContact: contact('PRIMARY'),
     secondaryContact: contact('SECONDARY').optional(),
     adminEmail: email('INS.ADMIN_EMAIL_FORMAT').describe(
-      'E-mail of an existing platform account that belongs to no institution (RNG-ONB-034)',
+      'The administrator: an existing RingPe account in no institution, or a new e-mail (client 2026-10-06/07)',
     ),
+    adminName: z
+      .string()
+      .trim()
+      .max(60, { message: 'VALIDATION.FORMAT' })
+      .regex(/^[A-Za-z][A-Za-z .'-]*$/, { message: 'IDN.NAME_LETTERS_ONLY' })
+      .optional()
+      .describe("For a new e-mail; the primary contact's name when it is the same e-mail"),
+    adminMobile: z
+      .string()
+      .trim()
+      .regex(PATTERNS.mobile, { message: 'VALIDATION.MOBILE' })
+      .optional()
+      .describe("For a new e-mail; the primary contact's mobile when it is the same e-mail"),
     planId: z.uuid({ message: 'VALIDATION.FORMAT' }).optional().describe('Can be chosen later'),
   })
   .meta({ id: 'InstitutionRegister' });
 
 export const registeredSchema = z
-  .object({ id: z.uuid(), identifier: z.string(), version: z.number().int() })
+  .object({
+    id: z.uuid(),
+    identifier: z.string(),
+    version: z.number().int(),
+    administrator: z.object({
+      email: z.string(),
+      pending: z.boolean().describe('Waits for the account to be made on the customer site'),
+      accountCreated: z.boolean().describe('A new RingPe account was made for the e-mail'),
+      temporaryPassword: z
+        .string()
+        .optional()
+        .describe(
+          'Shown once (setting ins.admin.passwordShownOnce; never stored, not in a replay); changed at first sign-in',
+        ),
+    }),
+  })
   .meta({ id: 'InstitutionRegistered' });
 
 const detailsFields = {

@@ -17,6 +17,7 @@ import type { Loggers } from '../controllers/logger';
 import type { Database } from '../models/ringpe_models';
 import { accessRepository } from '../repositories/access.repository';
 import { accountRepository } from '../repositories/account.repository';
+import { institutionsRepository } from '../repositories/institutions.repository';
 import { otpRepository } from '../repositories/otp.repository';
 import type { MessageSender } from '../integrations/sms.provider';
 import { BadRequestError, CustomAPIError, ValidationError } from '../utils/CustomAPIError';
@@ -156,6 +157,30 @@ export class StaffAuthService {
       });
     }
     await accountRepository.resetFailures(this.deps.db, account.id);
+    // An institution the back office registered for this (verified) e-mail before the account
+    // existed: the account becomes its administrator now (client 2026-10-06).
+    if (
+      surface !== 'ops' &&
+      account.status === 'ACTIVE' &&
+      account.email &&
+      account.email_verified_at
+    ) {
+      const joined = await institutionsRepository.claimPendingAdministrator(this.deps.db, {
+        id: String(account.id),
+        email: account.email,
+        firstName: account.first_name,
+        lastName: account.last_name,
+      });
+      if (joined) {
+        await recordAudit(this.deps.db, {
+          institutionId: String(joined.institution_id),
+          action: 'ADMINISTRATOR_LINKED',
+          entityType: 'institution',
+          entityRef: binToUuid(joined.public_id),
+          after: { email: account.email, via: 'console sign-in' },
+        });
+      }
+    }
     if (account.status !== 'ACTIVE' || !(await this.eligible(surface, account.id))) {
       this.deps.loggers.security.warn('auth.staff_signin_refused', {
         surface,

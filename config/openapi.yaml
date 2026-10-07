@@ -16737,10 +16737,97 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/PortalSignup"
+  /api/v1/portal/signup/account:
+    post:
+      operationId: SAS-051
+      summary: "Sign-up for a number without an account: the administrator's RingPe account (name, e-mail, password) for the verified mobile (client 2026-10-06); e-mail must be unused"
+      tags:
+        - Customer portal
+      x-ringpe-auth: public (sign-up token)
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSignupVerified"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortalSignupAccount"
+  /api/v1/portal/signup/email-code:
+    post:
+      operationId: SAS-052
+      summary: A code to the account's e-mail, confirming it before an institution registered in the back office is linked
+      tags:
+        - Customer portal
+      x-ringpe-auth: public (sign-up token)
+      responses:
+        "202":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeChallenge"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortalSignupEmailCode"
+  /api/v1/portal/signup/email-code/verify:
+    post:
+      operationId: SAS-053
+      summary: The e-mail confirmed; an institution the back office registered for it gets this account as its administrator (joined) — otherwise sign-up continues
+      tags:
+        - Customer portal
+      x-ringpe-auth: public (sign-up token)
+      responses:
+        "200":
+          description: Confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalSignupEmailVerified"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortalSignupEmailVerify"
   /api/v1/portal/signup/otp:
     post:
       operationId: SAS-002
-      summary: "Sign-up step 1: the administrator's own RingPe account by its mobile; a 4-digit code by SMS. Refused when no account uses the number or it already belongs to an institution (BR-01), without naming it"
+      summary: "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a RingPe account may sign up here (newAccount; client 2026-10-06); refused when the account already belongs to an institution (BR-01), without naming it"
       tags:
         - Customer portal
       x-ringpe-auth: public
@@ -31060,7 +31147,16 @@ components:
           minLength: 1
           maxLength: 254
           pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
-          description: E-mail of an existing platform account that belongs to no institution (RNG-ONB-034)
+          description: "The administrator: an existing RingPe account in no institution, or a new e-mail (client 2026-10-06/07)"
+        adminName:
+          description: For a new e-mail; the primary contact's name when it is the same e-mail
+          type: string
+          maxLength: 60
+          pattern: ^[A-Za-z][A-Za-z .'-]*$
+        adminMobile:
+          description: For a new e-mail; the primary contact's mobile when it is the same e-mail
+          type: string
+          pattern: ^[6-9]\d{9}$
         planId:
           description: Can be chosen later
           type: string
@@ -31086,10 +31182,30 @@ components:
           type: integer
           minimum: -9007199254740991
           maximum: 9007199254740991
+        administrator:
+          type: object
+          properties:
+            email:
+              type: string
+            pending:
+              type: boolean
+              description: Waits for the account to be made on the customer site
+            accountCreated:
+              type: boolean
+              description: A new RingPe account was made for the e-mail
+            temporaryPassword:
+              description: Shown once (setting ins.admin.passwordShownOnce; never stored, not in a replay); changed at first sign-in
+              type: string
+          required:
+            - email
+            - pending
+            - accountCreated
+          additionalProperties: false
       required:
         - id
         - identifier
         - version
+        - administrator
       additionalProperties: false
     InstitutionVersion:
       type: object
@@ -39374,6 +39490,87 @@ components:
         - start
         - accept
       additionalProperties: false
+    PortalSignupAccount:
+      type: object
+      properties:
+        signupToken:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 60
+          pattern: ^[A-Za-z][A-Za-z .'-]*$
+        lastName:
+          anyOf:
+            - type: string
+              maxLength: 60
+            - type: "null"
+        email:
+          type: string
+          maxLength: 254
+          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+        password:
+          type: string
+          maxLength: 128
+      required:
+        - signupToken
+        - firstName
+        - email
+        - password
+      additionalProperties: false
+    PortalSignupEmailCode:
+      type: object
+      properties:
+        signupToken:
+          type: string
+          minLength: 1
+          maxLength: 2000
+      required:
+        - signupToken
+      additionalProperties: false
+    PortalSignupEmailVerified:
+      type: object
+      properties:
+        emailVerified:
+          type: boolean
+        joined:
+          anyOf:
+            - type: object
+              properties:
+                institution:
+                  type: string
+                identifier:
+                  type: string
+              required:
+                - institution
+                - identifier
+              additionalProperties: false
+            - type: "null"
+      required:
+        - emailVerified
+        - joined
+      additionalProperties: false
+    PortalSignupEmailVerify:
+      type: object
+      properties:
+        signupToken:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        challengeId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        otp:
+          type: string
+          pattern: ^\d{4,8}$
+      required:
+        - signupToken
+        - challengeId
+        - otp
+      additionalProperties: false
     PortalSignupOtp:
       type: object
       properties:
@@ -39390,26 +39587,36 @@ components:
           type: string
         expiresAt:
           type: string
+        newAccount:
+          type: boolean
+          description: "A number without a RingPe account: create it next (SAS-051)"
         account:
-          type: object
-          properties:
-            name:
-              type: string
-            email:
-              type:
-                - string
-                - "null"
-            mobile:
-              type: string
-          required:
-            - name
-            - email
-            - mobile
-          additionalProperties: false
+          anyOf:
+            - type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type:
+                    - string
+                    - "null"
+                mobile:
+                  type: string
+              required:
+                - name
+                - email
+                - mobile
+              additionalProperties: false
+            - type: "null"
+        invited:
+          type: boolean
+          description: An institution registered in the back office waits for this e-mail (SAS-052/053)
       required:
         - signupToken
         - expiresAt
+        - newAccount
         - account
+        - invited
       additionalProperties: false
     PortalSignupVerify:
       type: object
@@ -39421,6 +39628,9 @@ components:
         otp:
           type: string
           pattern: ^\d{4,8}$
+        mobile:
+          type: string
+          pattern: ^[6-9]\d{9}$
       required:
         - challengeId
         - otp

@@ -14,6 +14,8 @@ export type FlowPurpose =
   | 'email-change'
   | 'staff-password-reset'
   | 'portal-signup'
+  // A verified mobile without an account, before its account is made on the customer site.
+  | 'portal-signup-new'
   | 'admission-resume'
   | 'admission-pay'
   | 'admission-otp';

@@ -29,6 +29,10 @@ import {
   portalPlanChangeSchema,
   portalPlansSchema,
   signedUpSchema,
+  signupAccountSchema,
+  signupEmailCodeSchema,
+  signupEmailVerifiedSchema,
+  signupEmailVerifySchema,
   signupOtpSchema,
   signupSchema,
   signupVerifiedSchema,
@@ -57,7 +61,7 @@ doc({
   method: 'post',
   path: `${p}/signup/otp`,
   summary:
-    "Sign-up step 1: the administrator's own RingPe account by its mobile; a 4-digit code by SMS. Refused when no account uses the number or it already belongs to an institution (BR-01), without naming it",
+    "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a RingPe account may sign up here (newAccount; client 2026-10-06); refused when the account already belongs to an institution (BR-01), without naming it",
   auth: 'public',
   request: signupOtpSchema,
   responses: { 202: { description: 'Code sent', schema: challengeSchema } },
@@ -70,6 +74,36 @@ doc({
   auth: 'public',
   request: signupVerifySchema,
   responses: { 200: { description: 'Verified', schema: signupVerifiedSchema } },
+});
+doc({
+  id: 'SAS-051',
+  method: 'post',
+  path: `${p}/signup/account`,
+  summary:
+    "Sign-up for a number without an account: the administrator's RingPe account (name, e-mail, password) for the verified mobile (client 2026-10-06); e-mail must be unused",
+  auth: 'public (sign-up token)',
+  request: signupAccountSchema,
+  responses: { 201: { description: 'Account created', schema: signupVerifiedSchema } },
+});
+doc({
+  id: 'SAS-052',
+  method: 'post',
+  path: `${p}/signup/email-code`,
+  summary:
+    "A code to the account's e-mail, confirming it before an institution registered in the back office is linked",
+  auth: 'public (sign-up token)',
+  request: signupEmailCodeSchema,
+  responses: { 202: { description: 'Code sent', schema: challengeSchema } },
+});
+doc({
+  id: 'SAS-053',
+  method: 'post',
+  path: `${p}/signup/email-code/verify`,
+  summary:
+    'The e-mail confirmed; an institution the back office registered for it gets this account as its administrator (joined) — otherwise sign-up continues',
+  auth: 'public (sign-up token)',
+  request: signupEmailVerifySchema,
+  responses: { 200: { description: 'Confirmed', schema: signupEmailVerifiedSchema } },
 });
 doc({
   id: 'SAS-004',
@@ -294,6 +328,9 @@ export function portalRoutes(deps: {
   router.get('/portal/plans', c.plans);
   router.post('/portal/signup/otp', limit, c.signupOtp);
   router.post('/portal/signup/otp/verify', limit, c.signupVerify);
+  router.post('/portal/signup/account', limit, c.signupAccount);
+  router.post('/portal/signup/email-code', limit, c.signupEmailCode);
+  router.post('/portal/signup/email-code/verify', limit, c.signupEmailVerify);
   router.post('/portal/signup', limit, c.signup);
 
   router.get('/portal/account', ...sess, c.account);

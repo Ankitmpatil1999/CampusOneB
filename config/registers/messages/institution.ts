@@ -105,6 +105,12 @@ export const INSTITUTION_MESSAGES = [
     'BR-01',
   ]),
   n(
+    'INS.ADMIN_MOBILE_TAKEN',
+    409,
+    "This mobile number already has a RingPe account. Use that account's e-mail as the administrator's e-mail, or another mobile number.",
+    ['RNG-ONB-034', 'BR-01', 'client 2026-10-07'],
+  ),
+  n(
     'INS.ADMIN_IS_OPERATOR',
     409,
     'This account holds a RingPe operator role. An institution administrator needs an account without one (OI-GOV-01).',

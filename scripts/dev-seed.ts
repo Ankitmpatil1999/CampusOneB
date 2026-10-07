@@ -103,6 +103,52 @@ const STAFF = [
     emp: 'EMP0003',
     role: 'MANAGEMENT',
   },
+  // One sample user for each remaining console role, to try each role's pages (client 2026-10-06).
+  {
+    first: 'Anitha',
+    last: 'Rao',
+    email: 'counsellor@tvps.example.in',
+    mobile: '9845011204',
+    type: 'Counsellor',
+    emp: 'EMP0004',
+    role: 'COUNSELLOR',
+  },
+  {
+    first: 'Suresh',
+    last: 'Bhat',
+    email: 'coordinator@tvps.example.in',
+    mobile: '9845011205',
+    type: 'Coordinator',
+    emp: 'EMP0005',
+    role: 'ACADEMIC_COORDINATOR',
+  },
+  {
+    first: 'Naveen',
+    last: 'Gowda',
+    email: 'transport@tvps.example.in',
+    mobile: '9845011206',
+    type: 'Transport administrator',
+    emp: 'EMP0006',
+    role: 'TRANSPORT_ADMIN',
+  },
+  {
+    first: 'Meera',
+    last: 'Kamath',
+    email: 'grievances@tvps.example.in',
+    mobile: '9845011207',
+    type: 'Staff',
+    emp: 'EMP0007',
+    role: 'GRIEVANCE_OFFICER',
+  },
+  {
+    first: 'Rajesh',
+    last: 'Pai',
+    email: 'frontdesk@tvps.example.in',
+    mobile: '9845011208',
+    type: 'Staff',
+    emp: 'EMP0008',
+    role: 'FRONT_DESK',
+  },
 ] as const;
 const OPERATORS = [
   {

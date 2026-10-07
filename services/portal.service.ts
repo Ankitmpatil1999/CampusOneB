@@ -12,8 +12,15 @@
  * - The fee-account step records the account the institution names (masked); the merchant that
  *   receives fees is created with the fees module (Phase 4/5).
  */
+import { createHash } from 'node:crypto';
 import type { Kysely } from 'kysely';
-import { CHECKLIST, FEATURES, LIMITS, type ChecklistKey } from '../config/registers';
+import {
+  CHECKLIST,
+  FEATURES,
+  LIMITS,
+  type ChecklistKey,
+  type MessageKey,
+} from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { Database } from '../models/ringpe_models';
 import { institutionsRepository as repo } from '../repositories/institutions.repository';
@@ -37,7 +44,9 @@ import {
 } from '../utils/CustomAPIError';
 import type { FlowTokens } from '../utils/flow-tokens';
 import { IFSC_PATTERN } from '../utils/gst';
-import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
+import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
+import { hashSecret } from '../utils/password';
+import { PATTERNS, isValidPassword } from '../utils/validators';
 import type { Principal } from '../utils/principal';
 
 export const TERMS_VERSION = '2026-10';
@@ -143,16 +152,20 @@ export class PortalService {
     };
   }
 
-  // --- SAS-002 / SAS-003 --------------------------------------------------------------------------
+  // --- SAS-002 / SAS-003 / SAS-051…053 ---------------------------------------------------------------
+  /**
+   * The RingPe account of a mobile number, if any. A number without an account may sign up here
+   * (client 2026-10-06: the account no longer has to come from the app first); an account that
+   * already belongs to an institution or the back office is refused (BR-01).
+   */
   private async signupAccount(mobile: string) {
     const account = await this.deps.db
       .selectFrom('platform_accounts')
       .select(['id', 'public_id', 'first_name', 'last_name', 'email', 'mobile', 'status'])
       .where('mobile', '=', mobile)
       .executeTakeFirst();
-    if (!account || account.status !== 'ACTIVE') {
-      throw new CustomAPIError(404, 'SAS.SIGNUP_NO_ACCOUNT');
-    }
+    if (!account) return null;
+    if (account.status !== 'ACTIVE') throw new CustomAPIError(404, 'SAS.SIGNUP_NO_ACCOUNT');
     const busy =
       (await repo.hasInstitutionProfile(this.deps.db, String(account.id))) ||
       (await repo.isOperator(this.deps.db, String(account.id)));
@@ -160,29 +173,31 @@ export class PortalService {
     return account;
   }
 
-  /** The administrator's RingPe account: a code goes to its mobile. */
+  /** The administrator's mobile (an existing RingPe account or a new one): a code by SMS. */
   async signupOtp(input: { mobile: string }) {
     const account = await this.signupAccount(input.mobile);
     const challenge = await this.deps.otp.issue({
       purpose: 'PORTAL_SIGNUP',
       channel: 'SMS',
-      destination: account.mobile,
-      accountId: String(account.id),
+      destination: input.mobile,
+      ...(account ? { accountId: String(account.id) } : {}),
       reuseLive: true,
     });
-    return challenge;
+    return { ...challenge, newAccount: !account };
   }
 
-  async signupVerify(input: { challengeId: string; otp: string }) {
-    const v = await this.deps.otp.verify(input.challengeId, input.otp, 'PORTAL_SIGNUP');
-    if (!v.accountId) throw new CustomAPIError(401, 'SAS.SIGNUP_EXPIRED');
-    const account = await this.deps.db
-      .selectFrom('platform_accounts')
-      .select(['id', 'public_id', 'first_name', 'last_name', 'email', 'mobile'])
-      .where('id', '=', v.accountId)
-      .executeTakeFirstOrThrow();
-    // The account may have joined an institution in the meantime.
-    await this.signupAccount(account.mobile);
+  /** Whether an institution registered in the back office waits for this e-mail's account. */
+  private async invited(email: string | null) {
+    return email ? Boolean(await repo.pendingAdministrator(this.deps.db, email)) : false;
+  }
+
+  private async accountToken(account: {
+    public_id: Buffer;
+    first_name: string;
+    last_name: string | null;
+    email: string | null;
+    mobile: string;
+  }) {
     const { token, expiresAt } = await this.deps.flows.issue(
       'portal-signup',
       { acc: binToUuid(account.public_id) },
@@ -191,11 +206,216 @@ export class PortalService {
     return {
       signupToken: token,
       expiresAt: expiresAt.toISOString(),
+      newAccount: false,
       account: {
         name: personName(account.first_name, account.last_name),
         email: account.email,
         mobile: maskMobile(account.mobile),
       },
+      // An institution waits for this e-mail: confirming it makes the account its administrator.
+      invited: await this.invited(account.email),
+    };
+  }
+
+  async signupVerify(input: { challengeId: string; otp: string; mobile?: string | undefined }) {
+    const v = await this.deps.otp.verify(input.challengeId, input.otp, 'PORTAL_SIGNUP');
+    if (!v.accountId) {
+      // A number without an account: the next step creates it (SAS-051).
+      const mobile = input.mobile ?? '';
+      const same =
+        PATTERNS.mobile.test(mobile) &&
+        this.deps.otp.destinationHash('SMS', mobile).equals(v.destinationHash);
+      if (!same) throw new CustomAPIError(401, 'SAS.SIGNUP_EXPIRED');
+      if (await this.signupAccount(mobile)) throw new ConflictError('IDN.ACCOUNT_EXISTS');
+      const { token, expiresAt } = await this.deps.flows.issue(
+        'portal-signup-new',
+        { mob: mobile },
+        30 * 60,
+      );
+      return {
+        signupToken: token,
+        expiresAt: expiresAt.toISOString(),
+        newAccount: true,
+        account: null,
+        invited: false,
+      };
+    }
+    const account = await this.deps.db
+      .selectFrom('platform_accounts')
+      .select(['id', 'public_id', 'first_name', 'last_name', 'email', 'mobile'])
+      .where('id', '=', v.accountId)
+      .executeTakeFirstOrThrow();
+    // The account may have joined an institution in the meantime.
+    await this.signupAccount(account.mobile);
+    return this.accountToken(account);
+  }
+
+  /**
+   * SAS-051: the administrator's RingPe account made on the customer site — name, e-mail and
+   * password for the verified mobile (client 2026-10-06). The app's identity details stay optional.
+   */
+  async createAccount(input: {
+    signupToken: string;
+    firstName: string;
+    lastName?: string | null | undefined;
+    email: string;
+    password: string;
+  }) {
+    const claims = await this.deps.flows.verify('portal-signup-new', input.signupToken);
+    const mobile = claims?.['mob'];
+    if (typeof mobile !== 'string' || !PATTERNS.mobile.test(mobile)) {
+      throw new CustomAPIError(401, 'SAS.SIGNUP_EXPIRED');
+    }
+    const errors: { field: string; code: MessageKey; params?: Record<string, number> }[] = [];
+    const first = input.firstName.trim();
+    const last = (input.lastName ?? '').trim();
+    if (!PATTERNS.personName.test(first) || first.length > 60) {
+      errors.push({ field: 'firstName', code: 'VALIDATION.FORMAT' });
+    }
+    if (last && (!PATTERNS.personName.test(last) || last.length > 60)) {
+      errors.push({ field: 'lastName', code: 'VALIDATION.FORMAT' });
+    }
+    const email = input.email.trim().toLowerCase();
+    if (email.length > 254 || !PATTERNS.email.test(email)) {
+      errors.push({ field: 'email', code: 'VALIDATION.EMAIL' });
+    }
+    const policy = {
+      minLength: await this.limit(LIMITS.passwordMinLength),
+      maxLength: await this.limit(LIMITS.passwordMaxLength),
+    };
+    if (!isValidPassword(input.password, policy)) {
+      errors.push({
+        field: 'password',
+        code: 'VALIDATION.PASSWORD',
+        params: { min: policy.minLength, max: policy.maxLength },
+      });
+    }
+    if (!errors.length) {
+      const taken = await this.deps.db
+        .selectFrom('platform_accounts')
+        .select('id')
+        .where('email', '=', email)
+        .executeTakeFirst();
+      if (taken) errors.push({ field: 'email', code: 'IDN.EMAIL_TAKEN' });
+    }
+    if (errors.length) throw new ValidationError(errors);
+    if (await this.signupAccount(mobile)) throw new ConflictError('IDN.ACCOUNT_EXISTS');
+    const pub = newPublicIdPair();
+    const hash = await hashSecret(input.password);
+    const firstName = first.toUpperCase();
+    const lastName = last ? last.toUpperCase() : null;
+    try {
+      await this.deps.db.transaction().execute(async (trx) => {
+        const r = await trx
+          .insertInto('platform_accounts')
+          .values({
+            public_id: pub.bin,
+            mobile,
+            email,
+            first_name: firstName,
+            last_name: lastName,
+            preferred_lang: 'en',
+            created_by: pub.bin,
+            updated_by: pub.bin,
+          })
+          .executeTakeFirstOrThrow();
+        await trx
+          .insertInto('account_credentials')
+          .values({ account_id: String(r.insertId), kind: 'PASSWORD', hash })
+          .execute();
+        await recordAudit(trx, {
+          action: 'ACCOUNT_CREATED',
+          entityType: 'platform_account',
+          entityRef: pub.id,
+          after: { mobile, email, via: 'customer site' },
+          actor: { type: 'portal', ref: pub.id },
+        });
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === 'ER_DUP_ENTRY') {
+        throw new ConflictError('IDN.ACCOUNT_EXISTS');
+      }
+      throw e;
+    }
+    return this.accountToken({
+      public_id: pub.bin,
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      mobile,
+    });
+  }
+
+  private emailContext(accountPublicId: string) {
+    return createHash('sha256').update(`portal-admin-email:${accountPublicId}`).digest();
+  }
+
+  private async tokenAccount(signupToken: string) {
+    const claims = await this.deps.flows.verify('portal-signup', signupToken);
+    const acc = claims?.['acc'];
+    if (typeof acc !== 'string' || !isUuid(acc)) {
+      throw new CustomAPIError(401, 'SAS.SIGNUP_EXPIRED');
+    }
+    const account = await this.deps.db
+      .selectFrom('platform_accounts')
+      .select(['id', 'first_name', 'last_name', 'email', 'status'])
+      .where('public_id', '=', uuidToBin(acc))
+      .executeTakeFirst();
+    if (!account?.email || account.status !== 'ACTIVE') {
+      throw new CustomAPIError(401, 'SAS.SIGNUP_EXPIRED');
+    }
+    return { ...account, email: account.email, publicId: acc };
+  }
+
+  /** SAS-052: a code to the account's e-mail, to confirm it before an institution is linked. */
+  async emailCode(input: { signupToken: string }) {
+    const a = await this.tokenAccount(input.signupToken);
+    return this.deps.otp.issue({
+      purpose: 'PORTAL_SIGNUP',
+      channel: 'EMAIL',
+      destination: a.email,
+      accountId: String(a.id),
+      contextHash: this.emailContext(a.publicId),
+      reuseLive: true,
+    });
+  }
+
+  /**
+   * SAS-053: the e-mail is confirmed; an institution the back office registered for it gets this
+   * account as its administrator (the console sign-in then opens it). Otherwise sign-up goes on.
+   */
+  async emailVerify(input: { signupToken: string; challengeId: string; otp: string }) {
+    const a = await this.tokenAccount(input.signupToken);
+    const v = await this.deps.otp.verify(input.challengeId, input.otp, 'PORTAL_SIGNUP', {
+      contextHash: this.emailContext(a.publicId),
+    });
+    if (v.accountId !== String(a.id)) throw new CustomAPIError(401, 'SAS.SIGNUP_EXPIRED');
+    const joined = await this.deps.db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('platform_accounts')
+        .set({ email_verified_at: this.now() })
+        .where('id', '=', String(a.id))
+        .execute();
+      return repo.claimPendingAdministrator(trx, {
+        id: String(a.id),
+        email: a.email,
+        firstName: a.first_name,
+        lastName: a.last_name,
+      });
+    });
+    if (joined) {
+      await recordAudit(this.deps.db, {
+        institutionId: String(joined.institution_id),
+        action: 'ADMINISTRATOR_LINKED',
+        entityType: 'institution',
+        entityRef: binToUuid(joined.public_id),
+        after: { email: a.email, via: 'customer site' },
+        actor: { type: 'portal', ref: a.publicId },
+      });
+    }
+    return {
+      emailVerified: true,
+      joined: joined ? { institution: joined.name, identifier: joined.identifier } : null,
     };
   }
 

@@ -15,7 +15,7 @@ import { englishBundle } from '../config/registers';
 
 const BACKEND = join(import.meta.dirname, '..');
 const REPO = join(BACKEND, '..');
-const WEB = join(REPO, 'RingPe_Web_Application');
+const WEB = join(REPO, 'RingPe_Web_App');
 const MOBILE = join(REPO, 'RingPe_Mobile_App');
 
 interface Location {

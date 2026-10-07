@@ -60,14 +60,54 @@ export const signupVerifySchema = z
     otp: z.string({ message: 'VALIDATION.REQUIRED' }).regex(/^\d{4,8}$/, {
       message: 'AUTH.OTP_INVALID',
     }),
+    /** The mobile the code went to, for a number without an account (client 2026-10-06). */
+    mobile: mobile.optional(),
   })
   .meta({ id: 'PortalSignupVerify' });
+
+const signupToken = z.string({ message: 'SAS.SIGNUP_EXPIRED' }).min(1).max(2000);
+const code = z
+  .string({ message: 'VALIDATION.REQUIRED' })
+  .regex(/^\d{4,8}$/, { message: 'AUTH.OTP_INVALID' });
+
+/** SAS-051: the administrator's RingPe account made on the customer site. */
+export const signupAccountSchema = z
+  .strictObject({
+    signupToken,
+    firstName: person,
+    lastName: z.string().trim().max(60, { message: 'VALIDATION.FORMAT' }).nullable().optional(),
+    email,
+    password: z
+      .string({ message: 'VALIDATION.REQUIRED' })
+      .max(128, { message: 'VALIDATION.PASSWORD' }),
+  })
+  .meta({ id: 'PortalSignupAccount' });
+
+/** SAS-052 / SAS-053: the account's e-mail confirmed with a code. */
+export const signupEmailCodeSchema = z
+  .strictObject({ signupToken })
+  .meta({ id: 'PortalSignupEmailCode' });
+export const signupEmailVerifySchema = z
+  .strictObject({ signupToken, challengeId: z.uuid({ message: 'AUTH.OTP_INVALID' }), otp: code })
+  .meta({ id: 'PortalSignupEmailVerify' });
+export const signupEmailVerifiedSchema = z
+  .object({
+    emailVerified: z.boolean(),
+    joined: z.object({ institution: z.string(), identifier: z.string() }).nullable(),
+  })
+  .meta({ id: 'PortalSignupEmailVerified' });
 
 export const signupVerifiedSchema = z
   .object({
     signupToken: z.string(),
     expiresAt: z.string(),
-    account: z.object({ name: z.string(), email: z.string().nullable(), mobile: z.string() }),
+    newAccount: z.boolean().describe('A number without a RingPe account: create it next (SAS-051)'),
+    account: z
+      .object({ name: z.string(), email: z.string().nullable(), mobile: z.string() })
+      .nullable(),
+    invited: z
+      .boolean()
+      .describe('An institution registered in the back office waits for this e-mail (SAS-052/053)'),
   })
   .meta({ id: 'PortalSignupVerified' });
 

@@ -1,6 +1,6 @@
 /**
  * Shared file. The master is RingPe_Backend_API/utils/validators/patterns.ts; identical copies live
- * in RingPe_Web_Application/src/components/Utils/ and RingPe_Mobile_App/src/utils/ so the apps check
+ * in RingPe_Web_App/src/components/Utils/ and RingPe_Mobile_App/src/utils/ so the apps check
  * a field with the same rule the server applies. Edit the master, then run `npm run shared:sync`.
  *
  * Field patterns from SRS v2.1 27.4 §5 (Global Application Standards) and §6.

@@ -69,8 +69,8 @@ The three projects are independent, like the reference projects, but a few rules
 
 | Master | Copies |
 | --- | --- |
-| `utils/money.ts`, `utils/format.ts`, `utils/translate.ts` | `RingPe_Web_Application/src/components/Utils/`, `RingPe_Mobile_App/src/utils/` |
+| `utils/money.ts`, `utils/format.ts`, `utils/translate.ts` | `RingPe_Web_App/src/components/Utils/`, `RingPe_Mobile_App/src/utils/` |
 | `utils/messages.en.ts` (generated from `config/registers`) | same |
-| `RingPe_Web_Application/src/theme/tokens.ts` (design tokens) | `RingPe_Mobile_App/src/theme/` |
+| `RingPe_Web_App/src/theme/tokens.ts` (design tokens) | `RingPe_Mobile_App/src/theme/` |
 
 Edit the master, then run `npm run shared:sync`. `npm run shared:check` (run in CI) fails when a copy has drifted.

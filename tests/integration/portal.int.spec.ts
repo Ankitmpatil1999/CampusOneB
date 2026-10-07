@@ -120,15 +120,142 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
 
   const once = () => ({ 'Idempotency-Key': randomUUID() });
 
-  it('lists the plans publicly and refuses numbers without a free account', async () => {
+  it('lists the plans publicly', async () => {
     const plans = await request(app).get('/api/v1/portal/plans');
     expect(plans.status).toBe(200);
     expect(plans.body.items.length).toBeGreaterThan(0);
     expect(plans.body.items[0]).not.toHaveProperty('institutions');
     expect(plans.body).toMatchObject({ graceDays: 14, dueDays: 15 });
-    const none = await request(app).post('/api/v1/portal/signup/otp').send({ mobile: mobile() });
-    expect(none.status).toBe(404);
-    expect(none.body.code).toBe('SAS.SIGNUP_NO_ACCOUNT');
+  });
+
+  /** A number without a RingPe account: the code, then the account made here (SAS-051). */
+  async function newAccount(email: string, mob = mobile()) {
+    const otp = await request(app).post('/api/v1/portal/signup/otp').send({ mobile: mob });
+    expect(otp.status).toBe(202);
+    expect(otp.body.newAccount).toBe(true);
+    const verified = await request(app)
+      .post('/api/v1/portal/signup/otp/verify')
+      .send({ challengeId: otp.body.challengeId, otp: codeOf(h.sms.sent.at(-1)), mobile: mob });
+    expect(verified.status).toBe(200);
+    expect(verified.body).toMatchObject({ newAccount: true, account: null, invited: false });
+    const made = (over: Record<string, unknown> = {}) =>
+      request(app)
+        .post('/api/v1/portal/signup/account')
+        .send({
+          signupToken: verified.body.signupToken,
+          firstName: 'Kavya',
+          lastName: 'Hegde',
+          email,
+          password: PASSWORD,
+          ...over,
+        });
+    const bad = await made({ password: 'short' });
+    expect(bad.status).toBe(422);
+    expect(bad.body.errors).toEqual([
+      expect.objectContaining({ field: 'password', code: 'VALIDATION.PASSWORD' }),
+    ]);
+    const r = await made();
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ newAccount: false, account: { name: 'Kavya Hegde', email } });
+    return { r, mobile: mob };
+  }
+
+  it('makes the RingPe account on the customer site for a new number (SAS-051)', async () => {
+    const email = `kavya.${randomInt(0, 1e9)}@example.in`;
+    const { r, mobile: mob } = await newAccount(email);
+    expect(r.body.invited).toBe(false);
+    const row = await t.db
+      .selectFrom('platform_accounts')
+      .select(['first_name', 'last_name', 'email', 'email_verified_at'])
+      .where('mobile', '=', mob)
+      .executeTakeFirstOrThrow();
+    expect(row).toMatchObject({ first_name: 'KAVYA', last_name: 'HEGDE', email });
+    expect(row.email_verified_at).toBeNull();
+    // The code must have gone to the number given.
+    const [m2, m3] = [mobile(), mobile()];
+    const stray = await request(app).post('/api/v1/portal/signup/otp').send({ mobile: m3 });
+    const wrong = await request(app)
+      .post('/api/v1/portal/signup/otp/verify')
+      .send({ challengeId: stray.body.challengeId, otp: codeOf(h.sms.sent.at(-1)), mobile: m2 });
+    expect(wrong.status).toBe(401);
+    // A second account for the same e-mail is refused.
+    const other = await request(app).post('/api/v1/portal/signup/otp').send({ mobile: m2 });
+    const v = await request(app)
+      .post('/api/v1/portal/signup/otp/verify')
+      .send({ challengeId: other.body.challengeId, otp: codeOf(h.sms.sent.at(-1)), mobile: m2 });
+    expect(v.status).toBe(200);
+    const dup = await request(app).post('/api/v1/portal/signup/account').send({
+      signupToken: v.body.signupToken,
+      firstName: 'Kiran',
+      email,
+      password: PASSWORD,
+    });
+    expect(dup.status).toBe(422);
+    expect(dup.body.errors).toEqual([
+      expect.objectContaining({ field: 'email', code: 'IDN.EMAIL_TAKEN' }),
+    ]);
+  });
+
+  it('links an institution registered in the back office once the e-mail is confirmed (SAS-052/053)', async () => {
+    // With the password setting off, the institution waits for the account (client 2026-10-06).
+    const setting = (await request(app).get('/api/v1/ops/settings').set(ops)).body.items.find(
+      (x: { key: string }) => x.key === 'ins.admin.passwordShownOnce',
+    );
+    const off = await request(app)
+      .put('/api/v1/ops/settings/ins.admin.passwordShownOnce')
+      .set(ops)
+      .set('If-Match', `"v${setting.version}"`)
+      .send({ value: 0, reason: 'Testing the waiting administrator' });
+    expect(off.status).toBe(200);
+    const email = `ravi.${randomInt(0, 1e9)}@example.in`;
+    const tag = randomInt(0, 1e9);
+    const reg = await request(app)
+      .post('/api/v1/ops/institutions')
+      .set(ops)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        name: `Tunga Vidya Kendra ${tag}`,
+        address: `Station Road ${tag}, Thirthahalli, Karnataka 577432`,
+        city: 'Thirthahalli',
+        board: 'CBSE',
+        primaryContact: { name: 'Ravi Bhat', email, mobile: '9845012388' },
+        adminEmail: email,
+      });
+    expect(reg.status).toBe(201);
+    expect(reg.body.administrator).toEqual({ email, pending: true, accountCreated: false });
+
+    const { r } = await newAccount(email);
+    expect(r.body.invited).toBe(true);
+    const code = await request(app)
+      .post('/api/v1/portal/signup/email-code')
+      .send({ signupToken: r.body.signupToken });
+    expect(code.status).toBe(202);
+    const mail = h.email.sent.at(-1);
+    expect(mail?.to).toBe(email);
+    const wrong = await request(app)
+      .post('/api/v1/portal/signup/email-code/verify')
+      .send({ signupToken: 'nonsense', challengeId: code.body.challengeId, otp: '000000' });
+    expect(wrong.status).toBe(401);
+    const ok = await request(app)
+      .post('/api/v1/portal/signup/email-code/verify')
+      .send({
+        signupToken: r.body.signupToken,
+        challengeId: code.body.challengeId,
+        otp: codeOf(mail),
+      });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({
+      emailVerified: true,
+      joined: { institution: `Tunga Vidya Kendra ${tag}`, identifier: reg.body.identifier },
+    });
+    // The administrator now signs in to the customer site of that institution (pending activation).
+    await signedIn('/api/v1/portal/auth', email);
+    const d = await request(app).get(`/api/v1/ops/institutions/${reg.body.id}`).set(ops);
+    expect(d.body.administrator).toMatchObject({
+      email,
+      pending: false,
+      name: expect.stringMatching(/^kavya hegde$/i),
+    });
   });
 
   it('signs up, finishes the checklist, goes live on a trial and signs in again', async () => {

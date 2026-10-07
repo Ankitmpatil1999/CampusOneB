@@ -494,6 +494,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'INS.ADMIN_IN_INSTITUTION': 'User already mapped to a CUG organization',
   'INS.ADMIN_IS_OPERATOR':
     'This account holds a RingPe operator role. An institution administrator needs an account without one (OI-GOV-01).',
+  'INS.ADMIN_MOBILE_TAKEN':
+    "This mobile number already has a RingPe account. Use that account's e-mail as the administrator's e-mail, or another mobile number.",
   'INS.ASSET_GROUP_TAKEN': 'An asset group with this name already exists.',
   'INS.ASSET_TAKEN': 'An asset with this name already exists in the group.',
   'INS.CHANNEL_LOCKED': "In-app notifications can't be switched off.",
