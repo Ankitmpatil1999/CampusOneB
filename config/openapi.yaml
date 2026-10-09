@@ -2634,6 +2634,34 @@ paths:
       security:
         - bearer: []
         - cookie: []
+    post:
+      operationId: ATT-027
+      summary: "Issue a member's card from the console of the RingPe desktop app, which writes the token on its USB NFC reader (client 2026-10-08): the card-issue reader's rules — one active card; a replacement needs a re-issue first"
+      tags:
+        - Cards
+      x-ringpe-auth: cards.edit
+      responses:
+        "201":
+          description: Issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardWritten"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CardWrite"
   /api/v1/console/cards/{cardId}/reissue:
     post:
       operationId: ATT-007

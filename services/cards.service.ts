@@ -129,6 +129,29 @@ export class CardsService {
     terminal: { id: string; institutionId: string },
     input: { memberId: string; hardwareUid: string },
   ) {
+    return this.issue(
+      { institutionId: terminal.institutionId, terminalId: terminal.id },
+      { type: 'terminal', ref: terminal.id },
+      input,
+    );
+  }
+
+  // --- ATT-027 (console with a desktop NFC reader, client 2026-10-08) ------------------------------
+  /**
+   * The console of the RingPe desktop app writes the card on its USB reader: the same rules as the
+   * card-issue reader (one active card; a replacement needs the console's re-issue first).
+   */
+  async writeFromConsole(p: Principal, input: { memberId: string; hardwareUid: string }) {
+    const inst = await this.own(p);
+    return this.issue({ institutionId: String(inst.id), terminalId: null }, undefined, input);
+  }
+
+  private async issue(
+    by: { institutionId: string; terminalId: string | null },
+    actor: { type: 'terminal'; ref: string } | undefined,
+    input: { memberId: string; hardwareUid: string },
+  ) {
+    const terminal = { id: by.terminalId, institutionId: by.institutionId };
     if (!isUuid(input.memberId)) throw new NotFoundError();
     const out = await this.deps.db.transaction().execute(async (trx) => {
       const m = await trx
@@ -190,8 +213,8 @@ export class CardsService {
         action: cards.length ? 'CARD_REISSUED' : 'CARD_ISSUED',
         entityType: 'card',
         entityRef: pub.id,
-        after: { member: input.memberId, reason },
-        actor: { type: 'terminal', ref: terminal.id },
+        after: { member: input.memberId, reason, via: terminal.id ? 'reader' : 'console' },
+        ...(actor ? { actor } : {}),
       });
       return { cardId: pub.id, cardToken: token };
     });

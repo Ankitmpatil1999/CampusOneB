@@ -400,6 +400,30 @@ describe.skipIf(!adminUrl)('terminals, readers and cards on real MySQL', () => {
           .send({})
       ).body.code,
     ).toBe('ATT.CARD_ALREADY_BLOCKED');
+
+    // ATT-027: the console of the desktop app issues on its own USB reader, same rules.
+    const n = await member('Nalini');
+    const fromConsole = () =>
+      request(app)
+        .post('/api/v1/console/cards')
+        .set(school.con)
+        .set('Idempotency-Key', randomUUID())
+        .send({ memberId: n.id, hardwareUid: '04c0ffee' });
+    const issued = await fromConsole();
+    expect(issued.status).toBe(201);
+    expect(issued.body.cardToken).toMatch(/^NFC[A-Z0-9]{13}$/);
+    expect((await fromConsole()).body.code).toBe('ATT.CARD_ACTIVE_EXISTS');
+    const tapped = await request(app)
+      .post('/api/v1/terminal/reader/balance-checks')
+      .set(kiosk.auth)
+      .send({ cardToken: issued.body.cardToken.toLowerCase() });
+    expect(tapped.body).toMatchObject({ member: { id: n.id, name: 'Nalini' } });
+    const row = await t.db
+      .selectFrom('cards')
+      .select(['hardware_uid', 'issued_by_terminal'])
+      .where('token', '=', issued.body.cardToken)
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ hardware_uid: '04C0FFEE', issued_by_terminal: null });
   });
 
   it("pays a merchant's NFC request once by a card tap; a reused or wrong nonce is a replay (PAY-012)", async () => {

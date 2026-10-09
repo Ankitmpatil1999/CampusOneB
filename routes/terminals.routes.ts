@@ -155,6 +155,16 @@ crd({
   responses: { 200: { description: 'Card', schema: cardSchema } },
 });
 crd({
+  id: 'ATT-027',
+  method: 'post',
+  path: '/api/v1/console/cards',
+  summary:
+    "Issue a member's card from the console of the RingPe desktop app, which writes the token on its USB NFC reader (client 2026-10-08): the card-issue reader's rules — one active card; a replacement needs a re-issue first",
+  auth: 'cards.edit',
+  request: cardWriteSchema,
+  responses: { 201: { description: 'Issued', schema: cardWrittenSchema } },
+});
+crd({
   id: 'ATT-007',
   method: 'post',
   path: '/api/v1/console/cards/{cardId}/reissue',
@@ -344,6 +354,20 @@ export function terminalsRoutes(deps: {
           cardStatusSchema.parse(req.body ?? {}),
         ),
       );
+    }),
+  );
+  router.post(
+    '/console/cards',
+    ...console,
+    authorize('cards.edit', L),
+    once,
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res
+        .status(201)
+        .json(
+          await deps.cards.writeFromConsole(principal(req), cardWriteSchema.parse(req.body ?? {})),
+        );
     }),
   );
   router.post(
