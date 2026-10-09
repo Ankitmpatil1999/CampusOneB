@@ -506,6 +506,29 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         .set('Idempotency-Key', randomUUID())
         .send({ userTypeId: studentType, sectionId: grade6.sectionId, admissionNo });
     expect((await approve(detail.body.version - 1, 'ADM/2026/0042')).status).toBe(412);
+    // A school without a Parent user type (a new one has only Staff): refused before anything is
+    // written, with what to add — not a validation error on a field the form does not show.
+    const parentTypes = await f.t.db
+      .selectFrom('user_types')
+      .select('id')
+      .where('category', '=', 'PARENT')
+      .where('status', '=', 'ACTIVE')
+      .execute();
+    const setParentTypes = (status: 'ACTIVE' | 'INACTIVE') =>
+      f.t.db
+        .updateTable('user_types')
+        .set({ status })
+        .where(
+          'id',
+          'in',
+          parentTypes.map((t) => t.id),
+        )
+        .execute();
+    await setParentTypes('INACTIVE');
+    const noParentType = await approve(detail.body.version, 'ADM/2026/0042');
+    await setParentTypes('ACTIVE');
+    expect(noParentType.status).toBe(409);
+    expect(noParentType.body.code).toBe('ADM.PARENT_TYPE_MISSING');
     const ok = await approve(detail.body.version, 'ADM/2026/0042');
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     expect(ok.body.application).toMatchObject({

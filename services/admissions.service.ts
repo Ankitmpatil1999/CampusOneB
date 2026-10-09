@@ -1938,6 +1938,18 @@ export class AdmissionsService {
         rel,
       );
     }
+    // A new institution has only the default Staff type (RNG-ONB-024): without a Parent type the
+    // parents cannot be added, and the approval would fail on a field the form does not show.
+    if (guardians.length) {
+      const parentType = await this.deps.db
+        .selectFrom('user_types')
+        .select('id')
+        .where('institution_id', '=', i0.id)
+        .where('category', '=', 'PARENT')
+        .where('status', '=', 'ACTIVE')
+        .executeTakeFirst();
+      if (!parentType) throw new CustomAPIError(409, 'ADM.PARENT_TYPE_MISSING');
+    }
     const joinedOn = input.joiningDate ?? dayOrNull(r.joining_date) ?? day(r.year_starts_on);
     const at = this.now();
     const memberId = await this.deps.db.transaction().execute(async (trx) => {
