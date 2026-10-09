@@ -162,6 +162,7 @@ describe('OpenAPI 3.1 document', () => {
       'ATT-024',
       'ATT-025',
       'ATT-026',
+      'ATT-027',
       'COM-001',
       'COM-002',
       'COM-003',
