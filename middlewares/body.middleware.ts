@@ -12,11 +12,14 @@ export interface BodyOptions {
   readonly jsonLimitBytes: number;
   /** Path prefixes allowed to send multipart/form-data (upload routes). */
   readonly multipartPrefixes?: readonly string[];
+  /** Path prefixes allowed to send form fields (application/x-www-form-urlencoded): the Axis Bank. */
+  readonly formPrefixes?: readonly string[];
 }
 
 /** Refuses a body that is not JSON (415) unless the route accepts uploads. */
 export function requireJsonBody(opts: BodyOptions): RequestHandler {
   const multipart = opts.multipartPrefixes ?? [];
+  const form = opts.formPrefixes ?? [];
   return (req, _res, next) => {
     const hasBody =
       METHODS_WITH_BODY.has(req.method) &&
@@ -24,6 +27,9 @@ export function requireJsonBody(opts: BodyOptions): RequestHandler {
     if (!hasBody) return next();
     if (req.is(['application/json', 'application/*+json'])) return next();
     if (req.is('multipart/form-data') && multipart.some((p) => req.path.startsWith(p))) {
+      return next();
+    }
+    if (req.is('application/x-www-form-urlencoded') && form.some((p) => req.path.startsWith(p))) {
       return next();
     }
     next(new UnsupportedMediaTypeError());

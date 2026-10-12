@@ -20,6 +20,7 @@
     "migrate": "tsx --env-file-if-exists=.env scripts/db.ts migrate",
     "migrate:status": "tsx --env-file-if-exists=.env scripts/db.ts status",
     "seed": "tsx --env-file-if-exists=.env scripts/db.ts seed-reference",
+    "db:triggers": "tsx --env-file-if-exists=.env scripts/export-triggers.ts",
     "openapi": "tsx scripts/generate-openapi.ts",
     "shared:check": "tsx scripts/shared-copies.ts --check",
     "shared:sync": "tsx scripts/shared-copies.ts --write",

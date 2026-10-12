@@ -6302,6 +6302,121 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/PassCancelInput"
+  /api/v1/console/payment-gateways:
+    get:
+      operationId: INS-038
+      summary: "The school's payment gateways: provider, name, masked key id, test or live, default, webhook address and the last check — never a secret"
+      tags:
+        - Payment gateways
+      x-ringpe-auth: gateways.view
+      responses:
+        "200":
+          description: Gateways
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentGatewayList"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+    post:
+      operationId: INS-039
+      summary: "Add a gateway account: every credential is stored encrypted; the first one is the default; the gateway is asked at once whether it accepts the keys. Production refuses test keys"
+      tags:
+        - Payment gateways
+      x-ringpe-auth: gateways.edit
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentGateway"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentGatewayCreate"
+  /api/v1/console/payment-gateways/{gatewayId}:
+    patch:
+      operationId: INS-040
+      summary: Change the name or keys (a secret left out is kept), make it the default, or disable it (the newest active gateway becomes the default). If-Match
+      tags:
+        - Payment gateways
+      x-ringpe-auth: gateways.edit
+      responses:
+        "200":
+          description: Changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentGateway"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: gatewayId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentGatewayUpdate"
+  /api/v1/console/payment-gateways/{gatewayId}/check:
+    post:
+      operationId: INS-041
+      summary: Ask the gateway whether it accepts the keys (a read-only call; nothing is created)
+      tags:
+        - Payment gateways
+      x-ringpe-auth: gateways.edit
+      responses:
+        "200":
+          description: Checked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentGateway"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: gatewayId
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/console/periods:
     get:
       operationId: ACA-019
@@ -15843,6 +15958,90 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/TranslationTexts"
+  /api/v1/partners/axis/bank/token:
+    post:
+      operationId: BNK-001
+      summary: "Axis Bank: OAuth 2 client credentials (JSON or form fields) with the bank's scope names; a Partner API client with va.validate / va.notify and the bank's addresses. Also at /cug/bank/token. Refusals as the earlier application sent them (INVALID_CLIENT, INVALID_SCOPE, INVALID_GRANT_TYPE; address 403)"
+      tags:
+        - Axis Bank
+      x-ringpe-auth: public
+      responses:
+        "200":
+          description: Token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AxisTokenResponse"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AxisTokenRequest"
+  /api/v1/partners/axis/bank/transaction/notify:
+    post:
+      operationId: BNK-003
+      summary: "Axis Bank, after crediting: post the credit once per UTR + Tran_id after a successful validation (setting bank.axis.requireValidation); an active wallet is credited, a suspended one held. Bearer token with transaction_notification_posting. Also at /cug/bank/transaction/notify"
+      tags:
+        - Axis Bank
+      x-ringpe-auth: "partner (bearer): va.notify"
+      responses:
+        "200":
+          description: Answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AxisBankAnswer"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AxisBankCall"
+  /api/v1/partners/axis/bank/transaction/validate:
+    post:
+      operationId: BNK-002
+      summary: "Axis Bank, before crediting: is the virtual account ours and able to take money? Bearer token with transaction_validation, allowed address; every call is logged with its answer. Also at /cug/bank/transaction/validate"
+      tags:
+        - Axis Bank
+      x-ringpe-auth: "partner (bearer): va.validate"
+      responses:
+        "200":
+          description: Answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AxisBankAnswer"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AxisBankCall"
   /api/v1/partners/bank/va/notify:
     post:
       operationId: WAL-013
@@ -15959,6 +16158,72 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/FinancingWebhook"
+  /api/v1/partners/gateway/webhooks:
+    post:
+      operationId: SAS-033
+      summary: "The payment gateway's webhook (Razorpay, client 2026-10-09): X-Razorpay-Signature = HMAC-SHA256 of the raw body with RAZORPAY_WEBHOOK_SECRET; each X-Razorpay-Event-Id once (webhook_receipts). payment.captured / order.paid marks the admission or application fee of that order paid; other events are acknowledged"
+      tags:
+        - Admissions
+      x-ringpe-auth: public
+      responses:
+        "200":
+          description: Received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+                  outcome:
+                    type: string
+                required:
+                  - ok
+                additionalProperties: false
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/partners/gateway/webhooks/{gatewayId}:
+    post:
+      operationId: INS-042
+      summary: "A school gateway's own webhook address (client 2026-10-09): signed with that gateway's webhook secret; settles only payments taken with that gateway; otherwise as SAS-033"
+      tags:
+        - Admissions
+      x-ringpe-auth: public
+      responses:
+        "200":
+          description: Received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+                  outcome:
+                    type: string
+                required:
+                  - ok
+                additionalProperties: false
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      parameters:
+        - name: gatewayId
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/partners/oauth/token:
     post:
       operationId: IDN-043
@@ -20666,6 +20931,18 @@ components:
                 - paymentId
                 - signature
               additionalProperties: false
+            checkout:
+              description: "Live (Razorpay): open the gateway's checkout with this key and the order"
+              type: object
+              properties:
+                keyId:
+                  type: string
+                name:
+                  type: string
+              required:
+                - keyId
+                - name
+              additionalProperties: false
           required:
             - orderId
             - amount
@@ -22739,6 +23016,107 @@ components:
         - enabled
         - cutoff
         - appliesTo
+      additionalProperties: false
+    AxisBankAnswer:
+      type: object
+      properties:
+        Stts_flg:
+          type: string
+          description: S success · F failure · N refused (address, token, scope)
+        Err_cd:
+          type: string
+          description: 000 success · 001 authentication failed · 002 invalid VAN / duplicate UTR · 003 invalid request · 004 invalid VAN (notify) · 006 invalid date · 999 server error
+        message:
+          type: string
+        error:
+          type: string
+      required:
+        - Stts_flg
+        - Err_cd
+        - message
+      additionalProperties: false
+    AxisBankCall:
+      type: object
+      properties:
+        UTR:
+          type: string
+          maxLength: 32
+        Bene_acc_no:
+          type: string
+          maxLength: 30
+          description: The virtual account number (corporate code + wallet number)
+        Req_type:
+          type: string
+          description: '"Validation" or "notification"'
+        Req_date:
+          type: string
+          description: YYYY-MM-DD
+        Txn_amnt:
+          type: string
+          description: Rupees, e.g. "4999.00"
+        Pmode:
+          description: NEFT, RTGS, IMPS, UPI
+          type: string
+        Sndr_acnt:
+          description: Only the last four digits are kept
+          type: string
+        Sndr_nm:
+          type: string
+        Sndr_ifsc:
+          type: string
+        Corp_code:
+          type: string
+        Tran_id:
+          type: string
+          maxLength: 40
+      required:
+        - UTR
+        - Bene_acc_no
+        - Req_type
+        - Req_date
+        - Txn_amnt
+        - Tran_id
+    AxisTokenRequest:
+      type: object
+      properties:
+        grant_type:
+          type: string
+          const: client_credentials
+        client_id:
+          type: string
+        client_secret:
+          type: string
+        scope:
+          type: string
+          description: transaction_validation, transaction_notification_posting, or both (space-separated)
+      required:
+        - grant_type
+        - client_id
+        - client_secret
+        - scope
+    AxisTokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+          description: Seconds (setting auth.partner.tokenMinutes; 15 minutes)
+        expires_at:
+          type: string
+        scope:
+          type: string
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - expires_at
+        - scope
       additionalProperties: false
     BalanceCheck:
       type: object
@@ -36780,6 +37158,191 @@ components:
       required:
         - resetToken
         - newPassword
+      additionalProperties: false
+    PaymentGateway:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        provider:
+          type: string
+        providerName:
+          type: string
+        label:
+          type: string
+        keyIdHint:
+          type: string
+          description: Masked, e.g. rzp_test_••••eK0
+        environment:
+          type: string
+          enum:
+            - TEST
+            - LIVE
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - DISABLED
+        isDefault:
+          type: boolean
+        hasWebhookSecret:
+          type: boolean
+        hasMerchantId:
+          type: boolean
+        webhookUrl:
+          type: string
+          description: The address to enter in the gateway dashboard's webhooks
+        lastCheck:
+          anyOf:
+            - type: object
+              properties:
+                at:
+                  type: string
+                ok:
+                  type: boolean
+                note:
+                  type:
+                    - string
+                    - "null"
+              required:
+                - at
+                - ok
+                - note
+              additionalProperties: false
+            - type: "null"
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        updatedAt:
+          type: string
+      required:
+        - id
+        - provider
+        - providerName
+        - label
+        - keyIdHint
+        - environment
+        - status
+        - isDefault
+        - hasWebhookSecret
+        - hasMerchantId
+        - webhookUrl
+        - lastCheck
+        - version
+        - updatedAt
+      additionalProperties: false
+    PaymentGatewayCreate:
+      type: object
+      properties:
+        provider:
+          description: RAZORPAY (default)
+          type: string
+          maxLength: 20
+        label:
+          type: string
+          maxLength: 80
+          description: A name the school recognises, e.g. "School fees account"
+        keyId:
+          type: string
+          maxLength: 64
+          description: Stored encrypted; shown masked
+        keySecret:
+          type: string
+          maxLength: 128
+          description: Stored encrypted; never shown again
+        webhookSecret:
+          description: Stored encrypted; the same text as the webhook set in the gateway dashboard
+          anyOf:
+            - type: string
+              maxLength: 128
+            - type: "null"
+        merchantId:
+          description: Stored encrypted
+          anyOf:
+            - type: string
+              maxLength: 64
+            - type: "null"
+        isDefault:
+          description: The first gateway of a school is the default
+          type: boolean
+      required:
+        - label
+        - keyId
+        - keySecret
+      additionalProperties: false
+    PaymentGatewayList:
+      type: object
+      properties:
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+            required:
+              - code
+              - name
+            additionalProperties: false
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentGateway"
+        platform:
+          type: object
+          properties:
+            provider:
+              type: string
+            inUse:
+              type: boolean
+          required:
+            - provider
+            - inUse
+          additionalProperties: false
+          description: "inUse: no gateway of the school's own yet — payments use RingPe's Razorpay account"
+      required:
+        - providers
+        - items
+        - platform
+      additionalProperties: false
+    PaymentGatewayUpdate:
+      type: object
+      properties:
+        label:
+          type: string
+          maxLength: 80
+        keyId:
+          type: string
+          maxLength: 64
+        keySecret:
+          description: Leave out to keep the current secret
+          type: string
+          maxLength: 128
+        webhookSecret:
+          description: null removes it
+          anyOf:
+            - type: string
+              maxLength: 128
+            - type: "null"
+        merchantId:
+          anyOf:
+            - type: string
+              maxLength: 64
+            - type: "null"
+        isDefault:
+          description: Makes this the default for new payments
+          type: boolean
+          const: true
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - DISABLED
       additionalProperties: false
     PaymentInput:
       type: object

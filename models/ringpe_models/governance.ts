@@ -125,6 +125,20 @@ export interface CrossInstitutionAccessFiguresTable {
   figure_key: string;
 }
 
+/** Signed partner and gateway webhooks, one row per event id (replay protection; 0004). */
+export interface WebhookReceiptsTable {
+  id: Id;
+  partner_client_id: string;
+  partner_event_id: string;
+  received_at: Generated<Date>;
+  signature_ok: boolean;
+  source_ip: Buffer;
+  body_sha256: string;
+  body_encrypted: Buffer | null;
+  outcome: string;
+  response_code: string | null;
+}
+
 export interface GovernanceTables {
   audit_log: AuditLogTable;
   cross_institution_access_record: CrossInstitutionAccessRecordTable;
@@ -136,4 +150,5 @@ export interface GovernanceTables {
   translations: TranslationsTable;
   platform_settings: PlatformSettingsTable;
   platform_setting_changes: PlatformSettingChangesTable;
+  webhook_receipts: WebhookReceiptsTable;
 }

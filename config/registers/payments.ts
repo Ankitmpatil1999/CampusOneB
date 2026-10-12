@@ -18,6 +18,21 @@ export interface PaymentChannelDefinition {
   readonly label: string;
 }
 
+/**
+ * Payment gateways a school can add (client 2026-10-09). Each needs its credentials (all stored
+ * encrypted) and an implementation in integrations/; only the ones listed here are accepted.
+ */
+export const PAYMENT_GATEWAY_PROVIDERS = [
+  {
+    code: 'RAZORPAY',
+    name: 'Razorpay',
+    /** The key id's form: rzp_test_… (test mode) or rzp_live_… (live). */
+    keyIdPattern: /^rzp_(test|live)_[A-Za-z0-9]{6,40}$/,
+    testPrefix: 'rzp_test_',
+  },
+] as const;
+export type PaymentGatewayProvider = (typeof PAYMENT_GATEWAY_PROVIDERS)[number]['code'];
+
 export const PAYMENT_CHANNELS = [
   { code: 'TRANSFER', mode: 1, label: 'Transfer' },
   { code: 'STATIC_QR', mode: 2, label: 'Static QR' },
@@ -252,6 +267,67 @@ export const BANK_RESPONSES = {
   INVALID_VA: { code: '002', message: 'WAL.BANK_INVALID_VA' },
   INVALID_AMOUNT: { code: '003', message: 'WAL.BANK_INVALID_AMOUNT' },
   DUPLICATE: { code: '004', message: 'WAL.BANK_DUPLICATE' },
+} as const;
+
+/**
+ * The Axis Bank Power E-coll format (client 2026-10-12, "Updated Axis Bank APIs for Integration"; the
+ * earlier application's answers kept word for word, as the bank already reads them). Bank protocol
+ * values, not texts shown to people.
+ */
+export const AXIS_BANK_SCOPES = {
+  transaction_validation: 'va.validate',
+  transaction_notification_posting: 'va.notify',
+} as const satisfies Record<string, PartnerScope>;
+export type AxisBankScope = keyof typeof AXIS_BANK_SCOPES;
+
+export const AXIS_BANK_RESPONSES = {
+  SUCCESS: { flag: 'S', code: '000', message: 'Success' },
+  INVALID_PARAMS: { flag: 'F', code: '003', message: 'Invalid request parameters' },
+  INVALID_VAN: { flag: 'F', code: '002', message: 'Invalid Van' },
+  INCORRECT_VAN: { flag: 'F', code: '002', message: 'Incorrect Van' },
+  INVALID_DATE: { flag: 'F', code: '006', message: 'Invalid date format' },
+  SERVER_ERROR: { flag: 'F', code: '999', message: 'Internal server error' },
+  // notification
+  MISSING_FIELDS: {
+    flag: 'F',
+    code: '001',
+    message: 'Authentication failed',
+    error: 'Missing mandatory fields',
+  },
+  NOTIFY_INVALID_DATE: {
+    flag: 'F',
+    code: '006',
+    message: 'Invalid date format. Expected YYYY-MM-DD',
+  },
+  INVALID_REQ_TYPE: {
+    flag: 'F',
+    code: '003',
+    message: 'Invalid request type',
+    error: "Request type must be 'notification'",
+  },
+  NOT_VALIDATED: {
+    flag: 'F',
+    code: '001',
+    message: 'Authentication failed',
+    error: 'Validation not completed or failed',
+  },
+  DUPLICATE_UTR: { flag: 'F', code: '002', message: 'Duplicate UTR' },
+  NOTIFY_INVALID_VAN: { flag: 'F', code: '004', message: 'Invalid VAN' },
+  NOTIFY_FAILED: {
+    flag: 'F',
+    code: '001',
+    message: 'Authentication failed',
+    error: 'Posting failed',
+  },
+} as const;
+export type AxisBankResponse = (typeof AXIS_BANK_RESPONSES)[keyof typeof AXIS_BANK_RESPONSES];
+
+/** The bank's refusals of a call itself (address, token, scope), as the earlier application sent them. */
+export const AXIS_BANK_AUTH_ERRORS = {
+  IP_NOT_ALLOWED: 'Access denied: IP not whitelisted',
+  MISSING_TOKEN: 'Missing bearer token',
+  INVALID_TOKEN: 'Invalid token',
+  INSUFFICIENT_SCOPE: 'Insufficient scope',
 } as const;
 
 /** 27.4 reference shape (pay.reference). */

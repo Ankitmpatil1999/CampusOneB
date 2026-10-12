@@ -28,6 +28,7 @@ import type { RequestLogStore } from './utils/request-log';
 import { securityHeaders } from './middlewares/security-headers.middleware';
 import { corsPolicy } from './middlewares/cors.middleware';
 import { jsonBody, requireJsonBody } from './middlewares/body.middleware';
+import { AXIS_BANK_PREFIXES } from './routes/axis-bank.routes';
 import { createRateLimiter } from './middlewares/rate-limit.middleware';
 import { authenticate } from './middlewares/auth.middleware';
 import { csrfProtection } from './middlewares/csrf.middleware';
@@ -63,6 +64,11 @@ export interface AppDependencies {
   readonly sessionRateLimitStore?: Store;
   /** The log analyser's request log (IDN-075); absent in most tests. */
   readonly requestLog?: RequestLogStore;
+  /**
+   * Routers that check their own credentials and answer in a partner's own format (the Axis Bank),
+   * mounted before the /api/v1 router and its authentication.
+   */
+  readonly partnerRouters?: readonly Router[];
   /** Extra routers mounted under /api/v1 after the platform routes (modules; tests). */
   readonly apiRouters?: readonly Router[];
 }
@@ -91,6 +97,7 @@ export function createApp(deps: AppDependencies): Express {
       '/api/v1/console/applications',
       '/api/v1/public/admissions/applications/',
     ],
+    formPrefixes: AXIS_BANK_PREFIXES,
   };
   app.use(requireJsonBody(body));
   app.use(jsonBody(body));
@@ -113,6 +120,8 @@ export function createApp(deps: AppDependencies): Express {
   app.get('/metrics', internalOnly(config.http.internalAllowlist), metricsHandler);
 
   if (deps.publicJwks) app.use(wellKnownRoutes(deps.publicJwks));
+
+  for (const r of deps.partnerRouters ?? []) app.use(r);
 
   const api = express.Router();
   api.use(authenticate(deps.tokenVerifier, loggers, deps.revocations));

@@ -673,6 +673,14 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'PAY.TRANSFERS_OFF': 'Transfers are turned off for your institution.',
   'PAY.TRANSFER_LIMIT': 'The limit per transfer is {max}.',
   'PAY.VENDOR_ASSET_REQUIRED': 'Choose the approved asset this invoice is for.',
+  'PG.DEFAULT_DISABLED': 'A disabled gateway can’t be the default. Enable it first.',
+  'PG.KEY_ID_FORMAT':
+    'Enter the key id exactly as the gateway dashboard shows it (for Razorpay: rzp_test_… or rzp_live_…).',
+  'PG.NOT_FOUND': 'Payment gateway not found.',
+  'PG.PROVIDER_UNSUPPORTED': 'This payment gateway is not supported yet.',
+  'PG.SECRET_REQUIRED': 'Enter the key secret.',
+  'PG.TEST_KEY_IN_PRODUCTION':
+    'Test keys can’t take real payments. Use the live keys from the gateway dashboard.',
   'REC.ALREADY_RETURNED':
     'This transaction’s money has already gone back through a reversal or a chargeback.',
   'REC.AMOUNT_ABOVE': 'The amount can’t be more than the transaction’s {amount}.',
@@ -1174,6 +1182,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'subtask.institution.fees.view': 'See fees',
   'subtask.institution.frontdesk.edit': 'Record visitors and movements',
   'subtask.institution.frontdesk.view': 'See the front desk',
+  'subtask.institution.gateways.edit': 'Add and change payment gateways',
+  'subtask.institution.gateways.view': 'See payment gateways',
   'subtask.institution.grievances.approve': 'Approve resolutions',
   'subtask.institution.grievances.edit': 'Work on grievances',
   'subtask.institution.grievances.view': 'See grievances',
@@ -1254,6 +1264,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'task.institution.events': 'Events',
   'task.institution.fees': 'Fees',
   'task.institution.frontdesk': 'Front desk',
+  'task.institution.gateways': 'Payment gateways',
   'task.institution.grievances': 'Grievances',
   'task.institution.home': 'Home',
   'task.institution.leave': 'Teacher leave',

@@ -963,6 +963,30 @@ export const LIMITS = {
     ],
   }),
 
+  pgPlatformFallback: def({
+    key: 'pg.platformFallback',
+    value: 1,
+    unit: 'flag',
+    adjustable: { min: 0, max: 1 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: [
+      "client 2026-10-09: schools add their own gateways; without one, RingPe's own gateway (1) or none (0)",
+    ],
+  }),
+
+  bankAxisRequireValidation: def({
+    key: 'bank.axis.requireValidation',
+    value: 1,
+    unit: 'flag',
+    adjustable: { min: 0, max: 1 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: [
+      'client 2026-10-12 (Axis Bank Power E-coll): a notification is posted only after a successful validation of the same UTR + transaction id (1), as in the earlier application; 0 posts without one',
+    ],
+  }),
+
   // --- approvals (ADR-0015, client Q9) -----------------------------------------------------------
   approvalsAdminSelfApply: def({
     key: 'mkr.adminSelfApply',

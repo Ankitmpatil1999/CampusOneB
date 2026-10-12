@@ -93,9 +93,15 @@ export const envSchema = z
     // registrations are acknowledged at once and decisions arrive on the signed webhook; live = the
     // partner's API once known. Refused in production: test.
     FINANCING_PARTNER_MODE: z.enum(['test', 'live']).default('test'),
-    // The online payment gateway for application and admission fees (Q17): test = in-app test
-    // checkout; live = the gateway once chosen. Refused in production: test.
+    // The online payment gateway for application and admission fees (Q17: Razorpay, 2026-10-09):
+    // test = in-app test checkout; live = Razorpay with the keys below (its rzp_test_ keys in
+    // development). Refused in production: test, and Razorpay test keys.
     PAYMENT_GATEWAY_MODE: z.enum(['test', 'live']).default('test'),
+    RAZORPAY_KEY_ID: z.string().trim().max(64).optional(),
+    RAZORPAY_SECRET: z.string().trim().max(128).optional(),
+    RAZORPAY_WEBHOOK_SECRET: z.string().trim().max(128).optional(),
+    // Kept for reference with Razorpay support; not sent to the API.
+    RAZORPAY_MERCHANT_ID: z.string().trim().max(64).optional(),
     ACCOUNTING_MODE: z.enum(['test', 'off']).default('test'),
     FINANCING_PARTNER_NAME: z.string().trim().min(2).max(120).default('Example Finance (example)'),
     // Address of the web application, for links sent by e-mail (staff password reset).
@@ -152,6 +158,17 @@ export const envSchema = z
       problem('BANK_VERIFY_MODE', 'must be live in production (test bank-account checks)');
     if (env.PAYMENT_GATEWAY_MODE === 'test')
       problem('PAYMENT_GATEWAY_MODE', 'must be live in production (test checkout)');
+    if (env.PAYMENT_GATEWAY_MODE === 'live') {
+      if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_SECRET)
+        problem('RAZORPAY_KEY_ID', 'and RAZORPAY_SECRET are required for the live gateway');
+      else if (env.RAZORPAY_KEY_ID.startsWith('rzp_test_'))
+        problem(
+          'RAZORPAY_KEY_ID',
+          'must be a live key in production (rzp_test_ is Razorpay test mode)',
+        );
+      if (!env.RAZORPAY_WEBHOOK_SECRET)
+        problem('RAZORPAY_WEBHOOK_SECRET', 'is required in production (payment webhooks)');
+    }
     if (env.ACCOUNTING_MODE === 'test')
       problem(
         'ACCOUNTING_MODE',
@@ -222,8 +239,14 @@ export interface Config {
   };
   /** Vouchers to the accounting package (OQ-04): test, or off (vouchers wait); test refused in production. */
   readonly accountingMode: Env['ACCOUNTING_MODE'];
-  /** The online payment gateway (Q17): test until chosen; refused in production. */
+  /** The online payment gateway (Q17): test, or live (Razorpay); test refused in production. */
   readonly paymentGatewayMode: Env['PAYMENT_GATEWAY_MODE'];
+  /** Razorpay keys for the live gateway (never logged); null without them. */
+  readonly razorpay: {
+    readonly keyId: string;
+    readonly keySecret: string;
+    readonly webhookSecret: string | null;
+  } | null;
   /** Address of the web application (links in e-mails). */
   readonly publicWebUrl: string;
   readonly social: {
@@ -311,6 +334,14 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
     },
     financing: { mode: e.FINANCING_PARTNER_MODE, partnerName: e.FINANCING_PARTNER_NAME },
     paymentGatewayMode: e.PAYMENT_GATEWAY_MODE,
+    razorpay:
+      e.RAZORPAY_KEY_ID && e.RAZORPAY_SECRET
+        ? {
+            keyId: e.RAZORPAY_KEY_ID,
+            keySecret: e.RAZORPAY_SECRET,
+            webhookSecret: e.RAZORPAY_WEBHOOK_SECRET || null,
+          }
+        : null,
     accountingMode: e.ACCOUNTING_MODE,
     publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/+$/, ''),
     social: {

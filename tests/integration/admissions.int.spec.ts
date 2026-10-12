@@ -9,10 +9,12 @@
  *   the fee in cash, approval creating the member, wallets, guardian and enrolment once, rejection;
  * - the admission fee by payment link, the receipt, and the existing-students import.
  */
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
-import { codeOf } from './http-app';
+import { buildHttpApp, codeOf } from './http-app';
+import type { GatewayPayment, PaymentGateway } from '../../integrations/payment-gateway.provider';
+import type { SchoolGatewayFactory } from '../../services/payment-gateways.service';
 import { inr, schoolFixture, type Auth } from './school';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 
@@ -376,6 +378,311 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       code: 'ADM.AGE_TOO_LOW',
       params: { n: 11, standard: 'Grade 6' },
     });
+  });
+
+  it('pays through Razorpay: checkout key, the payment checked with the gateway, and its webhook (client 2026-10-09)', async () => {
+    // A gateway answering like Razorpay (live mode), without the network.
+    const KEY_SECRET = 'rzp-key-secret';
+    const HOOK_SECRET = 'rzp-hook-secret';
+    const sign = (o: string, p: string) =>
+      createHmac('sha256', KEY_SECRET).update(`${o}|${p}`).digest('hex');
+    const held = new Map<string, GatewayPayment>();
+    let n = 0;
+    const gateway: PaymentGateway = {
+      mode: 'live',
+      async createOrder({ amountPaise }) {
+        n += 1;
+        return { orderId: `order_FAKE${n}`, amountPaise, checkout: { keyId: 'rzp_test_FAKE' } };
+      },
+      verify: ({ orderId, paymentId, signature }) => signature === sign(orderId, paymentId),
+      async fetchPayment(id) {
+        const p = held.get(id);
+        if (!p) throw new Error('unknown payment');
+        return p;
+      },
+      async capturePayment(id) {
+        const p = { ...held.get(id)!, status: 'captured' };
+        held.set(id, p);
+        return p;
+      },
+      verifyWebhook: (raw, sig) =>
+        sig === createHmac('sha256', HOOK_SECRET).update(raw).digest('hex'),
+    };
+    const live = await buildHttpApp(f.t, { overrides: { gateway }, security: f.h.security });
+    const livePub = (path: string, token: string, body: object) =>
+      request(live.app)
+        .post(path)
+        .set(TOKEN, token)
+        .set('Idempotency-Key', randomUUID())
+        .send(body);
+    const draft = async (first: string, idNumber: string, mobile: string) => {
+      const c = await post(
+        `/api/v1/public/admissions/${link.token}/applications`,
+        {
+          class: { yearId: nextYear.id, classId: grade6.id },
+          student: {
+            firstName: first,
+            lastName: 'Rao',
+            gender: 'FEMALE',
+            dob: `${Number(nextYear.label.slice(0, 4)) - 11}-05-20`,
+            idNumber,
+          },
+        },
+        {},
+      );
+      expect(c.status, JSON.stringify(c.body)).toBe(201);
+      const id = c.body.application.id as string;
+      const token = c.body.resumeToken as string;
+      await completeDraft(id, token, mobile);
+      const sub = await pub(
+        'post',
+        `/api/v1/public/admissions/applications/${id}/submission`,
+        token,
+        {
+          declarationAccepted: true,
+        },
+      );
+      expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+      return { id, token, base: `/api/v1/public/admissions/applications/${id}/fee-payments` };
+    };
+
+    // 1. The order carries the public key for Razorpay Checkout (never the secret).
+    const a = await draft('Ira', '771234', '9876501301');
+    const order = await livePub(a.base, a.token, {});
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    expect(order.body.gatewayOrder).toMatchObject({
+      orderId: 'order_FAKE1',
+      mode: 'live',
+      checkout: { keyId: 'rzp_test_FAKE' },
+    });
+    expect(order.body.gatewayOrder.checkout.name).toBeTruthy();
+    expect(JSON.stringify(order.body)).not.toContain(KEY_SECRET);
+
+    // 2. A correctly signed payment for a smaller amount is refused after the gateway check.
+    held.set('pay_LOW', {
+      id: 'pay_LOW',
+      orderId: 'order_FAKE1',
+      amountPaise: 100,
+      status: 'captured',
+      method: 'upi',
+    });
+    const low = await livePub(`${a.base}/${order.body.paymentId}/verify`, a.token, {
+      gatewayPaymentId: 'pay_LOW',
+      signature: sign('order_FAKE1', 'pay_LOW'),
+    });
+    expect(low.status).toBe(402);
+    const failed = await f.t.db
+      .selectFrom('admission_payments')
+      .select(['status', 'failure_reason'])
+      .where('gateway_order_id', '=', 'order_FAKE1')
+      .executeTakeFirstOrThrow();
+    expect(failed).toEqual({
+      status: 'FAILED',
+      failure_reason: 'The amount paid differs from the fee',
+    });
+
+    // 3. The right amount, only authorised: captured, then the fee is paid.
+    const again = await livePub(a.base, a.token, {});
+    held.set('pay_OK', {
+      id: 'pay_OK',
+      orderId: 'order_FAKE2',
+      amountPaise: 50000,
+      status: 'authorized',
+      method: 'card',
+    });
+    const ok = await livePub(`${a.base}/${again.body.paymentId}/verify`, a.token, {
+      gatewayPaymentId: 'pay_OK',
+      signature: sign('order_FAKE2', 'pay_OK'),
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body).toMatchObject({ status: 'PAID', applicationStatus: 'SUBMITTED' });
+    expect(held.get('pay_OK')!.status).toBe('captured');
+
+    // 4. The family closed the page: the signed webhook marks the fee paid, once.
+    const b = await draft('Tara', '771235', '9876501302');
+    const bOrder = await livePub(b.base, b.token, {});
+    const event = JSON.stringify({
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: 'pay_HOOK',
+            order_id: bOrder.body.gatewayOrder.orderId,
+            amount: 50000,
+            status: 'captured',
+          },
+        },
+      },
+    });
+    const hook = (body: string, sig: string, id = 'evt_1') =>
+      request(live.app)
+        .post('/api/v1/partners/gateway/webhooks')
+        .set('Content-Type', 'application/json')
+        .set('X-Razorpay-Signature', sig)
+        .set('X-Razorpay-Event-Id', id)
+        .send(body);
+    const good = createHmac('sha256', HOOK_SECRET).update(event).digest('hex');
+    expect((await hook(event, '0'.repeat(64))).status).toBe(401);
+    const first = await hook(event, good);
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect(first.body).toEqual({ ok: true, outcome: 'PAID' });
+    expect((await hook(event, good)).body).toEqual({ ok: true, duplicate: true });
+    const paid = await f.t.db
+      .selectFrom('admission_payments')
+      .select(['status', 'gateway_payment_id'])
+      .where('gateway_order_id', '=', bOrder.body.gatewayOrder.orderId)
+      .executeTakeFirstOrThrow();
+    expect(paid).toEqual({ status: 'PAID', gateway_payment_id: 'pay_HOOK' });
+    const other = JSON.stringify({ event: 'refund.created', payload: {} });
+    const ignored = await hook(
+      other,
+      createHmac('sha256', HOOK_SECRET).update(other).digest('hex'),
+      'evt_2',
+    );
+    expect(ignored.body).toEqual({ ok: true, outcome: 'IGNORED' });
+  });
+
+  it("takes the fee with the school's own default gateway; only that gateway's webhook settles it (client 2026-10-09)", async () => {
+    const held = new Map<string, GatewayPayment>();
+    let n = 0;
+    const hmac = (secret: string, data: string) =>
+      createHmac('sha256', secret).update(data).digest('hex');
+    // RingPe's own gateway (live) and the school's, each answering like Razorpay.
+    const platform: PaymentGateway = {
+      mode: 'live',
+      createOrder: async ({ amountPaise }) => ({
+        orderId: `order_PLATFORM${++n}`,
+        amountPaise,
+        checkout: { keyId: 'rzp_test_PLATFORM' },
+      }),
+      verify: ({ orderId, paymentId, signature }) =>
+        signature === hmac('platform-secret', `${orderId}|${paymentId}`),
+      fetchPayment: async (id) => held.get(id)!,
+      verifyWebhook: (raw, sig) => sig === hmac('platform-hook', raw.toString()),
+    };
+    const school: SchoolGatewayFactory = (keys) => ({
+      mode: 'live',
+      createOrder: async ({ amountPaise }) => ({
+        orderId: `order_SCHOOL${++n}`,
+        amountPaise,
+        checkout: { keyId: keys.keyId },
+      }),
+      verify: ({ orderId, paymentId, signature }) =>
+        signature === hmac(keys.keySecret, `${orderId}|${paymentId}`),
+      fetchPayment: async (id) => held.get(id)!,
+      verifyWebhook: (raw, sig) =>
+        !!keys.webhookSecret && sig === hmac(keys.webhookSecret, raw.toString()),
+      checkCredentials: async () => ({ ok: true, note: 'Accepted' }),
+    });
+    const live = await buildHttpApp(f.t, {
+      overrides: { gateway: platform, schoolGateway: school },
+      security: f.h.security,
+    });
+    const added = await request(live.app)
+      .post('/api/v1/console/payment-gateways')
+      .set(con)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        label: 'Admissions account',
+        keyId: 'rzp_test_SCHOOLKEY1',
+        keySecret: 'school-key-secret',
+        webhookSecret: 'school-hook-secret',
+      });
+    expect(added.status, JSON.stringify(added.body)).toBe(201);
+    expect(added.body).toMatchObject({ isDefault: true, lastCheck: { ok: true } });
+
+    const c = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Usha',
+          lastName: 'Rao',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-07-01`,
+          idNumber: '771240',
+        },
+      },
+      {},
+    );
+    const id = c.body.application.id as string;
+    const token = c.body.resumeToken as string;
+    await completeDraft(id, token, '9876501303');
+    await pub('post', `/api/v1/public/admissions/applications/${id}/submission`, token, {
+      declarationAccepted: true,
+    });
+    const order = await request(live.app)
+      .post(`/api/v1/public/admissions/applications/${id}/fee-payments`)
+      .set(TOKEN, token)
+      .set('Idempotency-Key', randomUUID())
+      .send({});
+    expect(order.body.gatewayOrder).toMatchObject({ checkout: { keyId: 'rzp_test_SCHOOLKEY1' } });
+    const orderId = order.body.gatewayOrder.orderId as string;
+    expect(orderId).toMatch(/^order_SCHOOL/);
+    const row = await f.t.db
+      .selectFrom('admission_payments as p')
+      .innerJoin('institution_payment_gateways as g', 'g.id', 'p.gateway_id')
+      .select(['g.label'])
+      .where('p.gateway_order_id', '=', orderId)
+      .executeTakeFirstOrThrow();
+    expect(row.label).toBe('Admissions account');
+
+    // Signed with RingPe's key instead of the school's: refused.
+    held.set('pay_S1', {
+      id: 'pay_S1',
+      orderId,
+      amountPaise: 50000,
+      status: 'captured',
+      method: 'upi',
+    });
+    const wrongKey = await request(live.app)
+      .post(
+        `/api/v1/public/admissions/applications/${id}/fee-payments/${order.body.paymentId}/verify`,
+      )
+      .set(TOKEN, token)
+      .send({
+        gatewayPaymentId: 'pay_S1',
+        signature: hmac('platform-secret', `${orderId}|pay_S1`),
+      });
+    expect(wrongKey.status).toBe(402);
+
+    // The webhook: RingPe's own address doesn't settle the school's order; the school's does.
+    const again = await request(live.app)
+      .post(`/api/v1/public/admissions/applications/${id}/fee-payments`)
+      .set(TOKEN, token)
+      .set('Idempotency-Key', randomUUID())
+      .send({});
+    const orderId2 = again.body.gatewayOrder.orderId as string;
+    const event = JSON.stringify({
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: { id: 'pay_S2', order_id: orderId2, amount: 50000, status: 'captured' },
+        },
+      },
+    });
+    const viaPlatform = await request(live.app)
+      .post('/api/v1/partners/gateway/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Razorpay-Signature', hmac('platform-hook', event))
+      .set('X-Razorpay-Event-Id', 'evt_school_1')
+      .send(event);
+    expect(viaPlatform.body).toEqual({ ok: true, outcome: 'UNKNOWN_ORDER' });
+    const hookPath = `/api/v1/partners/gateway/webhooks/${added.body.id}`;
+    const forged = await request(live.app)
+      .post(hookPath)
+      .set('Content-Type', 'application/json')
+      .set('X-Razorpay-Signature', hmac('platform-hook', event))
+      .set('X-Razorpay-Event-Id', 'evt_school_2')
+      .send(event);
+    expect(forged.status).toBe(401);
+    const viaSchool = await request(live.app)
+      .post(hookPath)
+      .set('Content-Type', 'application/json')
+      .set('X-Razorpay-Signature', hmac('school-hook-secret', event))
+      .set('X-Razorpay-Event-Id', 'evt_school_2')
+      .send(event);
+    expect(viaSchool.body).toEqual({ ok: true, outcome: 'PAID' });
   });
 
   it('resumes by a one-time code to the mobile on the application (ADM-002/003)', async () => {
