@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { PATTERNS, isRealDate, isValidPassword } from '../utils/validators/patterns';
+import {
+  PATTERNS,
+  hasAadhaarCheckDigit,
+  isAadhaar,
+  isRealDate,
+  isValidPassword,
+} from '../utils/validators/patterns';
 import {
   amount,
   email,
@@ -104,5 +110,29 @@ describe('toFieldErrors', () => {
         { field: 'extra', code: 'VALIDATION.UNKNOWN_FIELD' },
       ]),
     );
+  });
+});
+
+describe('Aadhaar number (client 2026-10-12)', () => {
+  it('takes twelve digits not starting with 0 or 1', () => {
+    expect(isAadhaar('234123412346')).toBe(true);
+    // Spaces or hyphens between the groups are ignored.
+    expect(isAadhaar('2341 2341 2346')).toBe(true);
+    expect(isAadhaar('2341-2341-2346')).toBe(true);
+    // The Verhoeff check digit is not enforced for now (client 2026-10-12).
+    expect(isAadhaar('234123412345')).toBe(true);
+  });
+
+  it('knows the Verhoeff check digit, though it is not enforced for now', () => {
+    expect(hasAadhaarCheckDigit('234123412346')).toBe(true);
+    expect(hasAadhaarCheckDigit('234123412345')).toBe(false);
+  });
+
+  it('refuses a leading 0 or 1, the wrong length and anything but digits', () => {
+    expect(isAadhaar('134123412346')).toBe(false);
+    expect(isAadhaar('034123412346')).toBe(false);
+    expect(isAadhaar('23412341234')).toBe(false);
+    expect(isAadhaar('2341234123467')).toBe(false);
+    expect(isAadhaar('23412341234a')).toBe(false);
   });
 });

@@ -45,7 +45,7 @@ const application = z
     class: z.object({ id: z.uuid(), name: z.string() }).nullable(),
     midTerm: z.boolean(),
     joiningDate: z.string().nullable(),
-    student: z.looseObject({ firstName: z.string().nullable(), idNumber: z.string().nullable() }),
+    student: z.looseObject({ firstName: z.string().nullable() }),
     references: z.array(z.object({ id: z.uuid(), name: z.string() }).loose()),
     documents: z.array(
       z.object({ type: docType, name: z.string(), url: z.string().nullable() }).loose(),
@@ -125,7 +125,7 @@ doc({
   method: 'get',
   path: '/api/v1/public/admissions/{linkToken}',
   summary:
-    'Admission landing for a link: the institution’s name and city, the years open (regular or mid-term) with entry fees, classes with age bands, the institution’s fields, document and reference rules (RNG-GOV-007)',
+    'Admission landing for a link: the institution’s name and city, the years open (regular or mid-term) with entry fees, classes with age bands, the institution’s fields, the transport pick-up stops, document and reference rules (RNG-GOV-007)',
   auth: 'public',
   responses: { 200: { description: 'Landing' } },
 });
@@ -253,7 +253,7 @@ doc({
   method: 'post',
   path: '/api/v1/public/admissions/applications/{applicationId}/fee-payments',
   summary:
-    'Start paying the application fee (or the admission fee after approval) through the gateway: an order for this fee row, reused across tries',
+    'Start paying the application fee (or the admission fee, with the submitted form or after) through the gateway: an order for this fee row, reused across tries',
   auth: 'public (admission token)',
   request: feePaymentStartSchema,
   idempotent: 'required',
@@ -458,7 +458,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/applications/{applicationId}/admission-fee/cash',
   summary:
-    'Record cash at the accounts desk (admission fee after approval, or the application fee): once, with who paid and who collected; a paid application fee submits a declared draft',
+    'Record cash at the accounts desk (the application fee, or the admission fee from submission on): once, with who paid and who collected; a paid application fee submits a declared draft',
   auth: 'admfees.collect',
   request: cashSchema,
   idempotent: 'required',
@@ -472,6 +472,16 @@ doc({
   auth: 'admfees.collect',
   idempotent: 'required',
   responses: { 201: { description: 'Link' } },
+});
+doc({
+  id: 'ADM-031',
+  method: 'post',
+  path: '/api/v1/console/admission-payments/{paymentId}/confirmation',
+  summary:
+    'Accounts confirms a paid fee was received (online or cash), once; both fees confirmed let the Co-ordinator assign the admission number and section',
+  auth: 'admfees.verify',
+  idempotent: 'required',
+  responses: { 200: { description: 'The confirmation and the application' } },
 });
 doc({
   id: 'ADM-024',
@@ -940,6 +950,15 @@ export function admissionsRoutes(deps: {
     once,
     wrap(async (req, res) => {
       res.status(201).json(await A.onlineLink(principal(req), param(req, 'applicationId')));
+    }),
+  );
+  router.post(
+    '/console/admission-payments/:paymentId/confirmation',
+    ...console,
+    authorize('admfees.verify', L),
+    once,
+    wrap(async (req, res) => {
+      res.json(await A.confirmFee(principal(req), param(req, 'paymentId')));
     }),
   );
   router.get(

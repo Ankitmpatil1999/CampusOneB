@@ -25,6 +25,8 @@ export const PATTERNS = {
   ifsc: /^[A-Z]{4}0[A-Z0-9]{6}$/,
   /** 27.4 §5 National identity number — twelve digits after non-digits are stripped. */
   nationalId: /^\d{12}$/,
+  /** Aadhaar number — twelve digits, never starting with 0 or 1 (with the checksum, see isAadhaar). */
+  aadhaar: /^[2-9]\d{11}$/,
   /** 27.4 §5 Postal code — six digits. */
   postalCode: /^\d{6}$/,
   /** 27.4 §5 Person name (server) — letters only; stored upper case. */
@@ -69,6 +71,51 @@ export function isRealDate(value: string): boolean {
   const [y, m, d] = value.split('-').map(Number) as [number, number, number];
   const date = new Date(Date.UTC(y, m - 1, d));
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+// The Verhoeff check digit (UIDAI): the multiplication and permutation tables of the dihedral group D5.
+const VERHOEFF_D = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+  [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+  [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+  [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+  [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+  [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+] as const;
+const VERHOEFF_P = [
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+  [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+  [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+  [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+  [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+] as const;
+
+/** Whether the last of an Aadhaar number's twelve digits is the Verhoeff check digit of the others. */
+export function hasAadhaarCheckDigit(digits: string): boolean {
+  let c = 0;
+  [...digits].reverse().forEach((ch, i) => {
+    c = VERHOEFF_D[c]![VERHOEFF_P[i % 8]![Number(ch)]!]!;
+  });
+  return c === 0;
+}
+
+/**
+ * An Aadhaar number (client 2026-10-12): twelve digits, not starting with 0 or 1. Spaces and hyphens
+ * typed between groups are ignored.
+ */
+export function isAadhaar(value: string): boolean {
+  const v = value.replace(/[\s-]/g, '');
+  if (!PATTERNS.aadhaar.test(v)) return false;
+  // The Verhoeff check digit is not enforced for now (client 2026-10-12). To enforce it again:
+  // if (!hasAadhaarCheckDigit(v)) return false;
+  return true;
 }
 
 export interface PasswordPolicy {

@@ -967,6 +967,37 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AdmissionLinkEmail"
+  /api/v1/console/admission-payments/{paymentId}/confirmation:
+    post:
+      operationId: ADM-031
+      summary: Accounts confirms a paid fee was received (online or cash), once; both fees confirmed let the Co-ordinator assign the admission number and section
+      tags:
+        - Admissions
+      x-ringpe-auth: admfees.verify
+      responses:
+        "200":
+          description: The confirmation and the application
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
   /api/v1/console/admission-receipts/{receiptId}:
     get:
       operationId: ADM-024
@@ -1477,7 +1508,7 @@ paths:
   /api/v1/console/applications/{applicationId}/admission-fee/cash:
     post:
       operationId: ADM-022
-      summary: "Record cash at the accounts desk (admission fee after approval, or the application fee): once, with who paid and who collected; a paid application fee submits a declared draft"
+      summary: "Record cash at the accounts desk (the application fee, or the admission fee from submission on): once, with who paid and who collected; a paid application fee submits a declared draft"
       tags:
         - Admissions
       x-ringpe-auth: admfees.collect
@@ -17331,7 +17362,7 @@ paths:
   /api/v1/public/admissions/{linkToken}:
     get:
       operationId: ADM-001
-      summary: "Admission landing for a link: the institution’s name and city, the years open (regular or mid-term) with entry fees, classes with age bands, the institution’s fields, document and reference rules (RNG-GOV-007)"
+      summary: "Admission landing for a link: the institution’s name and city, the years open (regular or mid-term) with entry fees, classes with age bands, the institution’s fields, the transport pick-up stops, document and reference rules (RNG-GOV-007)"
       tags:
         - Admissions
       x-ringpe-auth: public
@@ -17582,7 +17613,7 @@ paths:
   /api/v1/public/admissions/applications/{applicationId}/fee-payments:
     post:
       operationId: ADM-010
-      summary: "Start paying the application fee (or the admission fee after approval) through the gateway: an order for this fee row, reused across tries"
+      summary: "Start paying the application fee (or the admission fee, with the submitted form or after) through the gateway: an order for this fee row, reused across tries"
       tags:
         - Admissions
       x-ringpe-auth: public (admission token)
@@ -20002,13 +20033,8 @@ components:
               type:
                 - string
                 - "null"
-            idNumber:
-              type:
-                - string
-                - "null"
           required:
             - firstName
-            - idNumber
           additionalProperties: {}
         references:
           type: array
@@ -20160,11 +20186,14 @@ components:
             dob:
               type: string
               pattern: ^\d{4}-\d{2}-\d{2}$
-            idNumber:
-              description: The last 6 digits of the identity number (Q16 e); kept encrypted
+            aadhaar:
+              description: The student's Aadhaar number; kept encrypted, shown masked
+              type: string
+            pan:
+              description: The student's PAN, if any; kept encrypted, shown masked
               anyOf:
                 - type: string
-                  pattern: ^\d{6}$
+                  pattern: ^[A-Z]{5}\d{4}[A-Z]$
                 - type: "null"
             category:
               anyOf:
@@ -20341,33 +20370,30 @@ components:
                   additionalProperties: false
                 - type: "null"
             mother:
-              anyOf:
-                - type: object
-                  properties:
-                    name:
-                      type: string
-                      maxLength: 100
-                      pattern: ^[A-Za-zÀ-ÿ.'-]+(?:\s[A-Za-zÀ-ÿ.'-]+)*$
-                    mobile:
-                      anyOf:
-                        - type: string
-                          pattern: ^[6-9]\d{9}$
-                        - type: "null"
-                    email:
-                      anyOf:
-                        - type: string
-                          maxLength: 254
-                          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
-                        - type: "null"
-                    occupation:
-                      anyOf:
-                        - type: string
-                          maxLength: 80
-                        - type: "null"
-                  required:
-                    - name
-                  additionalProperties: false
-                - type: "null"
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  pattern: ^[A-Za-zÀ-ÿ.'-]+(?:\s[A-Za-zÀ-ÿ.'-]+)*$
+                mobile:
+                  type: string
+                  pattern: ^[6-9]\d{9}$
+                email:
+                  anyOf:
+                    - type: string
+                      maxLength: 254
+                      pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                    - type: "null"
+                occupation:
+                  anyOf:
+                    - type: string
+                      maxLength: 80
+                    - type: "null"
+              required:
+                - name
+                - mobile
+              additionalProperties: false
             guardian:
               anyOf:
                 - type: object
@@ -20407,6 +20433,28 @@ components:
                 - FATHER
                 - MOTHER
                 - GUARDIAN
+            children:
+              type: string
+              enum:
+                - SINGLE
+                - MORE
+              description: Whether the parents have a single child or more (client 2026-10-12)
+            primaryAadhaar:
+              description: The primary contact's Aadhaar number; kept encrypted, shown masked
+              type: string
+            primaryPan:
+              description: The primary contact's PAN; kept encrypted, shown masked
+              type: string
+              pattern: ^[A-Z]{5}\d{4}[A-Z]$
+            transport:
+              description: The family opts for school transport
+              type: boolean
+            transportStopId:
+              description: "The preferred pick-up stop: one of the landing's transportStops"
+              anyOf:
+                - type: string
+                  maxLength: 40
+                - type: "null"
             hostel:
               type: boolean
             localGuardian:
@@ -20436,7 +20484,9 @@ components:
                   additionalProperties: false
                 - type: "null"
           required:
+            - mother
             - primary
+            - children
           additionalProperties: false
         customFields:
           type: object
@@ -20685,6 +20735,9 @@ components:
           enum:
             - APPLICATION
             - ADMISSION
+        withAdmission:
+          description: "With the application fee: the admission fee too, in the same order (the family chose to pay it now)"
+          type: boolean
       additionalProperties: false
     AdmissionPaymentVerified:
       type: object
@@ -20772,12 +20825,11 @@ components:
     AdmissionResumeAsk:
       type: object
       properties:
-        identityNumber:
-          type: string
-          pattern: ^\d{6}$
         mobile:
           type: string
           pattern: ^[6-9]\d{9}$
+      required:
+        - mobile
       additionalProperties: false
     AdmissionResumeSent:
       type: object
@@ -20859,10 +20911,15 @@ components:
         declarationAccepted:
           type: boolean
           const: true
+        registrationConsent:
+          type: boolean
+          const: true
+          description: The family agrees that what is collected registers their RingPe account (client 2026-10-12)
         payLater:
           type: boolean
       required:
         - declarationAccepted
+        - registrationConsent
       additionalProperties: false
     AdmissionSubmitted:
       type: object
@@ -24905,11 +24962,14 @@ components:
             dob:
               type: string
               pattern: ^\d{4}-\d{2}-\d{2}$
-            idNumber:
-              description: The last 6 digits of the identity number (Q16 e); kept encrypted
+            aadhaar:
+              description: The student's Aadhaar number; kept encrypted, shown masked
+              type: string
+            pan:
+              description: The student's PAN, if any; kept encrypted, shown masked
               anyOf:
                 - type: string
-                  pattern: ^\d{6}$
+                  pattern: ^[A-Z]{5}\d{4}[A-Z]$
                 - type: "null"
             category:
               anyOf:
@@ -25086,33 +25146,30 @@ components:
                   additionalProperties: false
                 - type: "null"
             mother:
-              anyOf:
-                - type: object
-                  properties:
-                    name:
-                      type: string
-                      maxLength: 100
-                      pattern: ^[A-Za-zÀ-ÿ.'-]+(?:\s[A-Za-zÀ-ÿ.'-]+)*$
-                    mobile:
-                      anyOf:
-                        - type: string
-                          pattern: ^[6-9]\d{9}$
-                        - type: "null"
-                    email:
-                      anyOf:
-                        - type: string
-                          maxLength: 254
-                          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
-                        - type: "null"
-                    occupation:
-                      anyOf:
-                        - type: string
-                          maxLength: 80
-                        - type: "null"
-                  required:
-                    - name
-                  additionalProperties: false
-                - type: "null"
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  pattern: ^[A-Za-zÀ-ÿ.'-]+(?:\s[A-Za-zÀ-ÿ.'-]+)*$
+                mobile:
+                  type: string
+                  pattern: ^[6-9]\d{9}$
+                email:
+                  anyOf:
+                    - type: string
+                      maxLength: 254
+                      pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                    - type: "null"
+                occupation:
+                  anyOf:
+                    - type: string
+                      maxLength: 80
+                    - type: "null"
+              required:
+                - name
+                - mobile
+              additionalProperties: false
             guardian:
               anyOf:
                 - type: object
@@ -25152,6 +25209,28 @@ components:
                 - FATHER
                 - MOTHER
                 - GUARDIAN
+            children:
+              type: string
+              enum:
+                - SINGLE
+                - MORE
+              description: Whether the parents have a single child or more (client 2026-10-12)
+            primaryAadhaar:
+              description: The primary contact's Aadhaar number; kept encrypted, shown masked
+              type: string
+            primaryPan:
+              description: The primary contact's PAN; kept encrypted, shown masked
+              type: string
+              pattern: ^[A-Z]{5}\d{4}[A-Z]$
+            transport:
+              description: The family opts for school transport
+              type: boolean
+            transportStopId:
+              description: "The preferred pick-up stop: one of the landing's transportStops"
+              anyOf:
+                - type: string
+                  maxLength: 40
+                - type: "null"
             hostel:
               type: boolean
             localGuardian:
@@ -25181,7 +25260,9 @@ components:
                   additionalProperties: false
                 - type: "null"
           required:
+            - mother
             - primary
+            - children
           additionalProperties: false
         customFields:
           type: object
@@ -25194,6 +25275,10 @@ components:
           maximum: 7
         submit:
           type: boolean
+        registrationConsent:
+          description: "Required with submit: true"
+          type: boolean
+          const: true
       required:
         - class
       additionalProperties: false

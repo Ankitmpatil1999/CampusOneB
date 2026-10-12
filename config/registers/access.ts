@@ -114,6 +114,7 @@ export const INSTITUTION_TASKS: readonly TaskDefinition[] = [
   inst('admfees', 'Admission fees', [
     ['view', 'See admission fees'],
     ['collect', 'Collect admission fees'],
+    ['verify', 'Confirm receipt of admission fees'],
   ]),
   inst('admqr', 'Admission link & QR', [
     ['view', 'See the admission link'],
@@ -231,7 +232,36 @@ export const RESERVED_SUB_TASKS: Readonly<Record<string, readonly string[]>> = {
   'xi.drill': ['PLATFORM_ADMIN'], // Q10a
   'approvals.decide': ['INSTITUTION_ADMIN'], // Q9
   'mkr.decide': ['PLATFORM_ADMIN'], // ADR-0015 point 5
+  // Client 2026-10-09: the Co-ordinator assigns admission numbers and sections (and decides the
+  // application), not the Counsellor; Accounts confirms the fees received before that.
+  'admissions.approve': ['INSTITUTION_ADMIN', 'ACADEMIC_COORDINATOR'],
+  'admfees.verify': ['INSTITUTION_ADMIN', 'ACCOUNTANT'],
 };
+
+/** Every sub-task of the tasks a role may hold (reserved ones only where allowed), less some. */
+const grantsExcept = (
+  role: string,
+  tasks: readonly string[],
+  except: readonly string[],
+): readonly string[] =>
+  INSTITUTION_TASKS.filter((t) => tasks.includes(t.code))
+    .flatMap((t) => t.subTasks.map((s) => s.code))
+    .filter((s) => !except.includes(s))
+    .filter((s) => !RESERVED_SUB_TASKS[s] || RESERVED_SUB_TASKS[s].includes(role));
+
+const ACCOUNTANT_TASKS = [
+  'home',
+  'reports',
+  'fees',
+  'events',
+  'admfees',
+  'settlements',
+  'recon',
+  'vouchers',
+  'approvals',
+  // Submitted applications are visible to Accounts (client 2026-10-09); they are not edited there.
+  'admissions',
+];
 
 export interface RoleTemplate {
   readonly code: string;
@@ -267,22 +297,14 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     scope: 'INSTITUTION',
     name: 'Accountant',
     description: 'Fees, collections, settlements and accounting',
-    tasks: [
-      'home',
-      'reports',
-      'fees',
-      'events',
-      'admfees',
-      'settlements',
-      'recon',
-      'vouchers',
-      'approvals',
-    ],
+    tasks: ACCOUNTANT_TASKS,
+    subTasks: grantsExcept('ACCOUNTANT', ACCOUNTANT_TASKS, ['admissions.edit']),
   },
   {
     code: 'COUNSELLOR',
     scope: 'INSTITUTION',
     name: 'Counsellor',
+    // Approving (admission number, section) is the Co-ordinator's; confirming fees is Accounts'.
     description: 'Admissions and admission fees',
     tasks: ['home', 'admissions', 'admfees', 'admqr'],
   },
@@ -290,8 +312,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     code: 'ACADEMIC_COORDINATOR',
     scope: 'INSTITUTION',
     name: 'Academic Coordinator',
-    description: 'Academics, teacher leave and attendance',
-    tasks: ['home', 'reports', 'academics', 'leave', 'attendance', 'comms'],
+    description: 'Academics, admission decisions, teacher leave and attendance',
+    tasks: ['home', 'reports', 'academics', 'admissions', 'leave', 'attendance', 'comms'],
   },
   {
     code: 'TRANSPORT_ADMIN',
