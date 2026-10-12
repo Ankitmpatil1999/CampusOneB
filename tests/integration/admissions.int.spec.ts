@@ -712,7 +712,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
             firstName: first,
             lastName: 'Rao',
             gender: 'FEMALE',
-            dob: `${Number(nextYear.label.slice(0, 4)) - 11}-08-14`,
+            dob: `${Number(nextYear.label.slice(0, 4)) - 11}-05-14`,
             aadhaar: aadhaar(),
           },
         },
