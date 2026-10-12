@@ -74,6 +74,11 @@ const USER_TYPES = [
   ['Management', 'MANAGEMENT'],
   ['Merchant', 'MERCHANT'],
   ['Crew', 'CREW'],
+  // Types the STAFF below use; on a fresh database they must exist before the staff profiles
+  // (TVPS_USER_TYPES adds them again later with their departments — INSERT IGNORE keeps one row).
+  ['Counsellor', 'STAFF'],
+  ['Coordinator', 'STAFF'],
+  ['Transport administrator', 'STAFF'],
 ] as const;
 const STAFF = [
   {

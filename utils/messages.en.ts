@@ -135,6 +135,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.NOT_EDITABLE': 'An approved or rejected application can’t be changed.',
   'ADM.NOT_FOUND': 'Admission application not found',
   'ADM.NOT_SUBMITTED': 'Only Submitted applications can be approved',
+  'ADM.PARENT_TYPE_MISSING':
+    'Add a user type in the Parent category first (People › User types): approving adds the parents as members.',
   'ADM.PAYMENT_NOT_VERIFIED': 'Payment verification failed. Please contact the admission office.',
   'ADM.RECEIPT_TAKEN': 'Duplicate data found',
   'ADM.REFERENCES_REQUIRED': 'Add at least one reference — it’s needed for a mid-term admission.',

@@ -247,6 +247,12 @@ export const ADMISSION_MESSAGES = [
     ['class'],
   ),
   n(
+    'ADM.PARENT_TYPE_MISSING',
+    409,
+    'Add a user type in the Parent category first (People › User types): approving adds the parents as members.',
+    ['19.4', 'RNG-ONB-024'],
+  ),
+  n(
     'ADM.STATUS_NOT_FOUND',
     404,
     'No application matches these details. Check the application number on your confirmation SMS or e-mail.',
