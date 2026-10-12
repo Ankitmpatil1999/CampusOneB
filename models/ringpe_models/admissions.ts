@@ -15,7 +15,7 @@ type Json<T> = ColumnType<T, string, string>;
 
 export type ApplicationStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 export type AdmissionPaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
-/** An application's fees together (migration 0065). */
+/** An application's fees together (migration 0067). */
 export type AdmissionPaymentState = 'PENDING' | 'PAID' | 'CONFIRMED';
 export type AdmissionFeeType = 'APPLICATION' | 'ADMISSION';
 export type AdmissionDocType = 'PHOTO' | 'BIRTH' | 'ADDRESS' | 'REPORT' | 'TC' | 'OTHER';
@@ -58,7 +58,7 @@ export interface AdmissionApplicationsTable {
   id_number_enc: Buffer | null;
   id_number_bidx: Buffer | null;
   id_number_last4: string | null;
-  /** Migration 0067: the student's Aadhaar and PAN, encrypted; last four in clear. */
+  /** Migration 0069: the student's Aadhaar and PAN, encrypted; last four in clear. */
   student_aadhaar_enc: Buffer | null;
   student_aadhaar_bidx: Buffer | null;
   student_aadhaar_last4: string | null;
@@ -68,7 +68,7 @@ export interface AdmissionApplicationsTable {
   primary_relation: 'FATHER' | 'MOTHER' | 'GUARDIAN' | null;
   primary_mobile: string | null;
   primary_email: string | null;
-  /** Migration 0067: the primary contact's Aadhaar and PAN, encrypted; last four in clear. */
+  /** Migration 0069: the primary contact's Aadhaar and PAN, encrypted; last four in clear. */
   primary_aadhaar_enc: Buffer | null;
   primary_aadhaar_last4: string | null;
   primary_pan_enc: Buffer | null;
@@ -81,7 +81,7 @@ export interface AdmissionApplicationsTable {
   tc_due: NullableDate;
   declared_at: NullableTimestamp;
   declared_by: string | null;
-  /** Migration 0067: the family agreed to their details registering a RingPe account. */
+  /** Migration 0069: the family agreed to their details registering a RingPe account. */
   registration_consent_at: NullableTimestamp;
   submitted_at: NullableTimestamp;
   decided_at: NullableTimestamp;
@@ -90,7 +90,7 @@ export interface AdmissionApplicationsTable {
   rejection_remarks: string | null;
   admission_no: string | null;
   member_profile_id: Ref | null;
-  /** Migration 0065: every fee paid → PAID; every fee confirmed by Accounts (or none) → CONFIRMED. */
+  /** Migration 0067: every fee paid → PAID; every fee confirmed by Accounts (or none) → CONFIRMED. */
   payment_status: ColumnType<
     AdmissionPaymentState,
     AdmissionPaymentState | undefined,
@@ -148,7 +148,7 @@ export interface AdmissionPaymentsTable {
   paid_by: string | null;
   collected_by: Buffer | null;
   paid_at: NullableTimestamp;
-  /** Migration 0065: Accounts confirmed the receipt (and who). */
+  /** Migration 0067: Accounts confirmed the receipt (and who). */
   confirmed_at: NullableTimestamp;
   confirmed_by: Buffer | null;
   failure_reason: string | null;
