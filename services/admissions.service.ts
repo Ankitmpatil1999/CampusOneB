@@ -22,7 +22,13 @@ import { createHash } from 'node:crypto';
 import type { MessageSender } from '../integrations/sms.provider';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, renderMessage, type MessageKey } from '../config/registers';
-import type { PaymentGateway } from '../integrations/payment-gateway.provider';
+import type {
+  GatewayOrder,
+  GatewayPayment,
+  PaymentGateway,
+} from '../integrations/payment-gateway.provider';
+import { ipToBin } from '../utils/ip';
+import type { PaymentGatewaysService } from './payment-gateways.service';
 import type {
   AdmissionDocType,
   AdmissionFeeType,
@@ -166,7 +172,10 @@ export class AdmissionsService {
       readonly otp: OtpService;
       readonly flows: FlowTokens;
       readonly links: AdmissionLinksService;
+      /** RingPe's own gateway (PAYMENT_GATEWAY_MODE), or the test checkout. */
       readonly gateway: PaymentGateway;
+      /** Each school's own gateways (client 2026-10-09). */
+      readonly gateways?: PaymentGatewaysService;
       readonly webUrl: string;
       /** The family's notices (logged senders: every send is in the communication log). */
       readonly sms?: MessageSender;
@@ -1637,10 +1646,18 @@ export class AdmissionsService {
         .executeTakeFirst();
       if (!paid) admission = await this.payable(a.row, 'ADMISSION').catch(() => 0);
     }
-    const order = await this.deps.gateway.createOrder({
-      amountPaise: amount + admission,
-      receipt: a.row.application_no,
-    });
+    const chosen = await this.gatewayFor(String(a.inst.id));
+    let order: GatewayOrder | null;
+    try {
+      order = await chosen.gateway.createOrder({
+        amountPaise: amount + admission,
+        receipt: a.row.application_no,
+        notes: { applicationNo: a.row.application_no, feeType },
+      });
+    } catch {
+      // The gateway didn't answer (Razorpay down, wrong keys): the family can try again.
+      throw new CustomAPIError(503, 'GEN.UNAVAILABLE');
+    }
     if (!order) throw new CustomAPIError(503, 'ADM.GATEWAY_NOT_CONFIGURED');
     const pay = await this.deps.db.transaction().execute(async (trx) => {
       const onOrder = async (type: AdmissionFeeType, paise: number) => {
@@ -1653,6 +1670,7 @@ export class AdmissionsService {
             mode: 'ONLINE',
             amount_paise: paise,
             gateway_order_id: order.orderId,
+            gateway_id: chosen.gatewayId,
             attempts: sql<number>`attempts + 1`,
             updated_at: this.now(),
             row_version: sql<number>`row_version + 1`,
@@ -1674,8 +1692,10 @@ export class AdmissionsService {
       gatewayOrder: {
         orderId: order.orderId,
         amount: toMoneyDto(order.amountPaise),
-        mode: this.deps.gateway.mode,
+        mode: chosen.gateway.mode,
         ...(order.test ? { test: order.test } : {}),
+        // Live: the page opens the gateway's checkout with this public key and the order.
+        ...(order.checkout ? { checkout: { keyId: order.checkout.keyId, name: a.inst.name } } : {}),
       },
     };
   }
@@ -1721,37 +1741,35 @@ export class AdmissionsService {
       }
       throw new CustomAPIError(409, 'ADM.FEE_ALREADY_PAID');
     }
+    const gateway = await this.gatewayOf(f.gateway_id);
     const ok =
       !!f.gateway_order_id &&
-      this.deps.gateway.verify({
+      gateway.verify({
         orderId: f.gateway_order_id,
         paymentId: input.gatewayPaymentId,
         signature: input.signature,
       });
     if (!ok) {
-      await this.deps.db
-        .updateTable('admission_payments')
-        .set({
-          status: 'FAILED',
-          failure_reason: 'The gateway’s signature did not verify',
-          updated_at: this.now(),
-          row_version: sql<number>`row_version + 1`,
-        })
-        .where('application_id', '=', a.row.id)
-        .where((eb) =>
-          f.gateway_order_id
-            ? eb('gateway_order_id', '=', f.gateway_order_id)
-            : eb('id', '=', f.id),
-        )
-        .where('status', '=', 'PENDING')
-        .execute();
+      await this.failPayment(f, 'The gateway’s signature did not verify');
       throw new CustomAPIError(402, 'ADM.PAYMENT_NOT_VERIFIED');
     }
     // Each fee on the order is paid, with its own receipt (the application fee first).
     const due = await onOrder(['PENDING', 'FAILED']);
+    const fees = due.length ? due : [f];
+    // Live: the payment as Razorpay holds it — this order, the amount of every fee on it, captured.
+    const orderPaise = fees.reduce((s, r) => s + Number(r.amount_paise), 0);
+    const wrong = await this.gatewayProblem(
+      gateway,
+      { gateway_order_id: f.gateway_order_id, amount_paise: orderPaise },
+      input.gatewayPaymentId,
+    );
+    if (wrong) {
+      await this.failPayment(f, wrong);
+      throw new CustomAPIError(402, 'ADM.PAYMENT_NOT_VERIFIED');
+    }
     const receipts = await this.deps.db.transaction().execute(async (trx) => {
       const out: { feeType: AdmissionFeeType; receiptNo: string }[] = [];
-      for (const row of due.length ? due : [f]) {
+      for (const row of fees) {
         out.push({
           feeType: row.fee_type,
           receiptNo: await this.markPaid(trx, row, {
@@ -1773,6 +1791,189 @@ export class AdmissionsService {
       receipts,
       applicationStatus: after.status,
     };
+  }
+
+  /** Every fee still pending on the payment's order fails: one, or the application and admission fees. */
+  private async failPayment(
+    f: { id: string; application_id: string; gateway_order_id: string | null },
+    reason: string,
+  ) {
+    await this.deps.db
+      .updateTable('admission_payments')
+      .set({
+        status: 'FAILED',
+        failure_reason: reason.slice(0, 200),
+        updated_at: this.now(),
+        row_version: sql<number>`row_version + 1`,
+      })
+      .where('application_id', '=', f.application_id)
+      .where((eb) =>
+        f.gateway_order_id ? eb('gateway_order_id', '=', f.gateway_order_id) : eb('id', '=', f.id),
+      )
+      .where('status', '=', 'PENDING')
+      .execute();
+  }
+
+  /**
+   * Live gateway: what is wrong with the payment as the gateway holds it, or null when it is this
+   * order's, for the order's amount, and captured (an authorised payment is captured first).
+   */
+  /**
+   * The gateway for a new payment: the test checkout in test mode; else the school's default
+   * gateway; else RingPe's own (setting pg.platformFallback); else none.
+   */
+  private async gatewayFor(
+    institutionId: string,
+  ): Promise<{ gatewayId: string | null; gateway: PaymentGateway }> {
+    if (this.deps.gateway.mode === 'test') return { gatewayId: null, gateway: this.deps.gateway };
+    const own = await this.deps.gateways?.defaultFor(institutionId);
+    if (own) return { gatewayId: own.id, gateway: own.gateway };
+    if ((await this.limit(LIMITS.pgPlatformFallback)) === 1) {
+      return { gatewayId: null, gateway: this.deps.gateway };
+    }
+    throw new CustomAPIError(503, 'ADM.GATEWAY_NOT_CONFIGURED');
+  }
+
+  /** The gateway a payment was taken with. */
+  private async gatewayOf(gatewayId: string | null): Promise<PaymentGateway> {
+    if (gatewayId === null) return this.deps.gateway;
+    const g = await this.deps.gateways?.byId(gatewayId);
+    if (!g) throw new CustomAPIError(503, 'GEN.UNAVAILABLE');
+    return g;
+  }
+
+  private async gatewayProblem(
+    g: PaymentGateway,
+    f: { gateway_order_id: string | null; amount_paise: number | string },
+    paymentId: string,
+  ): Promise<string | null> {
+    if (!g.fetchPayment) return null;
+    let p: GatewayPayment;
+    try {
+      p = await g.fetchPayment(paymentId);
+      if (p.status === 'authorized' && g.capturePayment && p.orderId === f.gateway_order_id) {
+        p = await g.capturePayment(paymentId, Number(f.amount_paise));
+      }
+    } catch {
+      // Not reached or not answered: nothing is marked; the family checks again.
+      throw new CustomAPIError(503, 'GEN.UNAVAILABLE');
+    }
+    if (p.orderId !== f.gateway_order_id) return 'The payment belongs to another order';
+    if (p.amountPaise !== Number(f.amount_paise)) return 'The amount paid differs from the fee';
+    if (p.status !== 'captured') return `The gateway reports the payment as ${p.status}`;
+    return null;
+  }
+
+  // --- SAS-033: the gateway's webhook (Razorpay; client 2026-10-09) -------------------------------------
+  /**
+   * A signed event from the gateway: a captured payment marks its admission or application fee paid
+   * even when the family closed the page before ADM-011. The signature is checked on the raw body;
+   * each event id is processed once (webhook_receipts); anything else is acknowledged and ignored.
+   */
+  async gatewayEvent(input: {
+    rawBody: Buffer | undefined;
+    signature: string | undefined;
+    eventId: string | undefined;
+    ip: string | undefined;
+    /** A school gateway's webhook address carries its id; none = RingPe's own gateway. */
+    gatewayPublicId?: string | undefined;
+  }) {
+    let gatewayId: string | null = null;
+    let g = this.deps.gateway;
+    if (input.gatewayPublicId !== undefined) {
+      const own = await this.deps.gateways?.forWebhook(input.gatewayPublicId);
+      if (!own) throw new CustomAPIError(401, 'INT.SIGNATURE_INVALID');
+      gatewayId = own.id;
+      g = own.gateway;
+    }
+    const client = input.gatewayPublicId
+      ? `pg:${input.gatewayPublicId.toLowerCase()}`.slice(0, 64)
+      : 'razorpay';
+    const raw = input.rawBody;
+    if (!raw || !input.signature || !g.verifyWebhook || !g.verifyWebhook(raw, input.signature)) {
+      throw new CustomAPIError(401, 'INT.SIGNATURE_INVALID');
+    }
+    const bodySha = createHash('sha256').update(raw).digest('hex');
+    const eventId = (input.eventId ?? bodySha).slice(0, 100);
+    try {
+      await this.deps.db
+        .insertInto('webhook_receipts')
+        .values({
+          partner_client_id: client,
+          partner_event_id: eventId,
+          signature_ok: true,
+          source_ip: ipToBin(input.ip) ?? Buffer.alloc(16),
+          body_sha256: bodySha,
+          body_encrypted: null,
+          outcome: 'RECEIVED',
+          response_code: '200',
+        })
+        .execute();
+    } catch (e) {
+      if ((e as { code?: string }).code === 'ER_DUP_ENTRY') return { ok: true, duplicate: true };
+      throw e;
+    }
+    const outcome = await this.applyGatewayEvent(raw, gatewayId).catch(() => 'ERROR');
+    await this.deps.db
+      .updateTable('webhook_receipts')
+      .set({ outcome })
+      .where('partner_client_id', '=', client)
+      .where('partner_event_id', '=', eventId)
+      .execute();
+    return { ok: true, outcome };
+  }
+
+  private async applyGatewayEvent(raw: Buffer, gatewayId: string | null): Promise<string> {
+    const body = JSON.parse(raw.toString('utf8')) as {
+      event?: string;
+      payload?: { payment?: { entity?: Record<string, unknown> } };
+    };
+    if (body.event !== 'payment.captured' && body.event !== 'order.paid') return 'IGNORED';
+    const p = body.payload?.payment?.entity;
+    const orderId = typeof p?.['order_id'] === 'string' ? p['order_id'] : null;
+    const paymentId = typeof p?.['id'] === 'string' ? p['id'] : null;
+    if (!orderId || !paymentId) return 'IGNORED';
+    // Every fee on the order: one, or the application and admission fees together.
+    const onOrder = await this.deps.db
+      .selectFrom('admission_payments')
+      .selectAll()
+      .where('gateway_order_id', '=', orderId)
+      // Only payments taken with this gateway: one school's keys never settle another's.
+      .where('gateway_id', gatewayId === null ? 'is' : '=', gatewayId)
+      .orderBy('fee_type') // the ENUM's order: the application fee first
+      .execute();
+    const f = onOrder[0];
+    if (!f) return 'UNKNOWN_ORDER';
+    const due = onOrder.filter((r) => r.status !== 'PAID');
+    if (!due.length) return 'ALREADY_PAID';
+    const orderPaise = onOrder.reduce((s, r) => s + Number(r.amount_paise), 0);
+    if (Number(p?.['amount']) !== orderPaise) return 'AMOUNT_MISMATCH';
+    if (p?.['status'] !== 'captured') return 'NOT_CAPTURED';
+    const app = await this.deps.db
+      .selectFrom('admission_applications')
+      .select(['public_id', 'status'])
+      .where('id', '=', String(f.application_id))
+      .executeTakeFirstOrThrow();
+    try {
+      await this.deps.db.transaction().execute(async (trx) => {
+        for (const row of due) {
+          await this.markPaid(trx, row, {
+            mode: 'ONLINE',
+            paidAt: this.now(),
+            gatewayPaymentId: paymentId,
+          });
+        }
+      });
+    } catch (e) {
+      if (e instanceof CustomAPIError && e.code === 'ADM.FEE_ALREADY_PAID') return 'ALREADY_PAID';
+      throw e;
+    }
+    const id = binToUuid(app.public_id);
+    const after = await this.lockless(String(f.institution_id), id);
+    if (app.status === 'DRAFT' && after.status === 'SUBMITTED') {
+      await this.tellFamily(String(f.institution_id), id, 'SUBMITTED');
+    }
+    return 'PAID';
   }
 
   // --- ADM-012 ---------------------------------------------------------------------------------------

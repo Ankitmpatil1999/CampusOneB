@@ -54,6 +54,8 @@ import { feesRoutes } from './fees.routes';
 import { feeDuesRoutes } from './fee-dues.routes';
 import { financingRoutes } from './financing.routes';
 import { admissionsRoutes } from './admissions.routes';
+import { paymentGatewaysRoutes } from './payment-gateways.routes';
+import type { PaymentGatewaysService } from '../services/payment-gateways.service';
 import { settlementRoutes } from './settlement.routes';
 import { reconRoutes } from './recon.routes';
 import { grievancesRoutes } from './grievances.routes';
@@ -94,6 +96,10 @@ import type { PaymentsService } from '../services/payments.service';
 import type { TransfersService } from '../services/transfers.service';
 import type { BankCreditsService } from '../services/bank-credits.service';
 import type { PartnersService } from '../services/partners.service';
+import type { AxisBankService } from '../services/axis-bank.service';
+import type { SessionRevocations } from '../utils/session-revocations';
+import type { TokenVerifier } from '../utils/token-verifier';
+import { axisBankRoutes } from './axis-bank.routes';
 import type { ReconService } from '../services/recon.service';
 import type { ReconReportsService } from '../services/recon-reports.service';
 import type { ReconciliationService } from '../services/reconciliation.service';
@@ -176,6 +182,7 @@ export interface ApiServices {
   readonly transfers: TransfersService;
   readonly bankCredits: BankCreditsService;
   readonly partners: PartnersService;
+  readonly axisBank: AxisBankService;
   readonly recon: ReconService;
   readonly refunds: RefundsService;
   readonly grievances: GrievancesService;
@@ -218,10 +225,30 @@ export interface ApiServices {
   readonly financing: FinancingService;
   readonly admissions: AdmissionsService;
   readonly admissionLinks: AdmissionLinksService;
+  readonly paymentGateways: PaymentGatewaysService;
   readonly settlement: SettlementService;
   readonly settings: SettingsService;
   /** Stricter rate limit for sign-in, code and refresh routes (RATE_LIMIT_AUTH_MAX). */
   readonly authLimiter: RequestHandler;
+}
+
+/**
+ * Routers mounted before /api/v1 that check their own credentials and answer in a partner's own
+ * format: the Axis Bank Power E-coll calls (BNK-001…003).
+ */
+export function partnerRouters(
+  s: ApiServices,
+  security: { readonly verifier?: TokenVerifier; readonly revocations?: SessionRevocations },
+): Router[] {
+  return [
+    axisBankRoutes({
+      axis: s.axisBank,
+      partners: s.partners,
+      verifier: security.verifier,
+      revocations: security.revocations,
+      loggers: s.loggers,
+    }),
+  ];
 }
 
 export function apiRouters(s: ApiServices): Router[] {
@@ -369,6 +396,7 @@ export function apiRouters(s: ApiServices): Router[] {
       loggers: s.loggers,
       authLimiter: s.authLimiter,
     }),
+    paymentGatewaysRoutes({ db: s.db, gateways: s.paymentGateways, loggers: s.loggers }),
     settlementRoutes({ db: s.db, settlement: s.settlement, loggers: s.loggers }),
     posRoutes({
       db: s.db,

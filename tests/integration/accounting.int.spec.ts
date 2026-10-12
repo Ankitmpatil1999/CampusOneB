@@ -147,9 +147,7 @@ describe.skipIf(!adminUrl)('accounting vouchers and plan fee rules on real MySQL
     expect(retry.status, JSON.stringify(retry.body)).toBe(202);
     expect(retry.body).toMatchObject({ status: 'FAILED', attempts: 2 });
     // The officer corrects the ledger name: the next try uses it and succeeds.
-    const now = await request(f.app)
-      .get('/api/v1/console/accounting/mappings')
-      .set(f.school.con);
+    const now = await request(f.app).get('/api/v1/console/accounting/mappings').set(f.school.con);
     const fixed = await map(now.body.version, {
       companyName: 'Tunga Valley Trust',
       enabled: true,

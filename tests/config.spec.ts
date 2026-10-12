@@ -99,6 +99,9 @@ describe('loadConfig', () => {
       BANK_VERIFY_MODE: 'live',
       FINANCING_PARTNER_MODE: 'live',
       PAYMENT_GATEWAY_MODE: 'live',
+      RAZORPAY_KEY_ID: 'rzp_live_example',
+      RAZORPAY_SECRET: 'example-secret',
+      RAZORPAY_WEBHOOK_SECRET: 'example-webhook-secret',
       ACCOUNTING_MODE: 'off',
       PUBLIC_WEB_URL: 'https://app.ringpe.in',
     };
@@ -145,6 +148,9 @@ describe('loadConfig', () => {
       BANK_VERIFY_MODE: 'live',
       FINANCING_PARTNER_MODE: 'live',
       PAYMENT_GATEWAY_MODE: 'live',
+      RAZORPAY_KEY_ID: 'rzp_live_example',
+      RAZORPAY_SECRET: 'example-secret',
+      RAZORPAY_WEBHOOK_SECRET: 'example-webhook-secret',
       ACCOUNTING_MODE: 'off',
       PUBLIC_WEB_URL: 'https://app.ringpe.in/',
     });
@@ -152,5 +158,53 @@ describe('loadConfig', () => {
     expect(c.http.corsOrigins).toEqual(['https://console.ringpe.in', 'https://ops.ringpe.in']);
     expect(c.redis.url).toBe('rediss://cache:6380');
     expect(c.publicWebUrl).toBe('https://app.ringpe.in');
+    expect(c.razorpay).toEqual({
+      keyId: 'rzp_live_example',
+      keySecret: 'example-secret',
+      webhookSecret: 'example-webhook-secret',
+    });
+  });
+
+  it('refuses Razorpay test keys or missing keys in production, and allows them locally', () => {
+    const prod = {
+      ...base,
+      NODE_ENV: 'production',
+      APP_ENV: 'prod',
+      REDIS_URL: 'rediss://cache:6380',
+      CORS_ORIGINS: 'https://console.ringpe.in',
+      AUTH_SIGNING_KEYS_FILE: '/run/secrets/signing-keys.json',
+      AUTH_OPS_SIGNING_KEYS_FILE: '/run/secrets/ops-signing-keys.json',
+      FIELD_KEYS_FILE: '/run/secrets/field-keys.json',
+      SMS_PROVIDER: 'kaleyra',
+      EMAIL_PROVIDER: 'smtp',
+      STORAGE_PROVIDER: 's3',
+      FILE_SCAN_MODE: 'clamav',
+      SOCIAL_MODE: 'live',
+      BANK_VERIFY_MODE: 'live',
+      FINANCING_PARTNER_MODE: 'live',
+      PAYMENT_GATEWAY_MODE: 'live',
+      ACCOUNTING_MODE: 'off',
+      PUBLIC_WEB_URL: 'https://app.ringpe.in/',
+    };
+    expect(() =>
+      loadConfig({
+        ...prod,
+        RAZORPAY_KEY_ID: 'rzp_test_example',
+        RAZORPAY_SECRET: 's',
+        RAZORPAY_WEBHOOK_SECRET: 'w',
+      }),
+    ).toThrow(/RAZORPAY_KEY_ID/);
+    expect(() => loadConfig(prod)).toThrow(/RAZORPAY_KEY_ID/);
+    const local = loadConfig({
+      ...base,
+      PAYMENT_GATEWAY_MODE: 'live',
+      RAZORPAY_KEY_ID: 'rzp_test_example',
+      RAZORPAY_SECRET: 's',
+    });
+    expect(local.razorpay).toEqual({
+      keyId: 'rzp_test_example',
+      keySecret: 's',
+      webhookSecret: null,
+    });
   });
 });

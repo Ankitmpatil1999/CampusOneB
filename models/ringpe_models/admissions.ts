@@ -141,6 +141,8 @@ export interface AdmissionPaymentsTable {
   mode: 'ONLINE' | 'CASH' | null;
   gateway_order_id: string | null;
   gateway_payment_id: string | null;
+  /** The school gateway the payment was taken with (0065); null = RingPe's own or the test checkout. */
+  gateway_id: ColumnType<Ref | null, Ref | null | undefined, Ref | null>;
   link_token_hash: Buffer | null;
   receipt_no: string | null;
   paid_by: string | null;
@@ -169,7 +171,34 @@ export interface AdmissionImportsTable {
   created_at: Timestamp;
 }
 
+/** A school's own payment gateway account (0065, client 2026-10-09); credentials encrypted. */
+export interface InstitutionPaymentGatewaysTable {
+  id: Generated<Ref>;
+  public_id: Buffer;
+  institution_id: Ref;
+  provider: string;
+  label: string;
+  key_id_enc: Buffer;
+  key_secret_enc: Buffer;
+  webhook_secret_enc: Buffer | null;
+  merchant_id_enc: Buffer | null;
+  key_id_hint: string;
+  environment: 'TEST' | 'LIVE';
+  status: Generated<'ACTIVE' | 'DISABLED'>;
+  is_default: Generated<boolean | number>;
+  default_key: ColumnType<Ref | null, never, never>;
+  last_checked_at: Date | null;
+  last_check_ok: boolean | number | null;
+  last_check_note: string | null;
+  row_version: Generated<number>;
+  created_by: Buffer | null;
+  updated_by: Buffer | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
 export interface AdmissionTables {
+  institution_payment_gateways: InstitutionPaymentGatewaysTable;
   admission_links: AdmissionLinksTable;
   admission_applications: AdmissionApplicationsTable;
   admission_application_seq: AdmissionApplicationSeqTable;

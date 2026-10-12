@@ -566,6 +566,38 @@ export const PAYMENT_MESSAGES = [
     batch: 5,
     refs: ['9.5', '9.11 V13', 'RNG-GOV-007', 'client standing approval 2026-10-03'],
   },
+  ...(
+    [
+      ['PG.NOT_FOUND', 404, 'Payment gateway not found.'],
+      ['PG.PROVIDER_UNSUPPORTED', 422, 'This payment gateway is not supported yet.'],
+      [
+        'PG.KEY_ID_FORMAT',
+        422,
+        'Enter the key id exactly as the gateway dashboard shows it (for Razorpay: rzp_test_… or rzp_live_…).',
+      ],
+      ['PG.SECRET_REQUIRED', 422, 'Enter the key secret.'],
+      [
+        'PG.TEST_KEY_IN_PRODUCTION',
+        422,
+        'Test keys can’t take real payments. Use the live keys from the gateway dashboard.',
+      ],
+      ['PG.DEFAULT_DISABLED', 409, 'A disabled gateway can’t be the default. Enable it first.'],
+    ] as const
+  ).map(
+    ([key, http, en]) =>
+      ({
+        key,
+        register: null,
+        srsText: null,
+        class: 'N',
+        type: 'error',
+        http,
+        en,
+        approval: 'approved',
+        batch: 9,
+        refs: ['client 2026-10-09: schools add their own payment gateways'],
+      }) as const,
+  ),
 ] as const satisfies readonly MessageDefinition[];
 
 export type PaymentMessageKey = (typeof PAYMENT_MESSAGES)[number]['key'];

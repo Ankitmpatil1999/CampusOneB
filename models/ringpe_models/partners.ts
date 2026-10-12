@@ -85,9 +85,30 @@ export interface BankCreditsTable {
   row_version: Generated<number>;
 }
 
+/** Axis Bank validation calls and their answers (migration 0066; append-only). */
+export interface BankVaValidationsTable {
+  id: Generated<string>;
+  api_client_id: Ref | null;
+  institution_id: Ref | null;
+  utr: string;
+  bank_txn_id: string;
+  va_number: string;
+  amount_text: string | null;
+  req_date: string | null;
+  pay_mode: string | null;
+  sender_name: string | null;
+  sender_account_last4: string | null;
+  sender_ifsc: string | null;
+  status_flag: string;
+  response_code: string;
+  ip_bin: Buffer | null;
+  received_at: Timestamp;
+}
+
 export interface PartnerTables {
   api_clients: ApiClientsTable;
   api_client_tokens: ApiClientTokensTable;
   partner_requests: PartnerRequestsTable;
   bank_credits: BankCreditsTable;
+  bank_va_validations: BankVaValidationsTable;
 }

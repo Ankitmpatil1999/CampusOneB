@@ -4,7 +4,7 @@
  */
 import { Readable } from 'node:stream';
 import { createApp } from '../../app';
-import { apiRouters } from '../../routes';
+import { apiRouters, partnerRouters } from '../../routes';
 import { buildApiServices, type ServiceOverrides } from '../../config/services';
 import { createRateLimiter } from '../../middlewares/rate-limit.middleware';
 import type { MessageSender, OutboundMessage } from '../../integrations/sms.provider';
@@ -42,9 +42,14 @@ export const codeOf = (m: OutboundMessage | undefined) =>
 
 export async function buildHttpApp(
   t: TestDatabase,
-  opts: { env?: Record<string, string>; overrides?: ServiceOverrides } = {},
+  opts: {
+    env?: Record<string, string>;
+    overrides?: ServiceOverrides;
+    /** Another app on the same keys (tokens from one are valid in the other). */
+    security?: Awaited<ReturnType<typeof testSecurity>>;
+  } = {},
 ) {
-  const security = await testSecurity();
+  const security = opts.security ?? (await testSecurity());
   const { loggers, lines } = capturingLoggers();
   const config = testConfig(opts.env);
   const storage = memoryStorage();
@@ -61,6 +66,13 @@ export async function buildHttpApp(
       scanner: { mode: 'skip', scan: async () => 'CLEAN' },
       sms,
       email,
+      // School gateways never reach the network in tests (a test that needs one passes its own).
+      schoolGateway: () => ({
+        mode: 'live',
+        createOrder: async () => null,
+        verify: () => false,
+        checkCredentials: async () => ({ ok: false, note: 'Not checked in tests' }),
+      }),
       ...opts.overrides,
     },
   });
@@ -75,6 +87,7 @@ export async function buildHttpApp(
     publicJwks: security.publicJwks,
     settings: services.settings,
     apiRouters: apiRouters(services),
+    partnerRouters: partnerRouters(services, security),
   });
   return { app, security, services, storage, sms, email, lines, config };
 }

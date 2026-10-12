@@ -374,19 +374,30 @@ export class PartnersService {
     };
   }
 
-  /** Ends every live token of the client (deny-list by token id until it would have expired). */
-  private async endLiveTokens(id: string, reason: string, exceptTokenId?: string) {
+  /**
+   * Ends every live token of the client (deny-list by token id until it would have expired); with
+   * `sameScopes`, only the live tokens holding exactly those scopes.
+   */
+  private async endLiveTokens(
+    id: string,
+    reason: string,
+    exceptTokenId?: string,
+    sameScopes?: readonly string[],
+  ) {
     const r = await this.row(id);
     const now = this.now();
     let q = this.deps.db
       .selectFrom('api_client_tokens')
-      .select(['id', 'public_id', 'expires_at'])
+      .select(['id', 'public_id', 'expires_at', 'scopes'])
       .where('api_client_id', '=', r.id)
       .where('outcome', '=', 'ISSUED')
       .where('revoked_at', 'is', null)
       .where('expires_at', '>', now);
     if (exceptTokenId) q = q.where('id', '<>', exceptTokenId);
-    const live = await q.execute();
+    const key = (list: readonly string[]) => [...list].sort().join(' ');
+    const live = (await q.execute()).filter(
+      (t) => !sameScopes || key(parseList(t.scopes)) === key(sameScopes),
+    );
     for (const t of live) {
       await this.deps.revocations?.revoke(
         binToUuid(t.public_id),
@@ -476,6 +487,11 @@ export class PartnersService {
       scope?: string | undefined;
     },
     ip: string | undefined,
+    /**
+     * Which earlier live tokens the new one ends: all of the client's (27.2, the default), or only
+     * those with the same scopes — the Axis Bank asks for one token per scope (client 2026-10-12).
+     */
+    ends: 'all' | 'sameScopes' = 'all',
   ): Promise<
     | { ok: true; accessToken: string; expiresIn: number; scope: string }
     | {
@@ -547,8 +563,35 @@ export class PartnersService {
       binToUuid(c.public_id),
       'A newer token was issued',
       'rowId' in logged ? logged.rowId : undefined,
+      ends === 'sameScopes' ? asked : undefined,
     );
     return { ok: true, accessToken: token.token, expiresIn: minutes * 60, scope: asked.join(' ') };
+  }
+
+  /**
+   * The checks a bearer-only partner call passes (the Axis Bank format, which isn't signed): the
+   * token's client is active, the caller's address is on its allow-list, and the token holds the
+   * scope. Answers instead of throwing, so the caller can reply in the partner's own format.
+   */
+  async bearerClient(
+    principal: Principal | undefined,
+    ip: string | undefined,
+    scope: PartnerScope,
+  ): Promise<
+    | { ok: true; clientRowId: string }
+    | { ok: false; reason: 'INVALID_TOKEN' | 'IP_NOT_ALLOWED' | 'INSUFFICIENT_SCOPE' }
+  > {
+    if (!principal || principal.surface !== 'partner')
+      return { ok: false, reason: 'INVALID_TOKEN' };
+    const c = await this.deps.db
+      .selectFrom('api_clients')
+      .select(['id', 'status', 'ip_allowlist'])
+      .where('public_id', '=', uuidToBin(principal.subject))
+      .executeTakeFirst();
+    if (!c || c.status !== 'ACTIVE') return { ok: false, reason: 'INVALID_TOKEN' };
+    if (!ipAllowed(ip, parseList(c.ip_allowlist))) return { ok: false, reason: 'IP_NOT_ALLOWED' };
+    if (!principal.subTasks.includes(scope)) return { ok: false, reason: 'INSUFFICIENT_SCOPE' };
+    return { ok: true, clientRowId: String(c.id) };
   }
 
   // --- Signed partner calls (WAL-012/013) -----------------------------------------------------------

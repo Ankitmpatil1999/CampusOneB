@@ -283,6 +283,14 @@ describe.skipIf(!adminUrl)(
       });
       expect(reader.status).toBe(201);
       ids['readerId'] = reader.body.readerId;
+      // A payment gateway of school A (INS-038…041; client 2026-10-09).
+      const gateway = await post(a.con, '/api/v1/console/payment-gateways', {
+        label: 'Isolation fees',
+        keyId: 'rzp_test_ISOLATION1',
+        keySecret: 'isolation-secret',
+      });
+      expect(gateway.status).toBe(201);
+      ids['gatewayId'] = gateway.body.id;
       const aMember = await t.db
         .selectFrom('member_profiles')
         .select(['id', 'institution_id'])

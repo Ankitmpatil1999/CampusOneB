@@ -270,9 +270,49 @@ doc({
             amount: money,
             mode: z.enum(['test', 'live']),
             test: z.object({ paymentId: z.string(), signature: z.string() }).optional(),
+            checkout: z
+              .object({ keyId: z.string(), name: z.string() })
+              .optional()
+              .describe("Live (Razorpay): open the gateway's checkout with this key and the order"),
           }),
         })
         .meta({ id: 'AdmissionPaymentOrder' }),
+    },
+  },
+});
+doc({
+  id: 'SAS-033',
+  method: 'post',
+  path: '/api/v1/partners/gateway/webhooks',
+  auth: 'public',
+  summary:
+    "The payment gateway's webhook (Razorpay, client 2026-10-09): X-Razorpay-Signature = HMAC-SHA256 of the raw body with RAZORPAY_WEBHOOK_SECRET; each X-Razorpay-Event-Id once (webhook_receipts). payment.captured / order.paid marks the admission or application fee of that order paid; other events are acknowledged",
+  responses: {
+    200: {
+      description: 'Received',
+      schema: z.object({
+        ok: z.boolean(),
+        duplicate: z.boolean().optional(),
+        outcome: z.string().optional(),
+      }),
+    },
+  },
+});
+doc({
+  id: 'INS-042',
+  method: 'post',
+  path: '/api/v1/partners/gateway/webhooks/{gatewayId}',
+  auth: 'public',
+  summary:
+    "A school gateway's own webhook address (client 2026-10-09): signed with that gateway's webhook secret; settles only payments taken with that gateway; otherwise as SAS-033",
+  responses: {
+    200: {
+      description: 'Received',
+      schema: z.object({
+        ok: z.boolean(),
+        duplicate: z.boolean().optional(),
+        outcome: z.string().optional(),
+      }),
     },
   },
 });
@@ -523,6 +563,38 @@ export function admissionsRoutes(deps: {
   const token = (req: Request) => req.get(AdmissionsService.TOKEN_HEADER) ?? q(req, 'token');
   const ifMatch = (req: Request) => (req.get('if-match') ? expectedVersion(req) : null);
   const console = [requireSurface(L, 'console'), requireTenant(L)];
+
+  // INS-042: a school gateway's own webhook address (its keys, its payments only).
+  router.post(
+    '/partners/gateway/webhooks/:gatewayId',
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(
+        await A.gatewayEvent({
+          rawBody: req.rawBody,
+          signature: req.get('x-razorpay-signature'),
+          eventId: req.get('x-razorpay-event-id'),
+          ip: req.ip,
+          gatewayPublicId: String(req.params['gatewayId']),
+        }),
+      );
+    }),
+  );
+  // SAS-033: the gateway's signed webhook (no session; the signature is the authentication).
+  router.post(
+    '/partners/gateway/webhooks',
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(
+        await A.gatewayEvent({
+          rawBody: req.rawBody,
+          signature: req.get('x-razorpay-signature'),
+          eventId: req.get('x-razorpay-event-id'),
+          ip: req.ip,
+        }),
+      );
+    }),
+  );
   const fileOf = (req: Request) => {
     if (!req.file) throw new ValidationError([{ field: 'file', code: 'UPL.FILE_REQUIRED' }]);
     const t = docType.safeParse(

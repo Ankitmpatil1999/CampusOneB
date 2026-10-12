@@ -7,7 +7,7 @@ import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import type { Redis } from 'ioredis';
 import { createApp } from './app';
 import { HealthService } from './services/health.service';
-import { apiRouters } from './routes';
+import { apiRouters, partnerRouters } from './routes';
 import { createRateLimiter } from './middlewares/rate-limit.middleware';
 import { createSecurity } from './config/security';
 import { buildApiServices } from './config/services';
@@ -83,6 +83,7 @@ async function main(): Promise<void> {
     ...(rateLimitStore ? { rateLimitStore } : {}),
     ...(sessionRateLimitStore ? { sessionRateLimitStore } : {}),
     apiRouters: apiRouters(services),
+    partnerRouters: partnerRouters(services, security),
     requestLog,
   });
 

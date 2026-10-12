@@ -93,6 +93,11 @@ export const INSTITUTION_TASKS: readonly TaskDefinition[] = [
   ]),
   inst('settlements', 'Settlements', [['view', 'See settlements']]),
   inst('recon', 'Transactions & MIS', [['view', 'See transactions']]),
+  // Client request 2026-10-09: each school's own payment gateway accounts (migration 0065).
+  inst('gateways', 'Payment gateways', [
+    ['view', 'See payment gateways'],
+    ['edit', 'Add and change payment gateways'],
+  ]),
   inst('vouchers', 'Accounting', [
     ['view', 'See vouchers'],
     ['edit', 'Post vouchers'],
@@ -258,6 +263,7 @@ const ACCOUNTANT_TASKS = [
   'settlements',
   'recon',
   'vouchers',
+  'gateways',
   'approvals',
   // Submitted applications are visible to Accounts (client 2026-10-09); they are not edited there.
   'admissions',

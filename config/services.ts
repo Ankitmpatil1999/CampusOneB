@@ -48,6 +48,7 @@ import { PaymentsService } from '../services/payments.service';
 import { TransfersService } from '../services/transfers.service';
 import { BankCreditsService } from '../services/bank-credits.service';
 import { PartnersService } from '../services/partners.service';
+import { AxisBankService } from '../services/axis-bank.service';
 import { ReconService } from '../services/recon.service';
 import { ReconReportsService } from '../services/recon-reports.service';
 import { ReconciliationService } from '../services/reconciliation.service';
@@ -96,7 +97,14 @@ import { FeeUploadsService } from '../services/fee-uploads.service';
 import { FeeDuesService } from '../services/fee-dues.service';
 import { FinancingService } from '../services/financing.service';
 import { createFinancingPartner } from '../integrations/financing.provider';
-import { createPaymentGateway } from '../integrations/payment-gateway.provider';
+import {
+  createPaymentGateway,
+  type PaymentGateway,
+} from '../integrations/payment-gateway.provider';
+import {
+  PaymentGatewaysService,
+  type SchoolGatewayFactory,
+} from '../services/payment-gateways.service';
 import { AdmissionsService } from '../services/admissions.service';
 import { AdmissionLinksService } from '../services/admission-links.service';
 import { SettlementService } from '../services/settlement.service';
@@ -108,6 +116,10 @@ import { createFlowTokens } from '../utils/flow-tokens';
 
 export interface ServiceOverrides {
   readonly bankVerifier?: BankVerifier;
+  /** Tests: a gateway answering like Razorpay without the network. */
+  readonly gateway?: PaymentGateway;
+  /** Tests: builds a school's gateway from its keys without the network. */
+  readonly schoolGateway?: SchoolGatewayFactory;
   readonly storage?: StorageProvider;
   readonly scanner?: AntivirusScanner;
   readonly sms?: MessageSender;
@@ -443,10 +455,29 @@ export function buildApiServices(args: {
     email: emailSender,
     ...(now ? { now } : {}),
   });
+  const paymentGateways = new PaymentGatewaysService({
+    db,
+    cipher: security.cipher,
+    loggers,
+    production: config.nodeEnv === 'production',
+    webUrl: config.publicWebUrl,
+    platformLive: config.paymentGatewayMode === 'live' && config.razorpay !== null,
+    settings,
+    ...(o.schoolGateway ? { factory: o.schoolGateway } : {}),
+    ...(now ? { now } : {}),
+  });
   const admissionLinks = new AdmissionLinksService({
     db,
     email: emailSender,
     webUrl: config.publicWebUrl,
+    settings,
+    ...(now ? { now } : {}),
+  });
+  const partners = new PartnersService({
+    db,
+    cipher: security.cipher,
+    signer: security.signer,
+    revocations: security.revocations,
     settings,
     ...(now ? { now } : {}),
   });
@@ -455,6 +486,7 @@ export function buildApiServices(args: {
     loggers,
     cipher: security.cipher,
     admissionLinks,
+    paymentGateways,
     settlement,
     admissions: new AdmissionsService({
       db,
@@ -464,10 +496,14 @@ export function buildApiServices(args: {
       otp,
       flows,
       links: admissionLinks,
-      gateway: createPaymentGateway(
-        config.paymentGatewayMode,
-        security.cipher.secret('payment_gateway_test'),
-      ),
+      gateway:
+        o.gateway ??
+        createPaymentGateway(
+          config.paymentGatewayMode,
+          security.cipher.secret('payment_gateway_test'),
+          config.razorpay,
+        ),
+      gateways: paymentGateways,
       webUrl: config.publicWebUrl,
       sms: smsSender,
       email: emailSender,
@@ -634,14 +670,8 @@ export function buildApiServices(args: {
       ...(now ? { now } : {}),
     }),
     reconReports: new ReconReportsService({ db, ...(now ? { now } : {}) }),
-    partners: new PartnersService({
-      db,
-      cipher: security.cipher,
-      signer: security.signer,
-      revocations: security.revocations,
-      settings,
-      ...(now ? { now } : {}),
-    }),
+    partners,
+    axisBank: new AxisBankService({ db, partners, bankCredits, settings }),
     authLimiter: args.authLimiter,
   };
 }
