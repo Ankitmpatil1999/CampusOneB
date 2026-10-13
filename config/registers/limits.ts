@@ -975,16 +975,38 @@ export const LIMITS = {
     ],
   }),
 
-  bankAxisRequireValidation: def({
-    key: 'bank.axis.requireValidation',
-    value: 1,
-    unit: 'flag',
-    adjustable: { min: 0, max: 1 },
+  // Axis Bank Power E-coll (client 2026-10-12). A notification without a successful validation of
+  // the same UTR + Tran_id is always refused (client: mandatory), so that rule has no setting.
+  bankAxisTokenReuseMinSeconds: def({
+    key: 'bank.axis.tokenReuseMinSeconds',
+    value: 60,
+    unit: 's',
+    adjustable: { min: 0, max: 600 },
     scope: 'P',
     basis: 'adopted',
     refs: [
-      'client 2026-10-12 (Axis Bank Power E-coll): a notification is posted only after a successful validation of the same UTR + transaction id (1), as in the earlier application; 0 posts without one',
+      'client 2026-10-12: the token call returns the live token while it is valid; a new one only when less than this is left',
     ],
+  }),
+  bankAxisSenderAccountMinLength: def({
+    key: 'bank.axis.senderAccount.minLength',
+    value: 9,
+    unit: 'chars',
+    adjustable: { min: 1, max: 35 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: [
+      'Axis scope document v4.0 test case 10 (Invalid sender account number, 003); Indian account numbers are 9 to 18 digits',
+    ],
+  }),
+  bankAxisSenderAccountMaxLength: def({
+    key: 'bank.axis.senderAccount.maxLength',
+    value: 18,
+    unit: 'chars',
+    adjustable: { min: 1, max: 35 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['Axis scope document v4.0 test case 10 (Invalid sender account number, 003)'],
   }),
 
   // --- approvals (ADR-0015, client Q9) -----------------------------------------------------------

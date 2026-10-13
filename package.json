@@ -33,6 +33,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "keys:generate": "tsx scripts/generate-keys.ts",
+    "tls:generate": "tsx scripts/generate-tls.ts",
     "seed:dev": "tsx --env-file-if-exists=.env scripts/dev-seed.ts",
     "test:load": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/load",
     "dr:drill": "tsx --env-file-if-exists=.env scripts/dr-drill.ts",

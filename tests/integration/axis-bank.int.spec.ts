@@ -1,13 +1,16 @@
 /**
- * Axis Bank Power E-coll on a real MySQL (client 2026-10-12; BNK-001…003): the bank's token,
- * validation and notification calls in its own format, as the earlier application answered them.
+ * Axis Bank Power E-coll on a real MySQL (client 2026-10-12, scope document v4.0; BNK-001…003): the
+ * bank's token, validation and notification calls in its own format, as the earlier application
+ * answered them.
  * - token: missing fields, wrong grant, wrong secret, unknown scope, address not allowed; JSON and
- *   form fields; one token per scope (a new validation token doesn't end the notification token);
+ *   form fields; one token for both scopes, the same token returned while valid, a new one after
+ *   the tokens are revoked;
  * - calls: missing, invalid or wrong-scope token refused as {Stts_flg: "N", Err_cd: "001"};
- * - validation: invalid parameters, date, account; every call logged; the sender's account number is
- *   kept only as its last four digits;
- * - notification: refused before a successful validation, credits the wallet once, a repeat is
- *   "Duplicate UTR"; the /cug/bank alias works.
+ * - validation: invalid parameters, date, account, sender account; the account number with or
+ *   without the corporate-code prefix; a repeat gets the same success; every call logged; the
+ *   sender's account number kept only as its last four digits;
+ * - notification: refused before a successful validation or for another amount, credits the wallet
+ *   once, a repeat is "Duplicate UTR"; the /cug/bank alias works.
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
@@ -108,24 +111,48 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
 
     const ok = await token(base);
     expect(ok.status).toBe(200);
+    // One token for both calls (client 2026-10-12).
     expect(ok.body).toMatchObject({
       token_type: 'Bearer',
       expires_in: 900,
-      scope: 'transaction_validation',
+      scope: 'transaction_notification_posting transaction_validation',
     });
     expect(Date.parse(ok.body.expires_at)).toBeGreaterThan(Date.now());
     expect(ok.headers['cache-control']).toBe('no-store');
 
-    // Form fields, at the earlier application's address.
+    // Asked again while it is valid — form fields, at the earlier application's address, the
+    // other scope: the same token, with its own expiry.
     const form = await request(f.app)
       .post('/cug/bank/token')
       .type('form')
       .send({ ...base, scope: 'transaction_notification_posting' });
     expect(form.status).toBe(200);
-    expect(form.body.scope).toBe('transaction_notification_posting');
+    expect(form.body.access_token).toBe(ok.body.access_token);
+    expect(form.body.expires_at).toBe(ok.body.expires_at);
+    expect(form.body.expires_in).toBeLessThanOrEqual(900);
+    const t = payload();
+    expect((await call('validate', ok.body.access_token, t)).body.Stts_flg).toBe('S');
+    expect(
+      (await call('notify', ok.body.access_token, { ...t, Req_type: 'notification' })).body
+        .Stts_flg,
+    ).toBe('S');
+    const stored = await f.t.db
+      .selectFrom('api_client_tokens')
+      .select('token_enc')
+      .where('token_enc', 'is not', null)
+      .execute();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.token_enc!.toString('latin1')).not.toContain(ok.body.access_token);
 
-    // One token per scope: the notification token didn't end the validation token.
-    expect((await call('validate', ok.body.access_token, payload())).body.Stts_flg).toBe('S');
+    // Revoked in the back office: the next token call gives a new token, the old one is refused.
+    await request(f.app)
+      .post(`/api/v1/ops/api-clients/${client.id}/token-revocations`)
+      .set(f.ops)
+      .send({ reason: 'Key ceremony' });
+    const fresh = await token(base);
+    expect(fresh.body.access_token).not.toBe(ok.body.access_token);
+    expect((await call('validate', ok.body.access_token, payload())).status).toBe(401);
+    expect((await call('validate', fresh.body.access_token, payload())).body.Stts_flg).toBe('S');
   });
 
   it('refuses an address not on the allow-list, and calls without a good token', async () => {
@@ -166,8 +193,38 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
     expect((await call('validate', 'not.a.token', payload())).body).toEqual(
       refused('Invalid token'),
     );
-    const validateOnly = await tokenFor('transaction_validation');
-    const wrong = await call('notify', validateOnly, payload({ Req_type: 'notification' }));
+    const narrow = await request(f.app)
+      .post('/api/v1/ops/api-clients')
+      .set(f.ops)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        name: 'Axis Bank validation only',
+        partner: 'SPONSOR_BANK',
+        scopes: ['va.validate'],
+        ipAllowlist: ['127.0.0.1', '::1'],
+      });
+    const validateOnly = await token({
+      grant_type: 'client_credentials',
+      client_id: narrow.body.clientId,
+      client_secret: narrow.body.secret,
+      scope: 'transaction_validation',
+    });
+    expect(validateOnly.body.scope).toBe('transaction_validation');
+    expect(
+      (
+        await token({
+          grant_type: 'client_credentials',
+          client_id: narrow.body.clientId,
+          client_secret: narrow.body.secret,
+          scope: 'transaction_notification_posting',
+        })
+      ).body.message,
+    ).toBe('INVALID_SCOPE');
+    const wrong = await call(
+      'notify',
+      validateOnly.body.access_token,
+      payload({ Req_type: 'notification' }),
+    );
     expect(wrong.status).toBe(403);
     expect(wrong.body).toEqual(refused('Insufficient scope'));
   });
@@ -194,6 +251,13 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
     expect((await call('validate', v, payload({ Bene_acc_no: `${va}99` }))).body).toEqual(
       ans('F', '002', 'Incorrect Van'),
     );
+    // Scope document test case 10: a sender account number that can't be one.
+    expect((await call('validate', v, payload({ Sndr_acnt: '22334455' }))).body).toEqual(
+      ans('F', '003', 'Invalid sender account number'),
+    );
+    expect((await call('validate', v, payload({ Sndr_acnt: '2 233 4 4 5 5' }))).body).toEqual(
+      ans('F', '003', 'Invalid sender account number'),
+    );
 
     const credit = payload();
     // A notification before any validation is refused.
@@ -201,12 +265,14 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
       ans('F', '001', 'Authentication failed', 'Validation not completed or failed'),
     );
     expect((await call('validate', v, credit)).body).toEqual(ans('S', '000', 'Success'));
+    // The bank asks again (a retry, or IMPS's second call): the same success.
+    expect((await call('validate', v, credit)).body).toEqual(ans('S', '000', 'Success'));
     const logged = await f.t.db
       .selectFrom('bank_va_validations')
       .selectAll()
       .where('utr', '=', credit.UTR)
       .execute();
-    expect(logged).toHaveLength(1);
+    expect(logged).toHaveLength(2);
     expect(logged[0]).toMatchObject({
       status_flag: 'S',
       response_code: '000',
@@ -226,6 +292,11 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
       ans('F', '001', 'Authentication failed', 'Missing mandatory fields'),
     );
 
+    // Another amount than the one validated is refused.
+    expect(
+      (await call('notify', n, { ...credit, Req_type: 'notification', Txn_amnt: '9999.00' })).body,
+    ).toEqual(ans('F', '001', 'Authentication failed', 'Validation not completed or failed'));
+
     const before = await f.balance(wallet);
     const posted = await call('notify', n, { ...credit, Req_type: 'notification' });
     expect(posted.status).toBe(200);
@@ -243,6 +314,38 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
       ans('F', '002', 'Duplicate UTR'),
     );
     expect((await f.balance(wallet)) - before).toBe(499_900);
+    // Asked to validate it again after posting: a duplicate.
+    expect((await call('validate', v, credit)).body).toEqual(ans('F', '002', 'Duplicate UTR'));
+  });
+
+  it('takes the account number without the corporate-code prefix', async () => {
+    const v = await tokenFor('transaction_validation');
+    const code = (
+      await f.t.db
+        .selectFrom('virtual_accounts')
+        .select('corporate_code')
+        .where('va_number', '=', va)
+        .executeTakeFirstOrThrow()
+    ).corporate_code;
+    const credit = payload({ Bene_acc_no: va.slice(code.length), Corp_code: code });
+    expect((await call('validate', v, credit)).body.Stts_flg).toBe('S');
+    const before = await f.balance(wallet);
+    expect((await call('notify', v, { ...credit, Req_type: 'notification' })).body).toEqual({
+      Stts_flg: 'S',
+      Err_cd: '000',
+      message: 'Success',
+    });
+    expect((await f.balance(wallet)) - before).toBe(499_900);
+    // Without the corporate code the short number isn't an account.
+    expect(
+      (
+        await call('validate', v, {
+          ...payload(),
+          Bene_acc_no: va.slice(code.length),
+          Corp_code: '',
+        })
+      ).body.Err_cd,
+    ).toBe('002');
   });
 
   it('serves the same calls at the earlier address, with form fields', async () => {

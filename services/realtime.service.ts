@@ -11,6 +11,7 @@
  *   With several API instances, a Redis adapter would fan out across them (not needed on one server).
  */
 import type { Server as HttpServer } from 'node:http';
+import type { Server as HttpsServer } from 'node:https';
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { Server } from 'socket.io';
@@ -41,7 +42,7 @@ export interface RealtimeHandle {
 }
 
 export function startRealtime(deps: {
-  readonly server: HttpServer;
+  readonly server: HttpServer | HttpsServer;
   readonly db: Kysely<Database>;
   readonly verifier: TokenVerifier;
   readonly revocations?: SessionRevocations | undefined;

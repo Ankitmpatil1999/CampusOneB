@@ -32,7 +32,7 @@ bank({
   method: 'post',
   path: '/api/v1/partners/axis/bank/token',
   summary:
-    "Axis Bank: OAuth 2 client credentials (JSON or form fields) with the bank's scope names; a Partner API client with va.validate / va.notify and the bank's addresses. Also at /cug/bank/token. Refusals as the earlier application sent them (INVALID_CLIENT, INVALID_SCOPE, INVALID_GRANT_TYPE; address 403)",
+    "Axis Bank: OAuth 2 client credentials (JSON or form fields) with the bank's scope names; a Partner API client with va.validate / va.notify and the bank's addresses. Also at /cug/bank/token. One token holds both scopes and is returned again while valid (setting bank.axis.tokenReuseMinSeconds). Refusals as the earlier application sent them (INVALID_CLIENT, INVALID_SCOPE, INVALID_GRANT_TYPE; address 403)",
   auth: 'public',
   request: axisTokenRequestSchema,
   responses: { 200: { description: 'Token', schema: axisTokenResponseSchema } },
@@ -42,7 +42,7 @@ bank({
   method: 'post',
   path: '/api/v1/partners/axis/bank/transaction/validate',
   summary:
-    'Axis Bank, before crediting: is the virtual account ours and able to take money? Bearer token with transaction_validation, allowed address; every call is logged with its answer. Also at /cug/bank/transaction/validate',
+    'Axis Bank, before crediting: is the virtual account ours and able to take money? Bearer token with transaction_validation, allowed address; Bene_acc_no with or without the corporate-code prefix; a repeat gets the same success while not posted; every call is logged with its answer. Also at /cug/bank/transaction/validate',
   auth: 'partner (bearer): va.validate',
   request: axisCallSchema,
   responses: { 200: { description: 'Answer', schema: axisAnswerSchema } },
@@ -52,7 +52,7 @@ bank({
   method: 'post',
   path: '/api/v1/partners/axis/bank/transaction/notify',
   summary:
-    'Axis Bank, after crediting: post the credit once per UTR + Tran_id after a successful validation (setting bank.axis.requireValidation); an active wallet is credited, a suspended one held. Bearer token with transaction_notification_posting. Also at /cug/bank/transaction/notify',
+    'Axis Bank, after crediting: post the credit once per UTR + Tran_id after a successful validation of the same UTR + Tran_id, account and amount (mandatory); an active wallet is credited, a suspended one held. Bearer token with transaction_notification_posting. Also at /cug/bank/transaction/notify',
   auth: 'partner (bearer): va.notify',
   request: axisCallSchema,
   responses: { 200: { description: 'Answer', schema: axisAnswerSchema } },
