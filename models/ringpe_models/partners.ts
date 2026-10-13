@@ -47,7 +47,7 @@ export interface ApiClientTokensTable {
   expires_at: NullableTimestamp;
   revoked_at: NullableTimestamp;
   revoke_reason: string | null;
-  /** The Axis Bank client's live token, kept encrypted so it can be returned again (0067). */
+  /** The Axis Bank client's live token, kept encrypted so it can be returned again (0070). */
   token_enc: ColumnType<Buffer | null, Buffer | null | undefined, Buffer | null>;
 }
 
