@@ -38,9 +38,11 @@ import type {
 } from '../models/ringpe_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
-  PRIMARY_CARDS,
+  ID_HOLDERS,
+  PERSON_CARDS,
   SECTIONS,
   type ApplicationInput,
+  type IdHolder,
   type SectionName,
   addressesSectionSchema,
   parentsSectionSchema,
@@ -77,13 +79,61 @@ import type { z } from 'zod';
 type Db = Kysely<Database> | Transaction<Database>;
 type Addresses = z.infer<typeof addressesSectionSchema>;
 /**
- * The parents section as kept: the primary contact's numbers go to their own columns, and the
- * pick-up stop is kept with its name (client 2026-10-12).
+ * The parents section as kept: each person's Aadhaar and PAN go to their own columns, never into
+ * the section, and the pick-up stop is kept with its name (client 2026-10-12).
  */
-type Parents = Omit<
-  z.infer<typeof parentsSectionSchema>,
-  'primaryAadhaar' | 'primaryPan' | 'transportStopId'
-> & { transportStop?: { id: string; name: string } | null };
+type Parents = Omit<z.infer<typeof parentsSectionSchema>, 'transportStopId'> & {
+  transportStop?: { id: string; name: string } | null;
+};
+/** A person's numbers to write: undefined keeps what is stored, null clears it. */
+interface IdsToWrite {
+  aadhaar?: string | null;
+  pan?: string | null;
+}
+
+/** Each person's encrypted Aadhaar and PAN columns, last four in clear (migration 0072). */
+const ID_COLUMNS = {
+  father: ['father_aadhaar_enc', 'father_aadhaar_last4', 'father_pan_enc', 'father_pan_last4'],
+  mother: ['mother_aadhaar_enc', 'mother_aadhaar_last4', 'mother_pan_enc', 'mother_pan_last4'],
+  guardian: [
+    'guardian_aadhaar_enc',
+    'guardian_aadhaar_last4',
+    'guardian_pan_enc',
+    'guardian_pan_last4',
+  ],
+  localGuardian: [
+    'local_guardian_aadhaar_enc',
+    'local_guardian_aadhaar_last4',
+    'local_guardian_pan_enc',
+    'local_guardian_pan_last4',
+  ],
+} as const;
+const RELATION_HOLDER = { FATHER: 'father', MOTHER: 'mother', GUARDIAN: 'guardian' } as const;
+/**
+ * Whose Aadhaar, PAN and cards a submission needs (client 2026-10-13): the father's and the
+ * mother's always, a guardian's who is the primary contact, the local guardian's of a hostel student.
+ */
+export function idsRequired(
+  primary: 'FATHER' | 'MOTHER' | 'GUARDIAN' | null,
+  hostel: boolean,
+): IdHolder[] {
+  return [
+    'father',
+    'mother',
+    ...(primary === 'GUARDIAN' ? (['guardian'] as const) : []),
+    ...(hostel ? (['localGuardian'] as const) : []),
+  ];
+}
+/** A person's stored numbers, masked ("XXXX XXXX 4821", "••••••234F"). */
+type IdColumns = {
+  [K in (typeof ID_COLUMNS)[IdHolder][number]]: K extends `${string}_enc`
+    ? Buffer | null
+    : string | null;
+};
+const maskedIds = (r: IdColumns, h: IdHolder) => {
+  const [, aadhaar4, , pan4] = ID_COLUMNS[h];
+  return { aadhaar: maskIdNumber('AADHAAR', r[aadhaar4]), pan: maskPan(r[pan4]) };
+};
 type Previous = z.infer<typeof previousSectionSchema>;
 
 /** The form beyond the searchable columns, kept as one document. */
@@ -124,8 +174,10 @@ interface State {
    */
   studentAadhaar?: string | null;
   studentPan?: string | null;
-  primaryAadhaar?: string | null;
-  primaryPan?: string | null;
+  /** The father's, the mother's, a guardian's and the local guardian's (client 2026-10-13). */
+  ids?: Partial<Record<IdHolder, IdsToWrite>>;
+  /** People no longer on the form (a guardian, the local guardian): their cards go too. */
+  dropCards?: IdHolder[];
   /** Mid-term: the family's answer on the transfer certificate to write; undefined keeps it. */
   tc?: { mode: 'TC' | 'UNDERTAKING'; due: string | null };
 }
@@ -353,9 +405,15 @@ export class AdmissionsService {
         relation: r.primary_relation,
         mobile: r.primary_mobile,
         email: r.primary_email,
-        aadhaar: maskIdNumber('AADHAAR', r.primary_aadhaar_last4),
-        pan: maskPan(r.primary_pan_last4),
+        ...(r.primary_relation
+          ? maskedIds(r, RELATION_HOLDER[r.primary_relation])
+          : { aadhaar: null, pan: null }),
       },
+      // Each person's Aadhaar and PAN, masked (client 2026-10-13).
+      identityNumbers: Object.fromEntries(ID_HOLDERS.map((h) => [h, maskedIds(r, h)])) as Record<
+        IdHolder,
+        ReturnType<typeof maskedIds>
+      >,
       customFields: data.customFields ?? {},
       tc: r.tc_mode
         ? {
@@ -551,20 +609,40 @@ export class AdmissionsService {
             { field: `parents.${v.primary.toLowerCase()}.email`, code: 'VALIDATION.REQUIRED' },
           ]);
         }
-        // The primary contact's Aadhaar and PAN go to their encrypted columns, never into the
-        // stored section; a new primary contact's numbers never carry the last one's over.
-        const { primaryAadhaar, primaryPan, transportStopId, ...rest } = v;
-        const changed = s.primaryRelation !== null && s.primaryRelation !== v.primary;
-        if (primaryAadhaar !== undefined) s.primaryAadhaar = primaryAadhaar;
-        else if (changed) s.primaryAadhaar = null;
-        if (primaryPan !== undefined) s.primaryPan = primaryPan;
-        else if (changed) s.primaryPan = null;
+        // Each person's Aadhaar and PAN go to their encrypted columns, never into the stored
+        // section (client 2026-10-13). A guardian or a local guardian no longer given takes theirs
+        // and their cards along.
+        const { transportStopId, ...rest } = v;
+        const people = {
+          father: rest.father,
+          mother: rest.mother,
+          guardian: rest.guardian,
+          localGuardian: rest.localGuardian,
+        };
+        s.ids = {};
+        s.dropCards = [];
+        const kept: Partial<Record<IdHolder, unknown>> = {};
+        for (const h of ID_HOLDERS) {
+          const x = people[h];
+          if (!x) {
+            s.ids[h] = { aadhaar: null, pan: null };
+            s.dropCards.push(h);
+            kept[h] = x;
+            continue;
+          }
+          const { aadhaar, pan, ...details } = x;
+          s.ids[h] = {
+            ...(aadhaar !== undefined ? { aadhaar } : {}),
+            ...(pan !== undefined ? { pan } : {}),
+          };
+          kept[h] = details;
+        }
         // The pick-up stop is kept with its name, as the school's stop list read then.
         const transportStop =
           rest.transport && transportStopId
             ? await this.stopFor(db, institutionId, transportStopId)
             : null;
-        s.data.parents = { ...rest, transportStop };
+        s.data.parents = { ...rest, ...kept, transportStop } as Parents;
         s.primaryName = primary.name;
         s.primaryRelation = v.primary;
         s.primaryMobile = primary.mobile ?? null;
@@ -623,14 +701,30 @@ export class AdmissionsService {
   /**
    * The identity numbers to write (client 2026-10-12): each encrypted under its own purpose key with
    * the application and the person as context, its last four characters kept for masked display.
-   * The student's Aadhaar also gets a blind index (the same child twice for a year).
+   * The student's Aadhaar also gets a blind index (the same child twice for a year). Each person's
+   * context is their place on the form ("father", "localGuardian"); numbers moved by migration 0072
+   * from the primary contact's columns keep "primary".
    */
   private identityColumns(institutionId: string, appPublicId: string, s: State) {
     const enc = (purpose: string, who: string, v: string | null) =>
       v ? this.deps.cipher.encrypt(purpose, v, `${appPublicId}:${who}`) : null;
     const last4 = (v: string | null) => (v ? v.slice(-4) : null);
-    const { studentAadhaar: sa, studentPan: sp, primaryAadhaar: pa, primaryPan: pp } = s;
+    const { studentAadhaar: sa, studentPan: sp } = s;
+    const people: Partial<IdColumns> = {};
+    for (const h of ID_HOLDERS) {
+      const v = s.ids?.[h];
+      const [aadhaarEnc, aadhaar4, panEnc, pan4] = ID_COLUMNS[h];
+      if (v?.aadhaar !== undefined) {
+        people[aadhaarEnc] = enc('adm_aadhaar', h, v.aadhaar);
+        people[aadhaar4] = last4(v.aadhaar);
+      }
+      if (v?.pan !== undefined) {
+        people[panEnc] = enc('adm_pan', h, v.pan);
+        people[pan4] = last4(v.pan);
+      }
+    }
     return {
+      ...people,
       ...(sa === undefined
         ? {}
         : {
@@ -641,15 +735,6 @@ export class AdmissionsService {
       ...(sp === undefined
         ? {}
         : { student_pan_enc: enc('adm_pan', 'student', sp), student_pan_last4: last4(sp) }),
-      ...(pa === undefined
-        ? {}
-        : {
-            primary_aadhaar_enc: enc('adm_aadhaar', 'primary', pa),
-            primary_aadhaar_last4: last4(pa),
-          }),
-      ...(pp === undefined
-        ? {}
-        : { primary_pan_enc: enc('adm_pan', 'primary', pp), primary_pan_last4: last4(pp) }),
     };
   }
 
@@ -858,12 +943,13 @@ export class AdmissionsService {
     const s = this.stateOf(r);
     await this.apply(this.deps.db, institutionId, s, input.section, input.data);
     if (input.step !== undefined) s.step = Math.max(s.step, input.step);
-    // Another primary contact: the cards uploaded were the previous one's, like the numbers.
-    if (r.primary_relation && s.primaryRelation !== r.primary_relation) {
+    // A guardian or local guardian taken off the form: their cards go with their numbers.
+    const dropped = (s.dropCards ?? []).flatMap((h) => PERSON_CARDS[h]);
+    if (dropped.length) {
       await this.deps.db
         .deleteFrom('admission_documents')
         .where('application_id', '=', r.id)
-        .where('doc_type', 'in', [...PRIMARY_CARDS])
+        .where('doc_type', 'in', dropped)
         .execute();
     }
     if (input.section === 'student' || input.section === 'class') {
@@ -1347,19 +1433,23 @@ export class AdmissionsService {
     if (r.primary_relation) {
       need(r.primary_email, `parents.${r.primary_relation.toLowerCase()}.email`);
     }
-    // The primary contact's Aadhaar and PAN (client 2026-10-12); the student's Aadhaar is optional.
-    need(r.primary_aadhaar_enc, 'parents.primaryAadhaar');
-    need(r.primary_pan_enc, 'parents.primaryPan');
     const docs = await this.deps.db
       .selectFrom('admission_documents')
       .select('doc_type')
       .where('application_id', '=', r.id)
       .execute();
     const has = (t: AdmissionDocType) => docs.some((d) => d.doc_type === t);
+    // The Aadhaar number and PAN, with both sides of each card (client 2026-10-13): the father's
+    // and the mother's, a guardian's who is the primary contact, and the local guardian's of a
+    // hostel student. The student's are optional.
+    for (const h of idsRequired(r.primary_relation, !!data.parents?.hostel)) {
+      const [aadhaarEnc, , panEnc] = ID_COLUMNS[h];
+      need(r[aadhaarEnc], `parents.${h}.aadhaar`);
+      need(r[panEnc], `parents.${h}.pan`);
+      for (const t of PERSON_CARDS[h]) need(has(t), `documents.${t}`);
+    }
     need(has('BIRTH'), 'documents.BIRTH');
     need(has('ADDRESS'), 'documents.ADDRESS');
-    // The primary contact's Aadhaar and PAN cards, front and back (client 2026-10-13).
-    for (const t of PRIMARY_CARDS) need(has(t), `documents.${t}`);
     const order = r.class_name ? classOrder(r.class_name) : null;
     // Grade 1 and above bring the last report card (prototype p.form).
     if (order !== null && order >= 3) need(has('REPORT'), 'documents.REPORT');

@@ -16,7 +16,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import type { GatewayPayment, PaymentGateway } from '../../integrations/payment-gateway.provider';
 import type { SchoolGatewayFactory } from '../../services/payment-gateways.service';
 import { aadhaar, inr, schoolFixture, type Auth } from './school';
-import { PRIMARY_CARDS } from '../../schemas/admissions.schema';
+import { PERSON_CARDS } from '../../schemas/admissions.schema';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
@@ -82,22 +82,38 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       [
         'parents',
         {
-          father: { name: 'Rakesh Shetty', mobile, email: 'rakesh@example.in' },
+          // The father's and the mother's Aadhaar and PAN, not only the primary contact's (client
+          // 2026-10-13).
+          father: {
+            name: 'Rakesh Shetty',
+            mobile,
+            email: 'rakesh@example.in',
+            aadhaar: aadhaar(),
+            pan: 'ABCPS1234F',
+          },
           // The mother's name and mobile, and the children question, are required (client 2026-10-12).
-          mother: { name: 'Pallavi Shetty', mobile: mobile.replace(/^9/, '8') },
+          mother: {
+            name: 'Pallavi Shetty',
+            mobile: mobile.replace(/^9/, '8'),
+            aadhaar: aadhaar(),
+            pan: 'ABCPS5678K',
+          },
           primary: 'FATHER',
           children: 'MORE',
-          // The primary contact's Aadhaar and PAN (client 2026-10-12).
-          primaryAadhaar: aadhaar(),
-          primaryPan: 'ABCPS1234F',
         },
       ],
     ] as const) {
       const r = await pub('patch', base, token, { section, data });
       expect(r.status, JSON.stringify(r.body)).toBe(200);
     }
-    // With both sides of the primary contact's Aadhaar and PAN cards (client 2026-10-13).
-    for (const t of ['BIRTH', 'ADDRESS', 'REPORT', ...PRIMARY_CARDS]) {
+    // With both sides of the father's and the mother's Aadhaar and PAN cards (client 2026-10-13).
+    for (const t of [
+      'BIRTH',
+      'ADDRESS',
+      'REPORT',
+      ...PERSON_CARDS.father,
+      ...PERSON_CARDS.mother,
+    ]) {
       const r = await attach(`${base}/documents`, token, t);
       expect(r.status, JSON.stringify(r.body)).toBe(201);
     }
@@ -329,8 +345,12 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       expect.arrayContaining([
         'addresses.residential',
         'parents.primary',
-        'parents.primaryAadhaar',
-        'parents.primaryPan',
+        'parents.father.aadhaar',
+        'parents.father.pan',
+        'parents.mother.aadhaar',
+        'parents.mother.pan',
+        'documents.FATHER_AADHAAR_FRONT',
+        'documents.MOTHER_PAN_BACK',
         'documents.BIRTH',
       ]),
     );
@@ -387,12 +407,20 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     );
     expect(early2.status).toBe(409);
     expect(early2.body.code).toBe('ADM.ADMISSION_FEE_NOT_YET');
-    // The primary contact's numbers, masked too.
+    // The primary contact's numbers, masked too, and each person's; none in the stored section.
     const filled = await pub('get', `/api/v1/public/admissions/applications/${app.id}`, token);
     expect(filled.body.primaryContact).toMatchObject({
       aadhaar: expect.stringMatching(/^XXXX XXXX \d{4}$/),
       pan: '••••••234F',
     });
+    expect(filled.body.identityNumbers).toEqual({
+      father: { aadhaar: expect.stringMatching(/^XXXX XXXX \d{4}$/), pan: '••••••234F' },
+      mother: { aadhaar: expect.stringMatching(/^XXXX XXXX \d{4}$/), pan: '••••••678K' },
+      guardian: { aadhaar: null, pan: null },
+      localGuardian: { aadhaar: null, pan: null },
+    });
+    expect(filled.body.parents.father).not.toHaveProperty('aadhaar');
+    expect(filled.body.parents.mother).not.toHaveProperty('pan');
     // The family's consent to register their RingPe account is required (client 2026-10-12).
     const noConsent = await pub(
       'post',
@@ -1254,18 +1282,33 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         sameAsResidential: true,
       },
       parents: {
-        father: { name: 'Mohan Bhat', mobile: '9845001122', email: 'mohan@example.in' },
-        mother: { name: 'Sunita Bhat', mobile: '9845001133' },
+        father: {
+          name: 'Mohan Bhat',
+          mobile: '9845001122',
+          email: 'mohan@example.in',
+          aadhaar: aadhaar(),
+          pan: 'ABCPB1122K',
+        },
+        mother: {
+          name: 'Sunita Bhat',
+          mobile: '9845001133',
+          aadhaar: aadhaar(),
+          pan: 'ABCPB3344L',
+        },
         primary: 'FATHER',
         children: 'SINGLE',
-        primaryAadhaar: aadhaar(),
-        primaryPan: 'ABCPB1122K',
       },
     });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const id = created.body.id as string;
     expect(created.body).toMatchObject({ source: 'COUNSELLOR', midTerm: true, status: 'DRAFT' });
-    for (const t of ['BIRTH', 'ADDRESS', 'REPORT', ...PRIMARY_CARDS]) {
+    for (const t of [
+      'BIRTH',
+      'ADDRESS',
+      'REPORT',
+      ...PERSON_CARDS.father,
+      ...PERSON_CARDS.mother,
+    ]) {
       expect(
         (await attach(`/api/v1/console/applications/${id}/documents`, null, t, con)).status,
       ).toBe(201);
@@ -1592,7 +1635,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(detail.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
   });
 
-  it('asks a new primary contact for their own numbers, e-mail and cards; the application fee is never left for later by the family, and the desk can still take the fees in cash (client 2026-10-13)', async () => {
+  it('keeps each person’s numbers and cards, asks a guardian who is the contact and a hostel student’s local guardian for theirs; the application fee is never left for later by the family, and the desk can still take the fees in cash (client 2026-10-13)', async () => {
     const created = await post(
       `/api/v1/public/admissions/${link.token}/applications`,
       {
@@ -1611,8 +1654,8 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const app = created.body.application;
     const token = created.body.resumeToken as string;
     await completeDraft(app.id, token, '9876504321');
-    // A new primary contact: the last one's Aadhaar and PAN, and their cards, don't carry over;
-    // theirs are asked for, with their e-mail (client 2026-10-12, 2026-10-13).
+    // Another primary contact: each person's Aadhaar, PAN and cards stay theirs; the new contact's
+    // e-mail is asked for (client 2026-10-12, 2026-10-13).
     const parents = (extra: object) =>
       pub('patch', `/api/v1/public/admissions/applications/${app.id}`, token, {
         section: 'parents',
@@ -1632,38 +1675,73 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const mother = { name: 'Latha Bhat', mobile: '8876504321', email: 'latha@example.in' };
     expect((await parents({ mother })).status).toBe(200);
     const read = () => pub('get', `/api/v1/public/admissions/applications/${app.id}`, token);
+    const types = (b: { documents: { type: string }[] }) => b.documents.map((d) => d.type);
     const before = (await read()).body;
     expect(before.primaryContact).toMatchObject({
       relation: 'MOTHER',
       email: 'latha@example.in',
-      aadhaar: null,
-      pan: null,
+      aadhaar: expect.stringMatching(/^XXXX XXXX \d{4}$/),
+      pan: '••••••678K',
     });
-    expect(before.documents.map((d: { type: string }) => d.type)).not.toContain(
-      'PRIMARY_AADHAAR_FRONT',
+    expect(before.identityNumbers.father.pan).toBe('••••••234F');
+    expect(types(before)).toEqual(
+      expect.arrayContaining([...PERSON_CARDS.father, ...PERSON_CARDS.mother]),
     );
-    expect(
-      (await parents({ mother, primaryAadhaar: aadhaar(), primaryPan: 'LATPB4321H' })).status,
-    ).toBe(200);
-    expect((await read()).body.primaryContact.pan).toBe('••••••321H');
     const submit = (body: object) =>
       pub('post', `/api/v1/public/admissions/applications/${app.id}/submission`, token, {
         declarationAccepted: true,
         registrationConsent: true,
         ...body,
       });
-    // The mother's cards are still missing.
-    const noCards = await submit({});
-    expect(noCards.status).toBe(422);
-    expect(noCards.body.errors.map((e: { field: string }) => e.field)).toEqual(
-      PRIMARY_CARDS.map((t) => `documents.${t}`),
-    );
-    for (const t of PRIMARY_CARDS) {
-      expect(
-        (await attach(`/api/v1/public/admissions/applications/${app.id}/documents`, token, t))
-          .status,
-      ).toBe(201);
-    }
+    const missing = async () =>
+      ((await submit({})).body.errors as { field: string }[]).map((e) => e.field);
+    const cardsOf = (h: keyof typeof PERSON_CARDS) => PERSON_CARDS[h].map((t) => `documents.${t}`);
+    const attachAll = async (h: keyof typeof PERSON_CARDS) => {
+      for (const t of PERSON_CARDS[h]) {
+        const r = await attach(
+          `/api/v1/public/admissions/applications/${app.id}/documents`,
+          token,
+          t,
+        );
+        expect(r.status, JSON.stringify(r.body)).toBe(201);
+      }
+    };
+    // A guardian who is the primary contact gives theirs too.
+    const guardian = {
+      name: 'Ravi Rao',
+      relation: 'Uncle',
+      mobile: '9876509090',
+      email: 'ravi@example.in',
+    };
+    expect((await parents({ mother, guardian, primary: 'GUARDIAN' })).status).toBe(200);
+    expect(await missing()).toEqual([
+      'parents.guardian.aadhaar',
+      'parents.guardian.pan',
+      ...cardsOf('guardian'),
+    ]);
+    await attachAll('guardian');
+    // Taken off the form, the guardian's cards go with them.
+    expect((await parents({ mother })).status).toBe(200);
+    expect(types((await read()).body)).not.toContain('GUARDIAN_AADHAAR_FRONT');
+    // A hostel student: the local guardian's Aadhaar, PAN and cards are required too.
+    const local = {
+      name: 'Ravi Rao',
+      relation: 'Uncle',
+      mobile: '9876509090',
+      address: 'Gandhi Bazaar, Shivamogga',
+    };
+    expect((await parents({ mother, hostel: true, localGuardian: local })).status).toBe(200);
+    expect(await missing()).toEqual([
+      'parents.localGuardian.aadhaar',
+      'parents.localGuardian.pan',
+      ...cardsOf('localGuardian'),
+    ]);
+    const withIds = { ...local, aadhaar: aadhaar(), pan: 'RAVPR1234K' };
+    expect((await parents({ mother, hostel: true, localGuardian: withIds })).status).toBe(200);
+    await attachAll('localGuardian');
+    const local2 = (await read()).body;
+    expect(local2.identityNumbers.localGuardian.pan).toBe('••••••234K');
+    expect(local2.parents.localGuardian).not.toHaveProperty('aadhaar');
     // "Pay later" isn't honoured for the family any more (client 2026-10-13): the application
     // waits for its fee.
     const sub = await submit({ payLater: true });

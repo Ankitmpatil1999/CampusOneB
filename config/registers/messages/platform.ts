@@ -181,6 +181,19 @@ export const PLATFORM_MESSAGES = [
     refs: ['BR-05', 'client 2026-10-13'],
   },
   {
+    // Said by the web app when a staff session ends at its idle limit, instead of the bare
+    // AUTH.UNAUTHENTICATED (client 2026-10-13).
+    key: 'AUTH.SESSION_IDLE',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'error',
+    http: 401,
+    en: 'You were signed out because the page was not used for a while. Sign in again to continue.',
+    approval: 'approved',
+    refs: ['ADR-0011', 'client 2026-10-13'],
+  },
+  {
     key: 'AUTH.FORBIDDEN',
     register: 'MSG-GAS-03',
     srsText: 'You don’t have permission to view this page.',

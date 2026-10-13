@@ -75,10 +75,13 @@ export interface FormView {
       readonly address?: string | null | undefined;
     } | null;
   } | null;
-  readonly primaryContact: {
-    readonly aadhaar?: string | null | undefined;
-    readonly pan?: string | null | undefined;
-  };
+  /** Each person's Aadhaar and PAN, masked (client 2026-10-13). */
+  readonly identityNumbers?: Readonly<
+    Record<
+      string,
+      { readonly aadhaar?: string | null | undefined; readonly pan?: string | null | undefined }
+    >
+  >;
   readonly customFields: Readonly<Record<string, unknown>>;
   readonly tc: {
     readonly mode: string;
@@ -151,11 +154,19 @@ const DOCUMENT: Readonly<Record<string, string>> = {
   STUDENT_AADHAAR_BACK: 'Student’s Aadhaar card (back)',
   STUDENT_PAN_FRONT: 'Student’s PAN card (front)',
   STUDENT_PAN_BACK: 'Student’s PAN card (back)',
-  PRIMARY_AADHAAR_FRONT: 'Primary contact’s Aadhaar card (front)',
-  PRIMARY_AADHAAR_BACK: 'Primary contact’s Aadhaar card (back)',
-  PRIMARY_PAN_FRONT: 'Primary contact’s PAN card (front)',
-  PRIMARY_PAN_BACK: 'Primary contact’s PAN card (back)',
+  ...cardLabels('FATHER', 'Father’s'),
+  ...cardLabels('MOTHER', 'Mother’s'),
+  ...cardLabels('GUARDIAN', 'Guardian’s'),
+  ...cardLabels('LOCAL_GUARDIAN', 'Local guardian’s'),
 };
+function cardLabels(prefix: string, whose: string): Record<string, string> {
+  return {
+    [`${prefix}_AADHAAR_FRONT`]: `${whose} Aadhaar card (front)`,
+    [`${prefix}_AADHAAR_BACK`]: `${whose} Aadhaar card (back)`,
+    [`${prefix}_PAN_FRONT`]: `${whose} PAN card (front)`,
+    [`${prefix}_PAN_BACK`]: `${whose} PAN card (back)`,
+  };
+}
 const FEE: Readonly<Record<string, string>> = {
   APPLICATION: 'Application fee',
   ADMISSION: 'Admission fee',
@@ -311,13 +322,21 @@ export function admissionFormPdf(
   const p = v.parents;
   const person = (x: Person | null | undefined) =>
     x?.name ? join(title(x.name), x.relation, x.mobile, x.email, x.occupation) : '';
+  // Each person's Aadhaar and PAN, masked (client 2026-10-13).
+  const ids = (who: string) => {
+    const x = v.identityNumbers?.[who];
+    return join(x?.aadhaar ? `Aadhaar ${x.aadhaar}` : '', x?.pan ? `PAN ${x.pan}` : '');
+  };
   w.section('Parents and guardians');
   w.row('Father', person(p?.father));
+  w.row('Father’s Aadhaar and PAN', ids('father'));
   w.row('Mother', person(p?.mother));
-  if (p?.guardian?.name) w.row('Guardian', person(p.guardian));
+  w.row('Mother’s Aadhaar and PAN', ids('mother'));
+  if (p?.guardian?.name) {
+    w.row('Guardian', person(p.guardian));
+    w.row('Guardian’s Aadhaar and PAN', ids('guardian'));
+  }
   w.row('Primary contact', title(p?.primary));
-  w.row('Primary contact’s Aadhaar', v.primaryContact.aadhaar);
-  w.row('Primary contact’s PAN', v.primaryContact.pan);
   w.row(
     'Children',
     p?.children === 'SINGLE' ? 'Single child' : p?.children === 'MORE' ? 'More than one child' : '',
@@ -332,6 +351,7 @@ export function admissionFormPdf(
   if (p?.hostel && p.localGuardian?.name) {
     const lg = p.localGuardian;
     w.row('Local guardian', join(title(lg.name), lg.relation, lg.mobile, lg.address));
+    w.row('Local guardian’s Aadhaar and PAN', ids('localGuardian'));
   }
 
   const custom = fields

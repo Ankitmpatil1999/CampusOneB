@@ -224,6 +224,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'AUTH.OTP_RESEND_LIMIT': 'OTP Re-Send can be done only once !!!',
   'AUTH.OTP_RESEND_TOO_SOON': 'Resend code in {time}',
   'AUTH.REFRESH_SUPERSEDED': 'Your session was just renewed in another tab. Try again.',
+  'AUTH.SESSION_IDLE':
+    'You were signed out because the page was not used for a while. Sign in again to continue.',
   'AUTH.SIGNED_IN_ELSEWHERE':
     'You were signed out because this account signed in on another device or browser. Sign in again to continue here.',
   'AUTH.UNAUTHENTICATED': 'No active sessions. Please log in again.',

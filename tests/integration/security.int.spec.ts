@@ -6,7 +6,7 @@
 import express from 'express';
 import request from 'supertest';
 import { sql } from 'kysely';
-import { SessionService } from '../../services/session.service';
+import { LOST_ROTATION_MS, SessionService } from '../../services/session.service';
 import { OtpService } from '../../services/otp.service';
 import { recordAudit } from '../../services/audit.service';
 import { idempotency } from '../../middlewares/idempotency.middleware';
@@ -143,13 +143,83 @@ describe.skipIf(!adminUrl)('Phase 2.1 building blocks on real MySQL', () => {
         surface: 'member',
       });
       const r1 = await sessions.refresh(s.refreshToken);
+      // The client has moved on to the next token: the old one can only be a copy.
+      const r2 = await sessions.refresh(r1.refreshToken);
       clock += 30_000; // outside the parallel-request grace
       await expect(sessions.refresh(s.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
-      await expect(sessions.refresh(r1.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
+      await expect(sessions.refresh(r2.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
       expect(await security.revocations.isRevoked(s.sessionId)).toBe(true);
       await vi.waitFor(() =>
         expect(lines.some((l) => l['message'] === 'auth.refresh_reuse')).toBe(true),
       );
+      const row = await t.db
+        .selectFrom('sessions')
+        .select('end_reason')
+        .where('account_id', '=', acct.id)
+        .executeTakeFirstOrThrow();
+      expect(row.end_reason).toBe('REFRESH_REUSE');
+    });
+
+    // 2026-10-13: staff signed out "many times" — a renewal cut off by a reload or a dropped
+    // connection left the browser with the old token, which was then taken for a stolen one.
+    it('rotates again when the answer to a rotation never arrived (its successor unused)', async () => {
+      const { sessions, security, lines } = await services();
+      const acct = await insertAccount(t.db);
+      const s = await sessions.start({
+        accountId: acct.id,
+        accountPublicId: acct.publicId,
+        surface: 'member',
+      });
+      await sessions.refresh(s.refreshToken); // its answer is lost
+      clock += 30_000;
+      const r2 = await sessions.refresh(s.refreshToken);
+      expect(r2.sessionId).toBe(s.sessionId);
+      // Twice lost is still recovered; the session goes on.
+      clock += 30_000;
+      const r3 = await sessions.refresh(s.refreshToken);
+      await expect(sessions.refresh(r3.refreshToken)).resolves.toMatchObject({
+        sessionId: s.sessionId,
+      });
+      expect(await security.revocations.isRevoked(s.sessionId)).toBe(false);
+      await vi.waitFor(() =>
+        expect(lines.some((l) => l['message'] === 'auth.refresh_recovered')).toBe(true),
+      );
+      // The tokens it replaced are dead: presenting one is theft.
+      await expect(sessions.refresh(r2.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
+      expect(await security.revocations.isRevoked(s.sessionId)).toBe(true);
+    });
+
+    it('still catches a thief who renews first: the real client’s next renewal ends the family', async () => {
+      const { sessions, security } = await services();
+      const acct = await insertAccount(t.db);
+      const s = await sessions.start({
+        accountId: acct.id,
+        accountPublicId: acct.publicId,
+        surface: 'member',
+      });
+      const client = await sessions.refresh(s.refreshToken);
+      clock += 30_000;
+      const thief = await sessions.refresh(s.refreshToken); // looks like a lost answer
+      await expect(sessions.refresh(client.refreshToken)).rejects.toMatchObject({
+        statusCode: 401,
+      });
+      await expect(sessions.refresh(thief.refreshToken)).rejects.toMatchObject({
+        statusCode: 401,
+      });
+      expect(await security.revocations.isRevoked(s.sessionId)).toBe(true);
+    });
+
+    it('does not rotate an old token again past LOST_ROTATION_MS', async () => {
+      const { sessions } = await services();
+      const acct = await insertAccount(t.db);
+      const s = await sessions.start({
+        accountId: acct.id,
+        accountPublicId: acct.publicId,
+        surface: 'member',
+      });
+      await sessions.refresh(s.refreshToken);
+      clock += LOST_ROTATION_MS;
+      await expect(sessions.refresh(s.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
       const row = await t.db
         .selectFrom('sessions')
         .select('end_reason')
