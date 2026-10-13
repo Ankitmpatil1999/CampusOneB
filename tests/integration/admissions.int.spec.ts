@@ -285,6 +285,15 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     // A twin or a namesake with another surname is not the same child.
     const twin = await sameChild('Shenoy');
     expect(twin.status, JSON.stringify(twin.body)).toBe(201);
+    // The student's Aadhaar is optional (client 2026-10-12): it can be cleared, and the
+    // application goes on to be submitted without it.
+    const cleared = await pub('patch', `/api/v1/public/admissions/applications/${app.id}`, token, {
+      section: 'student',
+      data: { ...diya, aadhaar: null },
+    });
+    expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+    expect(cleared.body.student.aadhaar).toBeNull();
+    expect(cleared.body.student.pan).toBe('••••••821K');
     // Without the token the draft can't be read; with it, it can.
     expect(
       (await request(f.app).get(`/api/v1/public/admissions/applications/${app.id}`)).status,
@@ -308,6 +317,9 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         'parents.primaryPan',
         'documents.BIRTH',
       ]),
+    );
+    expect(early.body.errors.map((e: { field: string }) => e.field)).not.toContain(
+      'student.aadhaar',
     );
     // The mother's details and the children question are required (client 2026-10-12).
     const noMother = await pub('patch', `/api/v1/public/admissions/applications/${app.id}`, token, {
@@ -1421,6 +1433,18 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       admissionFeeDue: inr('10000.00'),
       fees: [expect.objectContaining({ feeType: 'APPLICATION', status: 'PENDING' })],
     });
+    // The application fee left for later: the admission fee can't be paid online on its own
+    // (client 2026-10-12) — not by the family, nor by a payment link from the desk.
+    const alone = await pub(
+      'post',
+      `/api/v1/public/admissions/applications/${app.id}/fee-payments`,
+      token,
+      { feeType: 'ADMISSION' },
+    );
+    expect(alone.status).toBe(409);
+    expect(alone.body.code).toBe('ADM.APPLICATION_FEE_FIRST');
+    const payLink = await post(`/api/v1/console/applications/${app.id}/admission-fee/online`);
+    expect(payLink.body.code).toBe('ADM.APPLICATION_FEE_FIRST');
     // Both fees wait on the accounts desk's list.
     const list = await request(f.app)
       .get(`/api/v1/console/admission-fees?yearId=${nextYear.id}`)

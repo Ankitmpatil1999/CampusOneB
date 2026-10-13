@@ -86,6 +86,13 @@ export const ROLE_MESSAGES = [
     "This role can't be given or taken away here. RingPe assigns the Institution Administrator role, and students have no console roles.",
     ['6.28', 'FR-IDN-10', 'OI-IDN-27'],
   ),
+  n(
+    'IDN.ROLE_WRONG_PROFILE',
+    409,
+    'The {role} role can be given only to {who}.',
+    ['6.28', 'client 2026-10-13'],
+    ['role', 'who'],
+  ),
 ] as const satisfies readonly MessageDefinition[];
 
 export type RoleMessageKey = (typeof ROLE_MESSAGES)[number]['key'];

@@ -638,6 +638,7 @@ describe('OpenAPI 3.1 document', () => {
       'TRN-032',
       'TRN-033',
       'TRN-034',
+      'TRN-035',
       'WAL-001',
       'WAL-002',
       'WAL-003',

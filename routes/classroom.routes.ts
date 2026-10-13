@@ -3,7 +3,7 @@ import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { requireSurface, teacherAccess } from '../middlewares/auth.middleware';
+import { memberOrConsole, requireSurface, teacherAccess } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import type { CalendarService } from '../services/calendar.service';
@@ -159,7 +159,7 @@ doc({
   path: '/api/v1/me/calendar',
   summary:
     'The member’s calendar: entries for everyone, for the student’s class or section that year, or for the member, with occurrences in the range (for: a child on the account)',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: calendarQuery,
   responses: { 200: { description: 'Calendar' } },
 });
@@ -202,6 +202,9 @@ export function classroomRoutes(deps: {
   loggers: Loggers;
 }): Router {
   const router = Router();
+  // The app's member, or the web console with one of the sub-tasks (teachers, Phase 10; the
+  // principal, client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, deps.loggers);
   const member = requireSurface(deps.loggers, 'member');
   const teaching = (sub: string) => teacherAccess(`teaching.${sub}`, deps.loggers);
   const once = idempotency({ db: deps.db, mode: 'required' });
@@ -333,7 +336,7 @@ export function classroomRoutes(deps: {
   );
   router.get(
     '/me/calendar',
-    member,
+    either('teaching.view', 'principal.view'),
     json((req) => deps.calendar.mine(principal(req), calendarQuery.parse(req.query))),
   );
   router.get(

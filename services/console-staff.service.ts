@@ -3,7 +3,8 @@
  * the console, with which institution roles, and the administrator's release of a locked account.
  *
  * - A "staff account" is a staff profile of the institution that has a RingPe account; students
- *   never hold console roles.
+ *   and parents never hold console roles. A merchant may hold the Merchant or Vendor merchant role
+ *   matching its type (client 2026-10-13), and nothing else.
  * - Roles are the platform's institution roles (the operator keeps the catalogue, IDN-063…066).
  *   The Institution Administrator role is given and taken away by RingPe only (it decides
  *   approvals, Q9); every other active role can be assigned here. New grants apply at the account's
@@ -21,6 +22,39 @@ import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
 
 const ADMIN = 'INSTITUTION_ADMIN';
+
+/**
+ * The roles of one person's own work go only to the matching profile (client 2026-10-13): the
+ * Principal role to the principal (or management), the Merchant role to a regular merchant and the
+ * Vendor merchant role to a vendor merchant — and a merchant holds no other role.
+ */
+const ROLE_PROFILE: Readonly<
+  Record<string, { who: string; fits: (category: string, merchantType: string | null) => boolean }>
+> = {
+  PRINCIPAL: {
+    who: 'the principal or management',
+    fits: (c) => c === 'PRINCIPAL' || c === 'MANAGEMENT',
+  },
+  MERCHANT: { who: 'a regular merchant', fits: (c, t) => c === 'MERCHANT' && t === 'REGULAR' },
+  VENDOR_MERCHANT: { who: 'a vendor merchant', fits: (c, t) => c === 'MERCHANT' && t === 'VENDOR' },
+};
+
+function checkProfileForRole(
+  role: { code: string | null; name: string },
+  m: { category: string; merchant_type: string | null },
+) {
+  const rule = role.code ? ROLE_PROFILE[role.code] : undefined;
+  const ok = rule
+    ? rule.fits(m.category, m.merchant_type)
+    : // A staff role: not for a merchant.
+      m.category !== 'MERCHANT';
+  if (!ok) {
+    throw new ConflictError('IDN.ROLE_WRONG_PROFILE', {
+      params: { role: role.name, who: rule?.who ?? 'staff of the school, not a merchant' },
+    });
+  }
+}
+
 const titleCase = (s: string) =>
   s.toLowerCase().replace(/(^|[\s.'-])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
 
@@ -80,6 +114,7 @@ export class ConsoleStaffService {
       .selectFrom('member_profiles as m')
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
       .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .leftJoin('merchants as mer', 'mer.profile_id', 'm.id')
       .select([
         'm.id',
         'm.public_id',
@@ -89,6 +124,7 @@ export class ConsoleStaffService {
         'm.status',
         'ut.name as user_type',
         'ut.category',
+        'mer.sub_type as merchant_type',
         'a.email',
         'a.mobile',
         'a.signin_lock',
@@ -96,7 +132,9 @@ export class ConsoleStaffService {
         'a.current_signin_at',
       ])
       .where('m.institution_id', '=', inst.id)
-      .where('ut.category', 'not in', ['STUDENT', 'PARENT', 'MERCHANT'])
+      // Merchants are listed too (client 2026-10-13): the Merchant or Vendor merchant role opens
+      // their counter on the web.
+      .where('ut.category', 'not in', ['STUDENT', 'PARENT'])
       .orderBy('m.first_name')
       .execute();
     const roles = rows.length
@@ -114,6 +152,9 @@ export class ConsoleStaffService {
         memberNo: `${inst.short_name}-${String(m.member_seq).padStart(5, '0')}`,
         name: [m.first_name, m.last_name].filter(Boolean).join(' '),
         userType: m.user_type,
+        category: m.category,
+        /** A merchant's type, which decides its role: Merchant (REGULAR) or Vendor merchant. */
+        merchantType: m.merchant_type ?? null,
         email: m.email,
         mobile: `••••••${m.mobile.slice(-4)}`,
         status: m.status,
@@ -134,12 +175,14 @@ export class ConsoleStaffService {
       .selectFrom('member_profiles as m')
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
       .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .leftJoin('merchants as mer', 'mer.profile_id', 'm.id')
       .select([
         'm.id',
         'm.public_id',
         'm.first_name',
         'm.last_name',
         'ut.category',
+        'mer.sub_type as merchant_type',
         'a.id as account_id',
         'a.public_id as account_public_id',
       ])
@@ -154,7 +197,7 @@ export class ConsoleStaffService {
   /** Sets the staff member's institution roles (the administrator role is RingPe's to give). */
   async setRoles(p: Principal, profileId: string, input: { roleIds: readonly string[] }) {
     const { inst, m } = await this.staff(p, profileId);
-    if (['STUDENT', 'PARENT', 'MERCHANT'].includes(m.category)) {
+    if (['STUDENT', 'PARENT'].includes(m.category)) {
       throw new ConflictError('IDN.ROLE_NOT_ASSIGNABLE');
     }
     const wanted = [...new Set(input.roleIds.map((r) => r.toLowerCase()))];
@@ -167,6 +210,7 @@ export class ConsoleStaffService {
       throw new ValidationError([{ field: 'roleIds', code: 'VALIDATION.FORMAT' }]);
     }
     if (chosen.some((r) => r!.status !== 'ACTIVE')) throw new ConflictError('IDN.ROLE_DISABLED');
+    for (const r of chosen) checkProfileForRole(r!, m);
     const at = this.now();
     const removed = await this.deps.db.transaction().execute(async (trx) => {
       const current = await trx

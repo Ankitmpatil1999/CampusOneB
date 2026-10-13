@@ -67,10 +67,11 @@ export const studentSectionSchema = z.strictObject({
   lastName: name(),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER'], { message: 'VALIDATION.FORMAT' }),
   dob: date,
-  // Omitted: what is stored stays (the numbers are never read back in full). Required to submit.
+  // Optional (client 2026-10-12). Omitted: what is stored stays (the numbers are never read back
+  // in full); null clears it.
   aadhaar: aadhaar
-    .optional()
-    .describe("The student's Aadhaar number; kept encrypted, shown masked"),
+    .nullish()
+    .describe("The student's Aadhaar number, if given; kept encrypted, shown masked"),
   // Optional; null clears it.
   pan: pan().nullish().describe("The student's PAN, if any; kept encrypted, shown masked"),
   category: z

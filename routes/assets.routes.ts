@@ -3,7 +3,12 @@ import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import {
+  authorize,
+  memberOrConsole,
+  requireSurface,
+  requireTenant,
+} from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import type { AssetsService } from '../services/assets.service';
@@ -194,7 +199,7 @@ doc({
   method: 'get',
   path: '/api/v1/merchant/assets',
   summary: 'The approved assets of my linked groups (vendors)',
-  auth: 'member',
+  auth: 'member|business.assets',
   responses: { 200: { description: 'Assets', schema: vendorAssets } },
 });
 doc({
@@ -214,6 +219,8 @@ export function assetsRoutes(deps: {
 }): Router {
   const router = Router();
   const L = deps.loggers;
+  // The app's member, or the web console with one of the sub-tasks (a vendor merchant; client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const once = idempotency({ db: deps.db, mode: 'required' });
   const wrap =
     (fn: RequestHandler): RequestHandler =>
@@ -335,7 +342,7 @@ export function assetsRoutes(deps: {
   );
   router.get(
     '/merchant/assets',
-    requireSurface(L, 'member'),
+    either('business.assets'),
     wrap(async (req, res) => {
       res.json(await deps.assets.vendorAssets(principal(req)));
     }),

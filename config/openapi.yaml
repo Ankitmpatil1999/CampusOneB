@@ -8397,6 +8397,37 @@ paths:
           schema:
             type: string
             maxLength: 40
+  /api/v1/console/transport-choices/{memberId}:
+    put:
+      operationId: TRN-035
+      summary: Change a student’s school transport choice from the admission form — opted or not — when the family changes its mind (client 2026-10-12); the reason is kept in the audit log
+      tags:
+        - Transport
+      x-ringpe-auth: transport.edit
+      responses:
+        "200":
+          description: The choice as it now stands
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransportChoiceChange"
   /api/v1/console/transport-sessions:
     get:
       operationId: TRN-014
@@ -9524,7 +9555,7 @@ paths:
       summary: "For a teacher’s or the principal’s new announcement: categories, the channels the school has on (a class announcement: in the app), target groups and the title and text limits (settings)"
       tags:
         - Communication
-      x-ringpe-auth: member|teaching.announce
+      x-ringpe-auth: member|teaching.announce,principal.announce
       responses:
         "200":
           description: Options
@@ -9543,7 +9574,7 @@ paths:
       summary: "Announcements sent to the member (for: a child on the account) with their own acknowledgement"
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view,business.view
       responses:
         "200":
           description: Announcements
@@ -9575,7 +9606,7 @@ paths:
       summary: One announcement sent to the member, with their own acknowledgement
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view,business.view
       responses:
         "200":
           description: Announcement
@@ -9612,7 +9643,7 @@ paths:
       summary: Acknowledge for oneself (or a child on the account); once
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view,business.view
       responses:
         "200":
           description: Announcement
@@ -9655,7 +9686,7 @@ paths:
       summary: "A month of the member’s attendance (for: a child on the account): each day, holidays, approved leave and the summary"
       tags:
         - Attendance
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Month
@@ -9723,7 +9754,7 @@ paths:
       summary: "The member’s calendar: entries for everyone, for the student’s class or section that year, or for the member, with occurrences in the range (for: a child on the account)"
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Calendar
@@ -9878,7 +9909,7 @@ paths:
       summary: "People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address"
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Contacts
@@ -9921,7 +9952,7 @@ paths:
       summary: Conversations, newest message first, active or archived, with unread counts and whether the member may still send
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Conversations
@@ -9967,7 +9998,7 @@ paths:
       summary: Start (or continue) the conversation with a member and send the first message; the role matrix and, for students and teachers, the relationship apply; 30 messages a minute
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "201":
           description: Sent
@@ -10005,7 +10036,7 @@ paths:
       summary: Archive or restore the conversation for the member only
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "204":
           description: Done
@@ -10042,7 +10073,7 @@ paths:
       summary: "Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read"
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Messages
@@ -10085,7 +10116,7 @@ paths:
       summary: Send a message (1 to 4,000 characters; 30 a minute per member, shared by every server)
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "201":
           description: Sent
@@ -10922,7 +10953,7 @@ paths:
       summary: Member app notifications (for example a correction decided), newest first
       tags:
         - Notifications
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view,business.view
       responses:
         "200":
           description: Notifications
@@ -10945,7 +10976,7 @@ paths:
       summary: Mark member notifications read (ids, or all)
       tags:
         - Notifications
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view,business.view
       responses:
         "204":
           description: Marked
@@ -11615,7 +11646,7 @@ paths:
       summary: My leave requests this year and my balances (casual, medical, earned)
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Leave
@@ -11640,7 +11671,7 @@ paths:
       summary: "Apply for leave from today inside the year: working days only, no overlap, within the balance; a teacher’s request goes to the coordinator, other staff to the principal"
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "201":
           description: Leave
@@ -11672,7 +11703,7 @@ paths:
       summary: Cancel my request while no one has reviewed it
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Leave
@@ -11971,7 +12002,7 @@ paths:
       summary: "A movement the member is party to: amount, parties, channel, status, balance after"
       tags:
         - Wallets
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Receipt
@@ -12000,7 +12031,7 @@ paths:
       summary: The receipt as a PDF
       tags:
         - Wallets
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: PDF
@@ -12094,7 +12125,7 @@ paths:
       summary: "The allocation, today’s trips and their progress for the member (for: a child on the account)"
       tags:
         - Transport
-      x-ringpe-auth: member
+      x-ringpe-auth: member|teaching.view,principal.view
       responses:
         "200":
           description: Transport
@@ -12120,7 +12151,7 @@ paths:
       summary: "The profile's campus and allowance wallets: balance, held, status, wallet number, virtual account, spend today and this month (never cached); `for` picks a profile on the account (a child)"
       tags:
         - Wallets
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Wallets
@@ -12143,7 +12174,7 @@ paths:
       summary: "Statement from the ledger, newest first: every movement with the other party and the balance after it"
       tags:
         - Wallets
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Statement
@@ -12201,7 +12232,7 @@ paths:
       summary: The approved assets of my linked groups (vendors)
       tags:
         - Assets
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.assets
       responses:
         "200":
           description: Assets
@@ -12224,7 +12255,7 @@ paths:
       summary: Collections with date, status and channel filters, newest first, with totals
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Collections
@@ -12290,7 +12321,7 @@ paths:
       summary: "The merchant's home: today's collections, wallet, QR codes and open requests"
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Home
@@ -12313,7 +12344,7 @@ paths:
       summary: A single-use dynamic QR or NFC request for an amount (expires after pay.request.ttlSeconds); the channel must be switched on for the merchant
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.collect
       responses:
         "201":
           description: Created
@@ -12349,7 +12380,7 @@ paths:
       summary: Request status (Expired is derived from the expiry time), the payer and the receipt
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Status
@@ -12378,7 +12409,7 @@ paths:
       summary: Cancel a request still waiting for payment (RC-28)
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.collect
       responses:
         "200":
           description: Cancelled
@@ -12407,7 +12438,7 @@ paths:
       summary: "A campus card tapped on the merchant's device for an NFC request: the request's nonce (once), an active card of the institution; the holder pays through the engine without a PIN, within the daily cap; a reused nonce is a replay"
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.collect
       responses:
         "200":
           description: Paid
@@ -12448,7 +12479,7 @@ paths:
       summary: The merchant's static payment, allowance and coupon codes (SVG and payload)
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Codes
@@ -12471,7 +12502,7 @@ paths:
       summary: My printable QR card
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: PDF
@@ -12500,7 +12531,7 @@ paths:
       summary: E-mail my QR code details (to the merchant e-mail unless another is given)
       tags:
         - Merchants
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.collect
       responses:
         "202":
           description: Sent
@@ -12537,7 +12568,7 @@ paths:
       summary: "My settlements: date, status as the merchant statement shows it, gross, fee, net, paid out with UTR, carried forward"
       tags:
         - Settlement
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Settlements
@@ -12556,7 +12587,7 @@ paths:
       summary: My lines of a settlement with their transactions
       tags:
         - Settlement
-      x-ringpe-auth: member
+      x-ringpe-auth: member|business.view
       responses:
         "200":
           description: Settlement
@@ -17277,7 +17308,7 @@ paths:
       summary: "The principal’s academics: each section’s average, pass rate and standing (Top Performer, Average, Needs Support), exams in the next 14 days and weekly lessons per section"
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.view
       responses:
         "200":
           description: Academics
@@ -17303,7 +17334,7 @@ paths:
       summary: "The school’s announcements for the principal in the app: dispatch outcome and acknowledgement counts (COM-001’s view)"
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.view
       responses:
         "200":
           description: Announcements
@@ -17342,7 +17373,7 @@ paths:
       summary: The principal’s announcement (the console’s rules)
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.announce
       responses:
         "202":
           description: Accepted
@@ -17374,7 +17405,7 @@ paths:
       summary: "The principal in the app: who has and hasn’t acknowledged one of the school’s announcements (COM-005’s view)"
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.view
       responses:
         "200":
           description: Acknowledgements
@@ -17419,7 +17450,7 @@ paths:
       summary: The principal in the app reminds those who haven’t acknowledged, in the app and the channels chosen (the school’s channels only; COM-006’s rules)
       tags:
         - Communication
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.announce
       responses:
         "202":
           description: Reminded
@@ -17456,7 +17487,7 @@ paths:
       summary: "The principal’s day: students by class-section, or teachers or staff by name with approved leave"
       tags:
         - Attendance
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.view
       responses:
         "200":
           description: Attendance
@@ -17492,7 +17523,7 @@ paths:
       summary: "The principal’s day: people, teacher leave awaiting them or with the coordinator, student leave pending, staff on leave today, section standings and upcoming exams"
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.view
       responses:
         "200":
           description: Overview
@@ -17511,7 +17542,7 @@ paths:
       summary: "Students of the year (CR-09: name, admission number, class, section) or teachers and staff with their classes and subjects"
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.view
       responses:
         "200":
           description: People
@@ -17558,7 +17589,7 @@ paths:
       summary: Leave awaiting the principal (after the coordinator, or staff directly), with the coordinator, or decided — with balances and who else is away
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.view
       responses:
         "200":
           description: Leave
@@ -17593,7 +17624,7 @@ paths:
       summary: The final decision, only after the coordinator recommended (OI-ACA-51); a reason when rejecting; never their own request; the staff member is told
       tags:
         - Academics
-      x-ringpe-auth: member
+      x-ringpe-auth: member|principal.leave
       responses:
         "200":
           description: Leave
@@ -20452,8 +20483,10 @@ components:
               type: string
               pattern: ^\d{4}-\d{2}-\d{2}$
             aadhaar:
-              description: The student's Aadhaar number; kept encrypted, shown masked
-              type: string
+              description: The student's Aadhaar number, if given; kept encrypted, shown masked
+              type:
+                - string
+                - "null"
             pan:
               description: The student's PAN, if any; kept encrypted, shown masked
               anyOf:
@@ -25341,8 +25374,10 @@ components:
               type: string
               pattern: ^\d{4}-\d{2}-\d{2}$
             aadhaar:
-              description: The student's Aadhaar number; kept encrypted, shown masked
-              type: string
+              description: The student's Aadhaar number, if given; kept encrypted, shown masked
+              type:
+                - string
+                - "null"
             pan:
               description: The student's PAN, if any; kept encrypted, shown masked
               anyOf:
@@ -46036,6 +46071,18 @@ components:
       required:
         - texts
         - versions
+      additionalProperties: false
+    TransportChoiceChange:
+      type: object
+      properties:
+        opted:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 200
+      required:
+        - opted
+        - reason
       additionalProperties: false
     TransportRouteInput:
       type: object

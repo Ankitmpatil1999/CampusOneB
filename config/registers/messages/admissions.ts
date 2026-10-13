@@ -279,6 +279,12 @@ export const ADMISSION_MESSAGES = [
     ['19.8', 'client 2026-10-09'],
   ),
   n(
+    'ADM.APPLICATION_FEE_FIRST',
+    409,
+    'The admission fee can’t be paid on its own while the application fee is due. Pay both together, or both later at the school’s accounts desk.',
+    ['19.8', 'client 2026-10-12'],
+  ),
+  n(
     'ADM.PARENT_TYPE_MISSING',
     409,
     'Add a user type in the Parent category first (People › User types): approving adds the parents as members.',

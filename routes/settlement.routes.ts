@@ -3,7 +3,12 @@ import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import {
+  authorize,
+  memberOrConsole,
+  requireSurface,
+  requireTenant,
+} from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import type { SettlementService } from '../services/settlement.service';
@@ -256,7 +261,7 @@ doc({
   path: '/api/v1/merchant/settlements',
   summary:
     'My settlements: date, status as the merchant statement shows it, gross, fee, net, paid out with UTR, carried forward',
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Settlements' } },
 });
 doc({
@@ -264,7 +269,7 @@ doc({
   method: 'get',
   path: '/api/v1/merchant/settlements/{settlementId}',
   summary: 'My lines of a settlement with their transactions',
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Settlement' } },
 });
 
@@ -276,6 +281,8 @@ export function settlementRoutes(deps: {
 }): Router {
   const router = Router();
   const L = deps.loggers;
+  // The app's member, or the web console with one of the sub-tasks (merchants and vendor merchants; client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const S = deps.settlement;
   const once = idempotency({ db: deps.db, mode: 'required' });
   const wrap =
@@ -296,7 +303,6 @@ export function settlementRoutes(deps: {
   const fileNo = (req: Request) => Number(req.params['fileNo']);
   const ops = requireSurface(L, 'ops');
   const console = [requireSurface(L, 'console'), requireTenant(L)];
-  const member = requireSurface(L, 'member');
 
   router.get(
     '/ops/settlements',
@@ -457,7 +463,7 @@ export function settlementRoutes(deps: {
 
   router.get(
     '/merchant/settlements',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       res.json(await S.merchantList(principal(req)));
@@ -465,7 +471,7 @@ export function settlementRoutes(deps: {
   );
   router.get(
     '/merchant/settlements/:settlementId',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       res.json(await S.merchantDetail(principal(req), param(req, 'settlementId')));

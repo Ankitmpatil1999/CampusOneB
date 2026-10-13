@@ -179,6 +179,30 @@ export const TRANSPORT_MESSAGES = [
   k('TRN.ALLOCATION_NOT_FOUND', 'MSG-TRN-227', 'User Allocation not found.', 404, ['22.7']),
   n('TRN.ALLOCATION_ENDED', 409, 'This allocation has already ended.', ['22.7']),
   n('TRN.MEMBERS', 422, 'Choose up to 200 active members of the school.', ['22.7']),
+  n(
+    'TRN.CHOICE_REASON',
+    422,
+    'Give the reason for changing the transport choice (3 to 200 characters).',
+    ['22.7', 'client 2026-10-12'],
+  ),
+  n(
+    'TRN.NO_TRANSPORT_CHOICE',
+    409,
+    'This student has no transport choice on record from the admission form, so they can be allocated already.',
+    ['22.7', 'client 2026-10-12'],
+  ),
+  n(
+    'TRN.OPT_OUT_ALLOCATED',
+    409,
+    'End the student’s current transport allocation before marking them as not opted.',
+    ['22.7', 'client 2026-10-12'],
+  ),
+  n(
+    'TRN.NOT_OPTED',
+    409,
+    'Only students who opted for school transport can be allocated a bus. Not opted on the admission form: {names}.',
+    ['22.7', 'client 2026-10-12'],
+  ),
   // --- trips ----------------------------------------------------------------------------------------------
   k('TRN.TRIP_NOT_FOUND', 'MSG-TRN-252', 'Trip not found.', 404, ['22.8']),
   k('TRN.TRIP_ALREADY_CANCELLED', 'MSG-TRN-254', 'Trip is already cancelled.', 409, ['22.8']),

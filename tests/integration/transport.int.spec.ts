@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { schoolFixture, type Auth, type Payer } from './school';
+import { newPublicIdPair } from '../../utils/idGenerator';
 
 const IST = { timeZone: 'Asia/Kolkata' } as const;
 const today = () => new Intl.DateTimeFormat('en-CA', IST).format(new Date());
@@ -457,6 +458,94 @@ describe.skipIf(!adminUrl)('transport on real MySQL', () => {
     // The family is told the transport ends (OI-TRN-13).
     expect(JSON.stringify((await get('/me/notifications', bala.auth)).body)).toContain(
       `ends on ${yearEnd}`,
+    );
+  });
+
+  it('allocates only students who opted for school transport on the admission form (client 2026-10-12)', async () => {
+    // Asha and Bala were added directly: no choice on record, so they stayed eligible (above).
+    const chitra = await f.student('Chitra');
+    const deepa = await f.student('Deepa');
+    const year = await f.t.db
+      .selectFrom('academic_years')
+      .select('id')
+      .where('institution_id', '=', f.school.rowId)
+      .executeTakeFirstOrThrow();
+    const at = new Date();
+    const approved = (who: Payer, n: number, parents: object) => ({
+      public_id: newPublicIdPair().bin,
+      institution_id: f.school.rowId,
+      application_no: `TS/2026/00010${n}`,
+      source: 'PUBLIC' as const,
+      status: 'APPROVED' as const,
+      year_id: String(year.id),
+      mid_term: 0,
+      data: JSON.stringify({ parents }),
+      member_profile_id: who.rowId,
+      created_at: at,
+      updated_at: at,
+    });
+    await f.t.db
+      .insertInto('admission_applications')
+      .values([
+        approved(chitra, 1, { primary: 'MOTHER', transport: false, transportStop: null }),
+        approved(deepa, 2, {
+          primary: 'MOTHER',
+          transport: true,
+          transportStop: { id: ids['Ashok Nagar'], name: 'Ashok Nagar' },
+        }),
+      ])
+      .execute();
+    const open = (await get('/console/passenger-allocations?assigned=false')).body.items as {
+      member: { name: string };
+      transport: { opted: boolean; stop: string | null } | null;
+    }[];
+    const choice = (name: string) => open.find((r) => r.member.name === name)?.transport;
+    expect(choice('Chitra Rao')).toEqual({ opted: false, stop: null });
+    expect(choice('Deepa Rao')).toEqual({ opted: true, stop: 'Ashok Nagar' });
+    const allocate = (memberIds: string[]) =>
+      post('/console/passenger-allocations', con, {
+        memberIds,
+        routeId: ids['route'],
+        stopId: ids['Ashok Nagar'],
+        from: today(),
+        to: yearEnd,
+      });
+    // One who declined stops the whole batch, and nothing is allocated.
+    const refused = await allocate([deepa.id, chitra.id]);
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: 'TRN.NOT_OPTED', params: { names: 'Chitra Rao' } });
+    expect(
+      (await get('/console/passenger-allocations?assigned=true')).body.items.map(
+        (r: { member: { name: string } }) => r.member.name,
+      ),
+    ).not.toContain('Deepa Rao');
+    const ok = await allocate([deepa.id]);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+
+    // The family changes its mind: the transport desk records it, with a reason (TRN-035).
+    const choose = (who: Payer, body: object) =>
+      request(f.app).put(`/api/v1/console/transport-choices/${who.id}`).set(con).send(body);
+    expect((await choose(chitra, { opted: true, reason: 'x' })).body.errors[0].code).toBe(
+      'TRN.CHOICE_REASON',
+    );
+    const changed = await choose(chitra, { opted: true, reason: 'Parent asked at the desk' });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(changed.body).toEqual({ memberId: chitra.id, transport: { opted: true, stop: null } });
+    expect((await allocate([chitra.id])).status).toBe(201);
+    const audit = await f.t.db
+      .selectFrom('audit_log')
+      .select(['action'])
+      .where('institution_id', '=', f.school.rowId)
+      .where('action', '=', 'TRANSPORT_CHOICE_CHANGED')
+      .execute();
+    expect(audit).toHaveLength(1);
+    // Not opted while still allocated: the allocation is ended first.
+    expect((await choose(deepa, { opted: false, reason: 'Moving away' })).body.code).toBe(
+      'TRN.OPT_OUT_ALLOCATED',
+    );
+    // Added directly: no choice on record to change, and they can be allocated already.
+    expect((await choose(asha, { opted: false, reason: 'Testing' })).body.code).toBe(
+      'TRN.NO_TRANSPORT_CHOICE',
     );
   });
 });

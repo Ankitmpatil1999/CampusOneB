@@ -5,6 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import {
   authorize,
+  memberOrConsole,
   requireSurface,
   requireTenant,
   teacherAccess,
@@ -212,7 +213,7 @@ doc({
   path: '/api/v1/principal/academics',
   summary:
     'The principal’s academics: each section’s average, pass rate and standing (Top Performer, Average, Needs Support), exams in the next 14 days and weekly lessons per section',
-  auth: 'member',
+  auth: 'member|principal.view',
   query: yearQuery,
   responses: { 200: { description: 'Academics' } },
 });
@@ -243,6 +244,8 @@ export function examsRoutes(deps: {
 }): Router {
   const router = Router();
   const L = deps.loggers;
+  // The app's member, or the web console with one of the sub-tasks (the principal; client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const once = idempotency({ db: deps.db, mode: 'required' });
   const wrap =
     (fn: RequestHandler): RequestHandler =>
@@ -405,7 +408,7 @@ export function examsRoutes(deps: {
   );
   router.get(
     '/principal/academics',
-    member,
+    either('principal.view'),
     wrap(async (req, res) => {
       noStore(res);
       res.json(await deps.exams.principalAcademics(principal(req), yearQuery.parse(req.query)));

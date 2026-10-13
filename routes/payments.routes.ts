@@ -2,7 +2,12 @@ import { Router, type Request, type RequestHandler } from 'express';
 import type { Kysely } from 'kysely';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import {
+  authorize,
+  memberOrConsole,
+  requireSurface,
+  requireTenant,
+} from '../middlewares/auth.middleware';
 import { idempotency, IDEMPOTENCY_HEADER } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import {
@@ -98,7 +103,7 @@ mer({
   method: 'get',
   path: '/api/v1/merchant/home',
   summary: "The merchant's home: today's collections, wallet, QR codes and open requests",
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Home', schema: merchantHomeSchema } },
 });
 mer({
@@ -106,7 +111,7 @@ mer({
   method: 'get',
   path: '/api/v1/merchant/qr-codes',
   summary: "The merchant's static payment, allowance and coupon codes (SVG and payload)",
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Codes', schema: qrListSchema } },
 });
 mer({
@@ -115,7 +120,7 @@ mer({
   path: '/api/v1/merchant/payment-requests',
   summary:
     'A single-use dynamic QR or NFC request for an amount (expires after pay.request.ttlSeconds); the channel must be switched on for the merchant',
-  auth: 'member',
+  auth: 'member|business.collect',
   request: requestInputSchema,
   idempotent: 'required',
   responses: { 201: { description: 'Created', schema: requestCreatedSchema } },
@@ -125,7 +130,7 @@ mer({
   method: 'get',
   path: '/api/v1/merchant/payment-requests/{requestId}',
   summary: 'Request status (Expired is derived from the expiry time), the payer and the receipt',
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Status', schema: requestStatusSchema } },
 });
 mer({
@@ -133,7 +138,7 @@ mer({
   method: 'post',
   path: '/api/v1/merchant/payment-requests/{requestId}/cancellation',
   summary: 'Cancel a request still waiting for payment (RC-28)',
-  auth: 'member',
+  auth: 'member|business.collect',
   responses: { 200: { description: 'Cancelled', schema: requestStatusSchema } },
 });
 mer({
@@ -142,7 +147,7 @@ mer({
   path: '/api/v1/merchant/payment-requests/{requestId}/nfc-taps',
   summary:
     "A campus card tapped on the merchant's device for an NFC request: the request's nonce (once), an active card of the institution; the holder pays through the engine without a PIN, within the daily cap; a reused nonce is a replay",
-  auth: 'member',
+  auth: 'member|business.collect',
   request: nfcTapSchema,
   idempotent: 'required',
   responses: { 200: { description: 'Paid', schema: paymentResultSchema } },
@@ -152,7 +157,7 @@ mer({
   method: 'post',
   path: '/api/v1/merchant/qr-codes/{qrId}/email',
   summary: 'E-mail my QR code details (to the merchant e-mail unless another is given)',
-  auth: 'member',
+  auth: 'member|business.collect',
   request: emailQrSchema,
   idempotent: 'required',
   responses: { 202: { description: 'Sent' } },
@@ -162,7 +167,7 @@ mer({
   method: 'get',
   path: '/api/v1/merchant/collections',
   summary: 'Collections with date, status and channel filters, newest first, with totals',
-  auth: 'member',
+  auth: 'member|business.view',
   query: collectionsQuerySchema,
   responses: { 200: { description: 'Collections', schema: collectionsSchema } },
 });
@@ -274,7 +279,7 @@ mer({
   method: 'get',
   path: '/api/v1/merchant/qr-codes/{qrId}/card.pdf',
   summary: 'My printable QR card',
-  auth: 'member',
+  auth: 'member|business.view',
   responses: pdf,
 });
 
@@ -298,6 +303,8 @@ export function paymentsRoutes(deps: {
 }): Router {
   const router = Router();
   const L = deps.loggers;
+  // The app's member, or the web console with one of the sub-tasks (merchants and vendor merchants; client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const member = requireSurface(L, 'member');
   const once = idempotency({ db: deps.db, mode: 'required' });
   const wrap =
@@ -382,7 +389,7 @@ export function paymentsRoutes(deps: {
   // --- merchant (own app) ---------------------------------------------------------------------------
   router.get(
     '/merchant/home',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       res.json(await deps.merchants.home(principal(req)));
@@ -390,21 +397,21 @@ export function paymentsRoutes(deps: {
   );
   router.get(
     '/merchant/qr-codes',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       res.json(await deps.merchants.myQrCodes(principal(req)));
     }),
   );
   router.get(
     '/merchant/qr-codes/:qrId/card.pdf',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       sendPdf(res, await deps.merchants.myQrCard(principal(req), param(req, 'qrId')));
     }),
   );
   router.post(
     '/merchant/qr-codes/:qrId/email',
-    member,
+    either('business.collect'),
     once,
     wrap(async (req, res) => {
       const out = await deps.merchants.emailMyQr(
@@ -417,7 +424,7 @@ export function paymentsRoutes(deps: {
   );
   router.get(
     '/merchant/collections',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       res.json(
@@ -427,7 +434,7 @@ export function paymentsRoutes(deps: {
   );
   router.post(
     '/merchant/payment-requests',
-    member,
+    either('business.collect'),
     once,
     wrap(async (req, res) => {
       const body = requestInputSchema.parse(req.body ?? {});
@@ -441,7 +448,7 @@ export function paymentsRoutes(deps: {
   );
   router.post(
     '/merchant/payment-requests/:requestId/nfc-taps',
-    member,
+    either('business.collect'),
     once,
     wrap(async (req, res) => {
       const body = nfcTapSchema.parse(req.body ?? {});
@@ -457,7 +464,7 @@ export function paymentsRoutes(deps: {
   );
   router.get(
     '/merchant/payment-requests/:requestId',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       res.json(await deps.payments.request(principal(req), param(req, 'requestId')));
@@ -465,7 +472,7 @@ export function paymentsRoutes(deps: {
   );
   router.post(
     '/merchant/payment-requests/:requestId/cancellation',
-    member,
+    either('business.collect'),
     wrap(async (req, res) => {
       res.json(await deps.payments.cancelRequest(principal(req), param(req, 'requestId')));
     }),

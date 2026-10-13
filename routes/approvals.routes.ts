@@ -3,7 +3,12 @@ import type { Kysely } from 'kysely';
 import { defineRoute } from '../config/openapi-registry';
 import { approvalsController } from '../controllers/approvals.controller';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import {
+  authorize,
+  memberOrConsole,
+  requireSurface,
+  requireTenant,
+} from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import {
@@ -122,7 +127,7 @@ doc({
   path: '/api/v1/me/notifications',
   summary: 'Member app notifications (for example a correction decided), newest first',
   tags: com,
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view,business.view',
   responses: { 200: { description: 'Notifications', schema: notificationListSchema } },
 });
 doc({
@@ -131,7 +136,7 @@ doc({
   path: '/api/v1/me/notifications/read',
   summary: 'Mark member notifications read (ids, or all)',
   tags: com,
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view,business.view',
   request: markReadSchema,
   responses: { 204: { description: 'Marked' } },
 });
@@ -159,7 +164,9 @@ export function approvalsRoutes(deps: {
   const L = deps.loggers;
   const con = [requireSurface(L, 'console'), requireTenant(L)];
   const op = requireSurface(L, 'ops');
-  const member = requireSurface(L, 'member');
+  // The app's member, or on the web console a teacher, the principal or a merchant (client
+  // 2026-10-12/13): their own notifications.
+  const teacherOrMember = memberOrConsole(['teaching.view', 'principal.view', 'business.view'], L);
   const can = (subTask: string) => authorize(subTask, L);
   const once = idempotency({ db: deps.db, mode: 'required' });
 
@@ -184,8 +191,8 @@ export function approvalsRoutes(deps: {
   );
   router.get('/console/notifications', ...con, c.consoleBell.list);
   router.post('/console/notifications/read', ...con, c.consoleBell.read);
-  router.get('/me/notifications', member, c.memberBell.list);
-  router.post('/me/notifications/read', member, c.memberBell.read);
+  router.get('/me/notifications', teacherOrMember, c.memberBell.list);
+  router.post('/me/notifications/read', teacherOrMember, c.memberBell.read);
   router.get('/console/audit-events', ...con, can('config.view'), c.audit);
   return router;
 }

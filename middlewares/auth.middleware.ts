@@ -120,12 +120,30 @@ export function authorizeAny(subTasks: readonly string[], loggers: Loggers): Req
  */
 export function teacherAccess(subTask: string, loggers: Loggers): RequestHandler {
   if (!/^teaching\.[a-z]+$/.test(subTask)) throw new Error(`Invalid teaching sub-task ${subTask}`);
+  return memberOrConsole([subTask], loggers);
+}
+
+/**
+ * A route of the app that the web opens too (teachers, Phase 10; the principal, merchants and vendor
+ * merchants, client 2026-10-13): the app's member session, or a console session holding any of the
+ * sub-tasks. Either way the route finds the person from the session's own profile. Documented as
+ * `member|a.view,b.view`.
+ */
+export function memberOrConsole(subTasks: readonly string[], loggers: Loggers): RequestHandler {
+  for (const s of subTasks) {
+    if (!/^[a-z0-9-]+\.[a-z0-9-]+$/.test(s)) throw new Error(`Invalid sub-task name ${s}`);
+  }
   return (req, _res, next) => {
     const p = req.principal;
     if (!p) return next(new AuthenticationError());
     if (p.surface === 'member') return next();
-    if (p.surface === 'console' && p.institutionId && p.subTasks.includes(subTask)) return next();
-    loggers.security.warn('authz.denied', { subTask, surface: p.surface, path: req.path });
+    if (p.surface === 'console' && p.institutionId && subTasks.some((s) => p.subTasks.includes(s)))
+      return next();
+    loggers.security.warn('authz.denied', {
+      subTask: subTasks.join(','),
+      surface: p.surface,
+      path: req.path,
+    });
     next(new AuthorizationError());
   };
 }

@@ -1255,8 +1255,7 @@ export class AdmissionsService {
     need(data.parents?.mother?.name, 'parents.mother.name');
     need(data.parents?.mother?.mobile, 'parents.mother.mobile');
     need(data.parents?.children, 'parents.children');
-    // The student's Aadhaar, and the primary contact's Aadhaar and PAN (client 2026-10-12).
-    need(r.student_aadhaar_enc, 'student.aadhaar');
+    // The primary contact's Aadhaar and PAN (client 2026-10-12); the student's Aadhaar is optional.
     need(r.primary_aadhaar_enc, 'parents.primaryAadhaar');
     need(r.primary_pan_enc, 'parents.primaryPan');
     const docs = await this.deps.db
@@ -1623,6 +1622,21 @@ export class AdmissionsService {
     return amount;
   }
 
+  /**
+   * The admission fee is never paid online on its own while the application fee is due (client
+   * 2026-10-12): it goes with the application fee in one payment, or both are paid later at the
+   * accounts desk.
+   */
+  private async assertApplicationFeeSettled(applicationRowId: string) {
+    const app = await this.deps.db
+      .selectFrom('admission_payments')
+      .select('status')
+      .where('application_id', '=', applicationRowId)
+      .where('fee_type', '=', 'APPLICATION')
+      .executeTakeFirst();
+    if (app && app.status !== 'PAID') throw new CustomAPIError(409, 'ADM.APPLICATION_FEE_FIRST');
+  }
+
   async startPayment(
     id: string,
     token: string | undefined,
@@ -1633,6 +1647,7 @@ export class AdmissionsService {
     const feeType: AdmissionFeeType =
       a.fee ?? input.feeType ?? (a.row.status === 'DRAFT' ? 'APPLICATION' : 'ADMISSION');
     const amount = await this.payable(a.row, feeType);
+    if (feeType === 'ADMISSION') await this.assertApplicationFeeSettled(a.row.id);
     // The family chose on the form to pay the admission fee now (client 2026-10-09): it joins the
     // application fee in one order, unless it is paid already or the year has none.
     let admission = 0;
@@ -2966,6 +2981,8 @@ export class AdmissionsService {
     const i = await this.consoleInst(p);
     const r = await this.lockless(i.id, id);
     const amount = await this.payable(r, 'ADMISSION');
+    // A link the family could not use: the application fee is still due (client 2026-10-12).
+    await this.assertApplicationFeeSettled(r.id);
     await this.deps.db.transaction().execute(async (trx) => {
       const f = await this.feeRow(trx, i.id, r.id, 'ADMISSION', amount);
       if (f.status === 'PAID') throw new CustomAPIError(409, 'ADM.FEE_ALREADY_PAID');
