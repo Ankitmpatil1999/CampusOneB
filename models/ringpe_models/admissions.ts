@@ -18,7 +18,12 @@ export type AdmissionPaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
 /** An application's fees together (migration 0067). */
 export type AdmissionPaymentState = 'PENDING' | 'PAID' | 'CONFIRMED';
 export type AdmissionFeeType = 'APPLICATION' | 'ADMISSION';
-/** With the Aadhaar and PAN cards, front and back, of the student and the primary contact (0071). */
+type CardSide = 'AADHAAR_FRONT' | 'AADHAAR_BACK' | 'PAN_FRONT' | 'PAN_BACK';
+/**
+ * With the Aadhaar and PAN cards, front and back: the student's (0071), the father's, the mother's,
+ * a guardian's and the local guardian's (0072). PRIMARY_* (0071) is no longer written: 0072 moved
+ * those to the person who was the primary contact.
+ */
 export type AdmissionDocType =
   | 'PHOTO'
   | 'BIRTH'
@@ -26,14 +31,7 @@ export type AdmissionDocType =
   | 'REPORT'
   | 'TC'
   | 'OTHER'
-  | 'STUDENT_AADHAAR_FRONT'
-  | 'STUDENT_AADHAAR_BACK'
-  | 'STUDENT_PAN_FRONT'
-  | 'STUDENT_PAN_BACK'
-  | 'PRIMARY_AADHAAR_FRONT'
-  | 'PRIMARY_AADHAAR_BACK'
-  | 'PRIMARY_PAN_FRONT'
-  | 'PRIMARY_PAN_BACK';
+  | `${'STUDENT' | 'PRIMARY' | 'FATHER' | 'MOTHER' | 'GUARDIAN' | 'LOCAL_GUARDIAN'}_${CardSide}`;
 
 export interface AdmissionLinksTable {
   id: Generated<string>;
@@ -83,11 +81,28 @@ export interface AdmissionApplicationsTable {
   primary_relation: 'FATHER' | 'MOTHER' | 'GUARDIAN' | null;
   primary_mobile: string | null;
   primary_email: string | null;
-  /** Migration 0069: the primary contact's Aadhaar and PAN, encrypted; last four in clear. */
+  /** Migration 0069: the primary contact's Aadhaar and PAN — no longer written (0072). */
   primary_aadhaar_enc: Buffer | null;
   primary_aadhaar_last4: string | null;
   primary_pan_enc: Buffer | null;
   primary_pan_last4: string | null;
+  /** Migration 0072: each person's Aadhaar and PAN, encrypted; last four in clear. */
+  father_aadhaar_enc: Buffer | null;
+  father_aadhaar_last4: string | null;
+  father_pan_enc: Buffer | null;
+  father_pan_last4: string | null;
+  mother_aadhaar_enc: Buffer | null;
+  mother_aadhaar_last4: string | null;
+  mother_pan_enc: Buffer | null;
+  mother_pan_last4: string | null;
+  guardian_aadhaar_enc: Buffer | null;
+  guardian_aadhaar_last4: string | null;
+  guardian_pan_enc: Buffer | null;
+  guardian_pan_last4: string | null;
+  local_guardian_aadhaar_enc: Buffer | null;
+  local_guardian_aadhaar_last4: string | null;
+  local_guardian_pan_enc: Buffer | null;
+  local_guardian_pan_last4: string | null;
   data: Json<unknown>;
   step: ColumnType<number, number | undefined, number>;
   tc_mode: 'TC' | 'UNDERTAKING' | null;

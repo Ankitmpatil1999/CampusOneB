@@ -5,12 +5,13 @@
  *
  * - Files from the build; hashed bundles are cached for a year, everything else is revalidated.
  * - Any other page address (no file extension, not the API) gets index.html: the app routes it.
+ *   It is read again whenever a build rewrites it, so a redeployed web app needs no API restart.
  * - Pages get their own security headers. The API's policy blocks everything; a page needs its own
  *   scripts and styles, the inline loader script the build writes (allowed by its hash), Razorpay
  *   Checkout, and the RingPe Card Reader helper on this computer (http://127.0.0.1:47821).
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import express, { type RequestHandler, Router } from 'express';
 import helmet from 'helmet';
@@ -29,6 +30,13 @@ export function inlineScriptHashes(html: string): string[] {
     .map((body) => `'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`);
 }
 
+/** The page and its headers, from one version of index.html. */
+interface Page {
+  readonly mtimeMs: number;
+  readonly html: string;
+  readonly headers: RequestHandler;
+}
+
 export function webAppRoutes(opts: { root: string; production: boolean }): Router {
   const root = resolve(opts.root);
   const indexPath = join(root, 'index.html');
@@ -37,9 +45,61 @@ export function webAppRoutes(opts: { root: string; production: boolean }): Route
       'WEB_ROOT: index.html not found (build RingPe_Web_App and point to dist/browser)',
     );
   }
-  const index = readFileSync(indexPath, 'utf8');
+  const load = (): Page => {
+    const mtimeMs = statSync(indexPath).mtimeMs;
+    const html = readFileSync(indexPath, 'utf8');
+    return { mtimeMs, html, headers: pageHeaders(html, opts.production) };
+  };
+  let page = load();
+  /**
+   * index.html as the last build wrote it. Read once, a rebuilt web app kept being served the old
+   * page — the old version, or bundles that no longer exist — until the API was restarted (client
+   * 2026-10-13). While a build is writing it (missing or half-written), the last good one stays.
+   */
+  const current = (): Page => {
+    try {
+      const s = statSync(indexPath, { throwIfNoEntry: false });
+      if (s && s.mtimeMs !== page.mtimeMs && s.size > 0) page = load();
+    } catch {
+      /* mid-build: keep the page we have */
+    }
+    return page;
+  };
 
-  const headers = helmet({
+  const isWeb: RequestHandler = (req, _res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next('router');
+    if (NOT_WEB.some((p) => req.path === p.replace(/\/$/, '') || req.path.startsWith(p))) {
+      return next('router');
+    }
+    next();
+  };
+
+  const router = Router();
+  router.use(isWeb, (req, res, next) => current().headers(req, res, next));
+  router.use(
+    express.static(root, {
+      index: false,
+      dotfiles: 'ignore',
+      setHeaders: (res, path) => {
+        res.setHeader(
+          'Cache-Control',
+          HASHED.test(path) ? 'public, max-age=31536000, immutable' : 'no-cache',
+        );
+      },
+    }),
+  );
+  // A page address the app routes itself (/console/readers, /terminal, …).
+  router.use((req, res, next) => {
+    if (/\.[A-Za-z0-9]{1,8}$/.test(req.path)) return next('router');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.type('html').send(current().html);
+  });
+  return router;
+}
+
+/** A page's security headers: its inline loader script is allowed by its hash. */
+function pageHeaders(index: string, production: boolean): RequestHandler {
+  return helmet({
     contentSecurityPolicy: {
       useDefaults: false,
       directives: {
@@ -60,39 +120,9 @@ export function webAppRoutes(opts: { root: string; production: boolean }): Route
     crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     crossOriginResourcePolicy: { policy: 'same-origin' },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-    strictTransportSecurity: opts.production
+    strictTransportSecurity: production
       ? { maxAge: 31_536_000, includeSubDomains: true, preload: false }
       : false,
     xFrameOptions: { action: 'deny' },
   });
-
-  const isWeb: RequestHandler = (req, _res, next) => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') return next('router');
-    if (NOT_WEB.some((p) => req.path === p.replace(/\/$/, '') || req.path.startsWith(p))) {
-      return next('router');
-    }
-    next();
-  };
-
-  const router = Router();
-  router.use(isWeb, headers);
-  router.use(
-    express.static(root, {
-      index: false,
-      dotfiles: 'ignore',
-      setHeaders: (res, path) => {
-        res.setHeader(
-          'Cache-Control',
-          HASHED.test(path) ? 'public, max-age=31536000, immutable' : 'no-cache',
-        );
-      },
-    }),
-  );
-  // A page address the app routes itself (/console/readers, /terminal, …).
-  router.use((req, res, next) => {
-    if (/\.[A-Za-z0-9]{1,8}$/.test(req.path)) return next('router');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.type('html').send(index);
-  });
-  return router;
 }

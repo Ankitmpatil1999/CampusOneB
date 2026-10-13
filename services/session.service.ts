@@ -6,15 +6,16 @@
  *   idle limit of 15 minutes;
  * - presenting a refresh token that was already rotated (outside a short grace for parallel
  *   requests) is treated as theft: the whole family is revoked and the session ends; inside the
- *   grace it is refused as superseded and the session goes on with the winner's tokens;
+ *   grace it is refused as superseded and the session goes on with the winner's tokens; one whose
+ *   successor was never used (the answer to its rotation was lost) is rotated again;
  * - ended sessions are added to the revocation list so their access tokens stop at once.
  */
 import { randomBytes } from 'node:crypto';
-import type { Kysely } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { Database, SurfaceCode } from '../models/ringpe_models';
-import { sessionRepository } from '../repositories/session.repository';
+import { type RefreshTokenRow, sessionRepository } from '../repositories/session.repository';
 import { AuthenticationError, CustomAPIError } from '../utils/CustomAPIError';
 import { binToUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { ipToBin, sha256 } from '../utils/ip';
@@ -42,6 +43,12 @@ export type EndReason = (typeof END_REASONS)[number];
 
 /** Grace for two parallel refreshes with the same token (two tabs): refused, not punished. */
 export const REUSE_GRACE_MS = 10_000;
+
+/**
+ * How long a rotation's answer may turn out to have been lost (the page reloaded or the connection
+ * dropped mid-renewal), so that the old token is rotated again instead of being taken for theft.
+ */
+export const LOST_ROTATION_MS = 15 * 60_000;
 
 const toCode = (s: SessionSurface) => s.toUpperCase() as SurfaceCode;
 const fromCode = (s: SurfaceCode) => s.toLowerCase() as SessionSurface;
@@ -215,6 +222,7 @@ export class SessionService {
       if (!row) return { kind: 'unknown' as const };
       const surface = fromCode(row.surface);
       if (expectedSurface && surface !== expectedSurface) return { kind: 'unknown' as const };
+      let recovered = false;
       if (row.status !== 'ACTIVE') {
         if (row.endedAt !== null) return { kind: 'ended' as const, reason: row.endReason };
         const recent =
@@ -222,20 +230,26 @@ export class SessionService {
           row.rotatedAt !== null &&
           now.getTime() - new Date(row.rotatedAt).getTime() < REUSE_GRACE_MS;
         if (recent) return { kind: 'superseded' as const };
-        await sessionRepository.revokeFamily(trx, row.familyId);
-        await sessionRepository.endSessions(trx, [row.sessionId], 'REFRESH_REUSE', now);
-        return { kind: 'reuse' as const, sessionPublicId: binToUuid(row.sessionPublicId), row };
-      }
-      if (
-        row.endedAt !== null ||
-        new Date(row.expiresAt) <= now ||
-        new Date(row.absoluteExpiresAt) <= now ||
-        row.accountStatus !== 'ACTIVE'
-      ) {
-        return { kind: 'expired' as const };
-      }
-      if (!(await sessionRepository.markRotated(trx, row.tokenId, now))) {
-        return { kind: 'superseded' as const };
+        const lost = await this.lostRotation(trx, row, now);
+        if (lost === 'expired') return { kind: 'expired' as const };
+        if (lost !== 'recovered') {
+          await sessionRepository.revokeFamily(trx, row.familyId);
+          await sessionRepository.endSessions(trx, [row.sessionId], 'REFRESH_REUSE', now);
+          return { kind: 'reuse' as const, sessionPublicId: binToUuid(row.sessionPublicId), row };
+        }
+        recovered = true;
+      } else {
+        if (
+          row.endedAt !== null ||
+          new Date(row.expiresAt) <= now ||
+          new Date(row.absoluteExpiresAt) <= now ||
+          row.accountStatus !== 'ACTIVE'
+        ) {
+          return { kind: 'expired' as const };
+        }
+        if (!(await sessionRepository.markRotated(trx, row.tokenId, now))) {
+          return { kind: 'superseded' as const };
+        }
       }
       const limits = sessionLimits(surface, settings);
       const absolute = new Date(row.absoluteExpiresAt);
@@ -250,9 +264,16 @@ export class SessionService {
         expiresAt,
       });
       await sessionRepository.touch(trx, row.sessionId, now);
-      return { kind: 'rotated' as const, row, surface, next, expiresAt };
+      return { kind: 'rotated' as const, row, surface, next, expiresAt, recovered };
     });
 
+    if (outcome.kind === 'rotated' && outcome.recovered) {
+      this.deps.loggers.security.info('auth.refresh_recovered', {
+        sessionId: binToUuid(outcome.row.sessionPublicId),
+        surface: outcome.surface,
+        ip: client.ip,
+      });
+    }
     if (outcome.kind === 'reuse') {
       this.deps.loggers.security.warn('auth.refresh_reuse', {
         sessionId: outcome.sessionPublicId,
@@ -298,6 +319,39 @@ export class SessionService {
       refreshToken: outcome.next,
       refreshTokenExpiresAt: outcome.expiresAt,
     };
+  }
+
+  /**
+   * A rotation whose answer never reached the client (the page was reloaded or closed mid-renewal,
+   * the connection dropped) leaves the client holding the old token while its successor goes
+   * unused. That is not theft: within LOST_ROTATION_MS the old token is rotated again and the unused
+   * successor revoked (client 2026-10-13: staff were signed out "many times"). Theft is still
+   * caught: once the successor has been used the old token ends the family, and a thief who gets in
+   * first leaves the real client a revoked successor, which ends it on its next renewal.
+   */
+  private async lostRotation(
+    trx: Transaction<Database>,
+    row: RefreshTokenRow,
+    now: Date,
+  ): Promise<'recovered' | 'expired' | null> {
+    if (row.status !== 'ROTATED' || row.rotatedAt === null) return null;
+    if (now.getTime() - new Date(row.rotatedAt).getTime() >= LOST_ROTATION_MS) return null;
+    // Everything issued after it: earlier recoveries' revoked tokens, then one unused token.
+    const later = await sessionRepository.laterInFamily(trx, row.familyId, row.tokenId);
+    const last = later.at(-1);
+    if (!last || last.status !== 'ACTIVE') return null;
+    if (later.slice(0, -1).some((t) => t.status !== 'REVOKED')) return null;
+    if (
+      new Date(last.expiresAt) <= now ||
+      new Date(row.absoluteExpiresAt) <= now ||
+      row.accountStatus !== 'ACTIVE'
+    ) {
+      return 'expired';
+    }
+    await sessionRepository.revokeTokens(trx, [last.id]);
+    // A second tab presenting the same old token at once is then refused as superseded.
+    await sessionRepository.markRotatedAgain(trx, row.tokenId, now);
+    return 'recovered';
   }
 
   /** Ends one session (sign-out, IDN-009). Unknown or already-ended sessions are a no-op. */

@@ -1669,10 +1669,22 @@ paths:
                     - STUDENT_AADHAAR_BACK
                     - STUDENT_PAN_FRONT
                     - STUDENT_PAN_BACK
-                    - PRIMARY_AADHAAR_FRONT
-                    - PRIMARY_AADHAAR_BACK
-                    - PRIMARY_PAN_FRONT
-                    - PRIMARY_PAN_BACK
+                    - FATHER_AADHAAR_FRONT
+                    - FATHER_AADHAAR_BACK
+                    - FATHER_PAN_FRONT
+                    - FATHER_PAN_BACK
+                    - MOTHER_AADHAAR_FRONT
+                    - MOTHER_AADHAAR_BACK
+                    - MOTHER_PAN_FRONT
+                    - MOTHER_PAN_BACK
+                    - GUARDIAN_AADHAAR_FRONT
+                    - GUARDIAN_AADHAAR_BACK
+                    - GUARDIAN_PAN_FRONT
+                    - GUARDIAN_PAN_BACK
+                    - LOCAL_GUARDIAN_AADHAAR_FRONT
+                    - LOCAL_GUARDIAN_AADHAAR_BACK
+                    - LOCAL_GUARDIAN_PAN_FRONT
+                    - LOCAL_GUARDIAN_PAN_BACK
                 file:
                   type: string
               required:
@@ -17913,10 +17925,22 @@ paths:
                     - STUDENT_AADHAAR_BACK
                     - STUDENT_PAN_FRONT
                     - STUDENT_PAN_BACK
-                    - PRIMARY_AADHAAR_FRONT
-                    - PRIMARY_AADHAAR_BACK
-                    - PRIMARY_PAN_FRONT
-                    - PRIMARY_PAN_BACK
+                    - FATHER_AADHAAR_FRONT
+                    - FATHER_AADHAAR_BACK
+                    - FATHER_PAN_FRONT
+                    - FATHER_PAN_BACK
+                    - MOTHER_AADHAAR_FRONT
+                    - MOTHER_AADHAAR_BACK
+                    - MOTHER_PAN_FRONT
+                    - MOTHER_PAN_BACK
+                    - GUARDIAN_AADHAAR_FRONT
+                    - GUARDIAN_AADHAAR_BACK
+                    - GUARDIAN_PAN_FRONT
+                    - GUARDIAN_PAN_BACK
+                    - LOCAL_GUARDIAN_AADHAAR_FRONT
+                    - LOCAL_GUARDIAN_AADHAAR_BACK
+                    - LOCAL_GUARDIAN_PAN_FRONT
+                    - LOCAL_GUARDIAN_PAN_BACK
                 file:
                   type: string
               required:
@@ -20505,10 +20529,22 @@ components:
                   - STUDENT_AADHAAR_BACK
                   - STUDENT_PAN_FRONT
                   - STUDENT_PAN_BACK
-                  - PRIMARY_AADHAAR_FRONT
-                  - PRIMARY_AADHAAR_BACK
-                  - PRIMARY_PAN_FRONT
-                  - PRIMARY_PAN_BACK
+                  - FATHER_AADHAAR_FRONT
+                  - FATHER_AADHAAR_BACK
+                  - FATHER_PAN_FRONT
+                  - FATHER_PAN_BACK
+                  - MOTHER_AADHAAR_FRONT
+                  - MOTHER_AADHAAR_BACK
+                  - MOTHER_PAN_FRONT
+                  - MOTHER_PAN_BACK
+                  - GUARDIAN_AADHAAR_FRONT
+                  - GUARDIAN_AADHAAR_BACK
+                  - GUARDIAN_PAN_FRONT
+                  - GUARDIAN_PAN_BACK
+                  - LOCAL_GUARDIAN_AADHAAR_FRONT
+                  - LOCAL_GUARDIAN_AADHAAR_BACK
+                  - LOCAL_GUARDIAN_PAN_FRONT
+                  - LOCAL_GUARDIAN_PAN_BACK
               name:
                 type: string
               url:
@@ -20824,6 +20860,17 @@ components:
                     - type: string
                       maxLength: 80
                     - type: "null"
+                aadhaar:
+                  description: Aadhaar number; kept encrypted, shown masked
+                  type:
+                    - string
+                    - "null"
+                pan:
+                  description: PAN; kept encrypted, shown masked
+                  anyOf:
+                    - type: string
+                      pattern: ^[A-Z]{5}\d{4}[A-Z]$
+                    - type: "null"
               required:
                 - name
                 - mobile
@@ -20847,6 +20894,17 @@ components:
                   anyOf:
                     - type: string
                       maxLength: 80
+                    - type: "null"
+                aadhaar:
+                  description: Aadhaar number; kept encrypted, shown masked
+                  type:
+                    - string
+                    - "null"
+                pan:
+                  description: PAN; kept encrypted, shown masked
+                  anyOf:
+                    - type: string
+                      pattern: ^[A-Z]{5}\d{4}[A-Z]$
                     - type: "null"
               required:
                 - name
@@ -20875,6 +20933,17 @@ components:
                         - type: string
                           maxLength: 80
                         - type: "null"
+                    aadhaar:
+                      description: Aadhaar number; kept encrypted, shown masked
+                      type:
+                        - string
+                        - "null"
+                    pan:
+                      description: PAN; kept encrypted, shown masked
+                      anyOf:
+                        - type: string
+                          pattern: ^[A-Z]{5}\d{4}[A-Z]$
+                        - type: "null"
                     relation:
                       type: string
                       minLength: 1
@@ -20896,13 +20965,6 @@ components:
                 - SINGLE
                 - MORE
               description: Whether the parents have a single child or more (client 2026-10-12)
-            primaryAadhaar:
-              description: The primary contact's Aadhaar number; kept encrypted, shown masked
-              type: string
-            primaryPan:
-              description: The primary contact's PAN; kept encrypted, shown masked
-              type: string
-              pattern: ^[A-Z]{5}\d{4}[A-Z]$
             transport:
               description: The family opts for school transport
               type: boolean
@@ -20932,6 +20994,17 @@ components:
                       type: string
                       minLength: 1
                       maxLength: 200
+                    aadhaar:
+                      description: Aadhaar number; kept encrypted, shown masked
+                      type:
+                        - string
+                        - "null"
+                    pan:
+                      description: PAN; kept encrypted, shown masked
+                      anyOf:
+                        - type: string
+                          pattern: ^[A-Z]{5}\d{4}[A-Z]$
+                        - type: "null"
                   required:
                     - name
                     - relation
@@ -25723,6 +25796,17 @@ components:
                     - type: string
                       maxLength: 80
                     - type: "null"
+                aadhaar:
+                  description: Aadhaar number; kept encrypted, shown masked
+                  type:
+                    - string
+                    - "null"
+                pan:
+                  description: PAN; kept encrypted, shown masked
+                  anyOf:
+                    - type: string
+                      pattern: ^[A-Z]{5}\d{4}[A-Z]$
+                    - type: "null"
               required:
                 - name
                 - mobile
@@ -25746,6 +25830,17 @@ components:
                   anyOf:
                     - type: string
                       maxLength: 80
+                    - type: "null"
+                aadhaar:
+                  description: Aadhaar number; kept encrypted, shown masked
+                  type:
+                    - string
+                    - "null"
+                pan:
+                  description: PAN; kept encrypted, shown masked
+                  anyOf:
+                    - type: string
+                      pattern: ^[A-Z]{5}\d{4}[A-Z]$
                     - type: "null"
               required:
                 - name
@@ -25774,6 +25869,17 @@ components:
                         - type: string
                           maxLength: 80
                         - type: "null"
+                    aadhaar:
+                      description: Aadhaar number; kept encrypted, shown masked
+                      type:
+                        - string
+                        - "null"
+                    pan:
+                      description: PAN; kept encrypted, shown masked
+                      anyOf:
+                        - type: string
+                          pattern: ^[A-Z]{5}\d{4}[A-Z]$
+                        - type: "null"
                     relation:
                       type: string
                       minLength: 1
@@ -25795,13 +25901,6 @@ components:
                 - SINGLE
                 - MORE
               description: Whether the parents have a single child or more (client 2026-10-12)
-            primaryAadhaar:
-              description: The primary contact's Aadhaar number; kept encrypted, shown masked
-              type: string
-            primaryPan:
-              description: The primary contact's PAN; kept encrypted, shown masked
-              type: string
-              pattern: ^[A-Z]{5}\d{4}[A-Z]$
             transport:
               description: The family opts for school transport
               type: boolean
@@ -25831,6 +25930,17 @@ components:
                       type: string
                       minLength: 1
                       maxLength: 200
+                    aadhaar:
+                      description: Aadhaar number; kept encrypted, shown masked
+                      type:
+                        - string
+                        - "null"
+                    pan:
+                      description: PAN; kept encrypted, shown masked
+                      anyOf:
+                        - type: string
+                          pattern: ^[A-Z]{5}\d{4}[A-Z]$
+                        - type: "null"
                   required:
                     - name
                     - relation

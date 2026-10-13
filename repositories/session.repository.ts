@@ -148,6 +148,39 @@ export const sessionRepository = {
     return Number(r.numUpdatedRows) === 1;
   },
 
+  /** The tokens of a family issued after the given one, oldest first, locked. */
+  async laterInFamily(db: Db, familyId: Buffer, afterTokenId: string) {
+    const rows = await db
+      .selectFrom('refresh_tokens')
+      .select(['id', 'status', 'expires_at as expiresAt'])
+      .where('family_id', '=', familyId)
+      .where('id', '>', afterTokenId)
+      .orderBy('id')
+      .forUpdate()
+      .execute();
+    return rows.map((r) => ({ ...r, id: String(r.id) }));
+  },
+
+  async revokeTokens(db: Db, tokenIds: readonly string[]) {
+    if (tokenIds.length === 0) return;
+    await db
+      .updateTable('refresh_tokens')
+      .set({ status: 'REVOKED' })
+      .where('id', 'in', [...tokenIds])
+      .where('status', '=', 'ACTIVE')
+      .execute();
+  },
+
+  /** A ROTATED token rotated once more (its earlier answer was lost): the time moves on. */
+  async markRotatedAgain(db: Db, tokenId: string, at: Date) {
+    await db
+      .updateTable('refresh_tokens')
+      .set({ rotated_at: at })
+      .where('id', '=', tokenId)
+      .where('status', '=', 'ROTATED')
+      .execute();
+  },
+
   async revokeFamily(db: Db, familyId: Buffer) {
     await db
       .updateTable('refresh_tokens')

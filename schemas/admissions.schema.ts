@@ -90,11 +90,21 @@ export const addressSchema = z.strictObject({
     .string({ message: 'VALIDATION.REQUIRED' })
     .regex(PATTERNS.postalCode, { message: 'VALIDATION.FORMAT' }),
 });
+/**
+ * A person's Aadhaar number and PAN (client 2026-10-13): required to submit for the father and the
+ * mother, a guardian who is the primary contact and the local guardian of a hostel student. Omitted:
+ * what is stored stays (the numbers are never read back in full); null clears it.
+ */
+const ids = {
+  aadhaar: aadhaar.nullish().describe('Aadhaar number; kept encrypted, shown masked'),
+  pan: pan().nullish().describe('PAN; kept encrypted, shown masked'),
+};
 const person = z.strictObject({
   name: name(100),
   mobile: mobile.nullish(),
   email: email.nullish(),
   occupation: optText(80),
+  ...ids,
 });
 
 export const classSectionSchema = z.strictObject({
@@ -163,12 +173,6 @@ export const parentsSectionSchema = z.strictObject({
   children: z
     .enum(['SINGLE', 'MORE'], { message: 'VALIDATION.REQUIRED' })
     .describe('Whether the parents have a single child or more (client 2026-10-12)'),
-  // The primary contact's Aadhaar and PAN, both required to submit (client 2026-10-12). Omitted:
-  // what is stored stays — unless the primary contact changes, which clears them.
-  primaryAadhaar: aadhaar
-    .optional()
-    .describe("The primary contact's Aadhaar number; kept encrypted, shown masked"),
-  primaryPan: pan().optional().describe("The primary contact's PAN; kept encrypted, shown masked"),
   // School transport (client 2026-10-12): opted for, and the pick-up stop preferred, if any.
   transport: z.boolean().optional().describe('The family opts for school transport'),
   transportStopId: id
@@ -181,17 +185,15 @@ export const parentsSectionSchema = z.strictObject({
       relation: z.string().trim().min(1).max(40),
       mobile,
       address: z.string().trim().min(1).max(200),
+      ...ids,
     })
     .nullish(),
 });
 
-/** The primary contact's Aadhaar and PAN cards, front and back: required to submit (client 2026-10-13). */
-export const PRIMARY_CARDS = [
-  'PRIMARY_AADHAAR_FRONT',
-  'PRIMARY_AADHAAR_BACK',
-  'PRIMARY_PAN_FRONT',
-  'PRIMARY_PAN_BACK',
-] as const;
+/** The people whose Aadhaar and PAN the form takes, besides the student's (client 2026-10-13). */
+export const ID_HOLDERS = ['father', 'mother', 'guardian', 'localGuardian'] as const;
+export type IdHolder = (typeof ID_HOLDERS)[number];
+
 /** The student's Aadhaar and PAN cards, front and back: optional, like the numbers. */
 export const STUDENT_CARDS = [
   'STUDENT_AADHAAR_FRONT',
@@ -199,7 +201,24 @@ export const STUDENT_CARDS = [
   'STUDENT_PAN_FRONT',
   'STUDENT_PAN_BACK',
 ] as const;
-/** Every document an application can carry (migration 0071). */
+/** Each person's Aadhaar and PAN cards, front and back (migration 0072). */
+export const PERSON_CARDS = {
+  father: ['FATHER_AADHAAR_FRONT', 'FATHER_AADHAAR_BACK', 'FATHER_PAN_FRONT', 'FATHER_PAN_BACK'],
+  mother: ['MOTHER_AADHAAR_FRONT', 'MOTHER_AADHAAR_BACK', 'MOTHER_PAN_FRONT', 'MOTHER_PAN_BACK'],
+  guardian: [
+    'GUARDIAN_AADHAAR_FRONT',
+    'GUARDIAN_AADHAAR_BACK',
+    'GUARDIAN_PAN_FRONT',
+    'GUARDIAN_PAN_BACK',
+  ],
+  localGuardian: [
+    'LOCAL_GUARDIAN_AADHAAR_FRONT',
+    'LOCAL_GUARDIAN_AADHAAR_BACK',
+    'LOCAL_GUARDIAN_PAN_FRONT',
+    'LOCAL_GUARDIAN_PAN_BACK',
+  ],
+} as const satisfies Record<IdHolder, readonly string[]>;
+/** Every document an application can carry (migrations 0071, 0072). */
 export const ADMISSION_DOC_TYPES = [
   'PHOTO',
   'BIRTH',
@@ -208,7 +227,10 @@ export const ADMISSION_DOC_TYPES = [
   'TC',
   'OTHER',
   ...STUDENT_CARDS,
-  ...PRIMARY_CARDS,
+  ...PERSON_CARDS.father,
+  ...PERSON_CARDS.mother,
+  ...PERSON_CARDS.guardian,
+  ...PERSON_CARDS.localGuardian,
 ] as const;
 
 export const SECTIONS = {

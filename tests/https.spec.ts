@@ -4,7 +4,7 @@
  * on the same address with its own page headers (WEB_ROOT).
  */
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -182,6 +182,35 @@ describe('the web application on the same address (WEB_ROOT)', () => {
     expect((await request(app).post('/console/readers').send({})).type).toBe(
       'application/problem+json',
     );
+  });
+
+  // 2026-10-13: a rebuilt web app kept being served its old page until the API was restarted.
+  it('serves the page of the latest build without a restart', async () => {
+    const own = mkdtempSync(join(tmpdir(), 'ringpe-web-'));
+    try {
+      const index = join(own, 'index.html');
+      const page = (main: string, script: string) =>
+        `<!doctype html><html><head><script>${script}</script></head><body><script src="${main}"></script></body></html>`;
+      writeFileSync(index, page('main-OLD11111.js', 'var a=1'));
+      const { app } = await buildTestApp({ env: { WEB_ROOT: own } });
+      expect((await request(app).get('/console')).text).toContain('main-OLD11111.js');
+
+      writeFileSync(index, page('main-NEW22222.js', 'var b=2'));
+      const later = new Date(Date.now() + 60_000);
+      utimesSync(index, later, later);
+      const next = await request(app).get('/console');
+      expect(next.text).toContain('main-NEW22222.js');
+      // Its inline script is allowed, not the old one's.
+      const csp = String(next.headers['content-security-policy']);
+      expect(csp).toContain(inlineScriptHashes(next.text)[0]);
+      expect(csp).not.toContain(inlineScriptHashes(page('x', 'var a=1'))[0]);
+
+      // Mid-build (no index.html for a moment): the last page stays.
+      rmSync(index);
+      expect((await request(app).get('/console')).text).toContain('main-NEW22222.js');
+    } finally {
+      rmSync(own, { recursive: true, force: true });
+    }
   });
 
   it('refuses to start without a built web application', async () => {
