@@ -202,6 +202,7 @@ export const TRANSPORT_MESSAGES = [
     409,
     'Only students who opted for school transport can be allocated a bus. Not opted on the admission form: {names}.',
     ['22.7', 'client 2026-10-12'],
+    ['names'],
   ),
   // --- trips ----------------------------------------------------------------------------------------------
   k('TRN.TRIP_NOT_FOUND', 'MSG-TRN-252', 'Trip not found.', 404, ['22.8']),
