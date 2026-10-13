@@ -5,7 +5,8 @@
  *   session's absolute lifetime (member app 365 days, staff 24 hours) and, on staff surfaces, an
  *   idle limit of 15 minutes;
  * - presenting a refresh token that was already rotated (outside a short grace for parallel
- *   requests) is treated as theft: the whole family is revoked and the session ends;
+ *   requests) is treated as theft: the whole family is revoked and the session ends; inside the
+ *   grace it is refused as superseded and the session goes on with the winner's tokens;
  * - ended sessions are added to the revocation list so their access tokens stop at once.
  */
 import { randomBytes } from 'node:crypto';
@@ -14,7 +15,7 @@ import { LIMITS } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { Database, SurfaceCode } from '../models/ringpe_models';
 import { sessionRepository } from '../repositories/session.repository';
-import { AuthenticationError } from '../utils/CustomAPIError';
+import { AuthenticationError, CustomAPIError } from '../utils/CustomAPIError';
 import { binToUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { ipToBin, sha256 } from '../utils/ip';
 import type { Surface } from '../utils/principal';
@@ -215,11 +216,12 @@ export class SessionService {
       const surface = fromCode(row.surface);
       if (expectedSurface && surface !== expectedSurface) return { kind: 'unknown' as const };
       if (row.status !== 'ACTIVE') {
+        if (row.endedAt !== null) return { kind: 'ended' as const, reason: row.endReason };
         const recent =
           row.status === 'ROTATED' &&
           row.rotatedAt !== null &&
           now.getTime() - new Date(row.rotatedAt).getTime() < REUSE_GRACE_MS;
-        if (recent || row.endedAt !== null) return { kind: 'stale' as const };
+        if (recent) return { kind: 'superseded' as const };
         await sessionRepository.revokeFamily(trx, row.familyId);
         await sessionRepository.endSessions(trx, [row.sessionId], 'REFRESH_REUSE', now);
         return { kind: 'reuse' as const, sessionPublicId: binToUuid(row.sessionPublicId), row };
@@ -233,7 +235,7 @@ export class SessionService {
         return { kind: 'expired' as const };
       }
       if (!(await sessionRepository.markRotated(trx, row.tokenId, now))) {
-        return { kind: 'stale' as const };
+        return { kind: 'superseded' as const };
       }
       const limits = sessionLimits(surface, settings);
       const absolute = new Date(row.absoluteExpiresAt);
@@ -258,6 +260,13 @@ export class SessionService {
         ip: client.ip,
       });
       await this.revokeAccessTokens([outcome.sessionPublicId]);
+    }
+    // A parallel renewal with the same token (another tab) won: refused, but the session goes on
+    // with the winner's tokens — the caller must not clear them (client 2026-10-13).
+    if (outcome.kind === 'superseded') throw new CustomAPIError(401, 'AUTH.REFRESH_SUPERSEDED');
+    // Signed in again elsewhere (one session per surface, BR-05): said so, not a bare "no session".
+    if (outcome.kind === 'ended' && outcome.reason === 'OTHER_DEVICE_LOGIN') {
+      throw new CustomAPIError(401, 'AUTH.SIGNED_IN_ELSEWHERE');
     }
     if (outcome.kind !== 'rotated') throw new AuthenticationError();
 

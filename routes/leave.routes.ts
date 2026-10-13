@@ -5,6 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import {
   authorize,
+  memberOrConsole,
   requireSurface,
   requireTenant,
   teacherAccess,
@@ -117,7 +118,7 @@ doc({
   method: 'get',
   path: '/api/v1/me/staff-leaves',
   summary: 'My leave requests this year and my balances (casual, medical, earned)',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: yearQuery,
   responses: { 200: { description: 'Leave' } },
 });
@@ -127,7 +128,7 @@ doc({
   path: '/api/v1/me/staff-leaves',
   summary:
     'Apply for leave from today inside the year: working days only, no overlap, within the balance; a teacher’s request goes to the coordinator, other staff to the principal',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   request: staffLeaveSchema,
   idempotent: 'required',
   responses: { 201: { description: 'Leave' } },
@@ -137,7 +138,7 @@ doc({
   method: 'post',
   path: '/api/v1/me/staff-leaves/{leaveId}/cancellation',
   summary: 'Cancel my request while no one has reviewed it',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   idempotent: 'required',
   responses: { 200: { description: 'Leave' } },
 });
@@ -147,7 +148,7 @@ doc({
   path: '/api/v1/principal/overview',
   summary:
     'The principal’s day: people, teacher leave awaiting them or with the coordinator, student leave pending, staff on leave today, section standings and upcoming exams',
-  auth: 'member',
+  auth: 'member|principal.view',
   responses: { 200: { description: 'Overview' } },
 });
 doc({
@@ -156,7 +157,7 @@ doc({
   path: '/api/v1/principal/teacher-leaves',
   summary:
     'Leave awaiting the principal (after the coordinator, or staff directly), with the coordinator, or decided — with balances and who else is away',
-  auth: 'member',
+  auth: 'member|principal.view',
   query: principalQuery,
   responses: { 200: { description: 'Leave' } },
 });
@@ -166,7 +167,7 @@ doc({
   path: '/api/v1/principal/teacher-leaves/{leaveId}/decision',
   summary:
     'The final decision, only after the coordinator recommended (OI-ACA-51); a reason when rejecting; never their own request; the staff member is told',
-  auth: 'member',
+  auth: 'member|principal.leave',
   request: leaveDecisionSchema,
   idempotent: 'required',
   responses: { 200: { description: 'Leave' } },
@@ -177,7 +178,7 @@ doc({
   path: '/api/v1/principal/people',
   summary:
     'Students of the year (CR-09: name, admission number, class, section) or teachers and staff with their classes and subjects',
-  auth: 'member',
+  auth: 'member|principal.view',
   query: peopleQuery,
   responses: { 200: { description: 'People' } },
 });
@@ -223,6 +224,9 @@ export function leaveRoutes(deps: {
   const L = deps.loggers;
   const once = idempotency({ db: deps.db, mode: 'required' });
   const member = requireSurface(L, 'member');
+  // The app's member, or the web console with one of the sub-tasks (teachers, Phase 10; the
+  // principal, client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const teaching = (sub: string) => teacherAccess(`teaching.${sub}`, L);
   const console = [requireSurface(L, 'console'), requireTenant(L)];
   const wrap =
@@ -310,12 +314,12 @@ export function leaveRoutes(deps: {
   );
   router.get(
     '/me/staff-leaves',
-    member,
+    either('teaching.view', 'principal.view'),
     json((req) => deps.leave.staffMine(principal(req), yearQuery.parse(req.query))),
   );
   router.post(
     '/me/staff-leaves',
-    member,
+    either('teaching.view', 'principal.view'),
     once,
     json(
       (req) => deps.leave.applyStaff(principal(req), staffLeaveSchema.parse(req.body ?? {})),
@@ -324,7 +328,7 @@ export function leaveRoutes(deps: {
   );
   router.post(
     '/me/staff-leaves/:leaveId/cancellation',
-    member,
+    either('teaching.view', 'principal.view'),
     once,
     json((req) => deps.leave.cancelStaff(principal(req), param(req, 'leaveId'))),
   );
@@ -332,17 +336,17 @@ export function leaveRoutes(deps: {
   // the principal
   router.get(
     '/principal/overview',
-    member,
+    either('principal.view'),
     json((req) => deps.principal.overview(principal(req))),
   );
   router.get(
     '/principal/teacher-leaves',
-    member,
+    either('principal.view'),
     json((req) => deps.leave.principalList(principal(req), principalQuery.parse(req.query))),
   );
   router.post(
     '/principal/teacher-leaves/:leaveId/decision',
-    member,
+    either('principal.leave'),
     once,
     json(async (req) => {
       const p = principal(req);
@@ -356,7 +360,7 @@ export function leaveRoutes(deps: {
   );
   router.get(
     '/principal/people',
-    member,
+    either('principal.view'),
     json((req) => {
       const q = peopleQuery.parse(req.query);
       return deps.principal.people(principal(req), {

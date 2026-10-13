@@ -870,6 +870,7 @@ describe.skipIf(!adminUrl)(
             'ACA-043': { decision: 'APPROVED' },
             'TRN-004': { stops: [] },
             'TRN-022': { endDate: '2099-01-01', reason: 'Testing isolation' },
+            'TRN-035': { opted: true, reason: 'Testing isolation' },
             'TRN-025': { remarks: 'Testing isolation' },
             'COM-004': { withdrawn: true, reason: 'Testing isolation' },
             'COM-006': { channels: [] },

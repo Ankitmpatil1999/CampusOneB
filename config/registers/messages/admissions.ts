@@ -159,6 +159,20 @@ export const ADMISSION_MESSAGES = [
     '19.2',
     'OI-ADM-03',
   ]),
+  n(
+    'ADM.MOBILE_INTL_INVALID',
+    422,
+    'Enter the mobile number without the country code: 6 to 12 digits.',
+    ['19.2', 'client 2026-10-13'],
+  ),
+  n('ADM.TRANSPORT_OR_HOSTEL', 422, 'Choose school transport or the hostel, not both.', [
+    '19.2',
+    'client 2026-10-13',
+  ]),
+  n('ADM.FORM_NOT_SUBMITTED', 409, 'The application form can be downloaded once it is submitted.', [
+    '19.2',
+    'client 2026-10-13',
+  ]),
   n('ADM.NOT_EDITABLE', 409, 'An approved or rejected application can’t be changed.', [
     '19.3',
     '19.4',
@@ -188,6 +202,13 @@ export const ADMISSION_MESSAGES = [
     422,
     'Attach the transfer certificate, or give an undertaking with the date you’ll produce it.',
     ['19.12.1', 'CR-14', 'OI-ADM-27'],
+  ),
+  n(
+    'ADM.TC_DUE_DATE',
+    422,
+    'Choose the date you’ll hand in the transfer certificate: from today, and no later than {latest}.',
+    ['19.12.1', 'OI-ADM-27', 'client 2026-10-13'],
+    ['latest'],
   ),
   n(
     'ADM.TC_NOT_MID_TERM',
@@ -277,6 +298,12 @@ export const ADMISSION_MESSAGES = [
     409,
     'Submit the application first: the admission fee is paid with it or after it.',
     ['19.8', 'client 2026-10-09'],
+  ),
+  n(
+    'ADM.APPLICATION_FEE_FIRST',
+    409,
+    'The admission fee can’t be paid on its own while the application fee is due. Pay both together, or both later at the school’s accounts desk.',
+    ['19.8', 'client 2026-10-12'],
   ),
   n(
     'ADM.PARENT_TYPE_MISSING',

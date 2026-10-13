@@ -186,29 +186,44 @@ describe.skipIf(!adminUrl)('role × endpoint matrix (every documented route)', (
     expect(leaks).toEqual([]);
   }, 300_000);
 
-  // Teachers on the web (Phase 10): a teacher's route takes the app's member session, or a console
-  // session holding the route's teaching.* sub-task — and nothing else.
-  it('opens a teacher route to the app and to a console session with its teaching grant only', async () => {
-    const teacherOps = operations.filter((o) => /^member\|teaching\.[a-z]+$/.test(o.auth));
-    expect(teacherOps.length).toBeGreaterThanOrEqual(20);
+  // Teachers on the web (Phase 10), and the principal, merchants and vendor merchants (client
+  // 2026-10-13): such a route takes the app's member session, or a console session holding one of
+  // the route's sub-tasks (`member|a.view,b.view`) — and nothing else.
+  it('opens an app route to the app and to a console session with one of its grants only', async () => {
+    const webOps = operations.filter((o) =>
+      /^member\|[a-z0-9-]+\.[a-z0-9-]+(,[a-z0-9-]+\.[a-z0-9-]+)*$/.test(o.auth),
+    );
+    expect(webOps.length).toBeGreaterThanOrEqual(50);
+    // The principal's and the merchant's routes are among them.
+    expect(webOps.map((o) => o.id)).toEqual(
+      expect.arrayContaining(['ACA-060', 'ACA-062', 'COM-024', 'PAY-007', 'PAY-009', 'PAY-015']),
+    );
     const wrong: string[] = [];
-    for (const o of teacherOps) {
-      const grant = o.auth.split('|')[1]!;
+    for (const o of webOps) {
+      const grants = o.auth.split('|')[1]!.split(',');
       const tag = `${o.id} ${o.method.toUpperCase()} ${o.path}`;
       const without = await call(
         o,
         await token(
           'console',
-          ALL.console.filter((g) => g !== grant),
+          ALL.console.filter((g) => !grants.includes(g)),
         ),
       );
-      if (without.status !== 403) wrong.push(`${tag} console without ${grant} → ${without.status}`);
-      const withGrant = await call(o, await token('console', [grant]));
-      if ([401, 403].includes(withGrant.status)) {
-        wrong.push(`${tag} console with ${grant} → ${withGrant.status}`);
+      if (without.status !== 403) {
+        wrong.push(`${tag} console without ${grants.join(',')} → ${without.status}`);
       }
+      for (const grant of grants) {
+        const withGrant = await call(o, await token('console', [grant]));
+        if ([401, 403].includes(withGrant.status)) {
+          wrong.push(`${tag} console with ${grant} → ${withGrant.status}`);
+        }
+      }
+      // The app's session passes the gate; the route itself may still refuse someone it is not
+      // for (a member who is not a merchant: MER.NOT_MERCHANT), which is not the gate.
       const app = await call(o, await token('member', []));
-      if ([401, 403].includes(app.status)) wrong.push(`${tag} member → ${app.status}`);
+      if (app.status === 401 || (app.status === 403 && app.body?.code === 'AUTH.FORBIDDEN')) {
+        wrong.push(`${tag} member → ${app.status} ${app.body?.code ?? ''}`);
+      }
       for (const s of ['ops', 'portal'] as const) {
         const r = await call(o, await token(s, s === 'ops' ? ALL.ops : []));
         if (r.status !== 401 && r.status !== 403) wrong.push(`${tag} as ${s} → ${r.status}`);

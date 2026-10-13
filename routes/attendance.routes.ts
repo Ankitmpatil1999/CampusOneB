@@ -5,6 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import {
   authorize,
+  memberOrConsole,
   requireSurface,
   requireTenant,
   teacherAccess,
@@ -281,7 +282,7 @@ doc({
   path: '/api/v1/me/attendance',
   summary:
     'A month of the member’s attendance (for: a child on the account): each day, holidays, approved leave and the summary',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: monthQuery,
   responses: { 200: { description: 'Month' } },
 });
@@ -291,7 +292,7 @@ doc({
   path: '/api/v1/principal/attendance',
   summary:
     'The principal’s day: students by class-section, or teachers or staff by name with approved leave',
-  auth: 'member',
+  auth: 'member|principal.view',
   query: principalQuery,
   responses: { 200: { description: 'Attendance' } },
 });
@@ -306,7 +307,9 @@ export function attendanceRoutes(deps: {
   const router = Router();
   const L = deps.loggers;
   const once = idempotency({ db: deps.db, mode: 'required' });
-  const member = requireSurface(L, 'member');
+  // The app's member, or the web console with one of the sub-tasks (teachers, Phase 10; the
+  // principal, client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const teaching = (sub: string) => teacherAccess(`teaching.${sub}`, L);
   const terminal = requireSurface(L, 'terminal');
   const console = [requireSurface(L, 'console'), requireTenant(L)];
@@ -481,12 +484,12 @@ export function attendanceRoutes(deps: {
   // the member and the principal
   router.get(
     '/me/attendance',
-    member,
+    either('teaching.view', 'principal.view'),
     json((req) => deps.attendance.myMonth(principal(req), monthQuery.parse(req.query))),
   );
   router.get(
     '/principal/attendance',
-    member,
+    either('principal.view'),
     json((req) => deps.attendance.principalDay(principal(req), principalQuery.parse(req.query))),
   );
   return router;

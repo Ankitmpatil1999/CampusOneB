@@ -1,7 +1,12 @@
 import { Router, type Request, type RequestHandler } from 'express';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import {
+  authorize,
+  memberOrConsole,
+  requireSurface,
+  requireTenant,
+} from '../middlewares/auth.middleware';
 import {
   consoleWalletsSchema,
   forQuerySchema,
@@ -24,7 +29,7 @@ doc({
   path: '/api/v1/me/wallets',
   summary:
     "The profile's campus and allowance wallets: balance, held, status, wallet number, virtual account, spend today and this month (never cached); `for` picks a profile on the account (a child)",
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Wallets', schema: myWalletsSchema } },
 });
 doc({
@@ -33,7 +38,7 @@ doc({
   path: '/api/v1/me/wallets/{walletId}/statement',
   summary:
     'Statement from the ledger, newest first: every movement with the other party and the balance after it',
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Statement', schema: statementSchema } },
 });
 doc({
@@ -50,7 +55,7 @@ doc({
   method: 'get',
   path: '/api/v1/me/transactions/{reference}',
   summary: 'A movement the member is party to: amount, parties, channel, status, balance after',
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'Receipt', schema: receiptSchema } },
 });
 doc({
@@ -58,7 +63,7 @@ doc({
   method: 'get',
   path: '/api/v1/me/transactions/{reference}/receipt.pdf',
   summary: 'The receipt as a PDF',
-  auth: 'member',
+  auth: 'member|business.view',
   responses: { 200: { description: 'PDF', contentType: 'application/pdf' } },
 });
 doc({
@@ -91,6 +96,8 @@ doc({
 export function walletsRoutes(deps: { wallets: WalletsService; loggers: Loggers }): Router {
   const router = Router();
   const L = deps.loggers;
+  // The app's member, or the web console with one of the sub-tasks (merchants and vendor merchants; client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const w = deps.wallets;
   const member = requireSurface(L, 'member');
   const con = [requireSurface(L, 'console'), requireTenant(L), authorize('members.view', L)];
@@ -126,12 +133,12 @@ export function walletsRoutes(deps: { wallets: WalletsService; loggers: Loggers 
 
   router.get(
     '/me/wallets',
-    member,
+    either('business.view'),
     json((r) => w.myWallets(principal(r), forQuerySchema.parse(r.query).for)),
   );
   router.get(
     '/me/wallets/:walletId/statement',
-    member,
+    either('business.view'),
     json((r) => w.statement(principal(r), param(r, 'walletId'), statementQuery(r))),
   );
   router.get(
@@ -141,12 +148,12 @@ export function walletsRoutes(deps: { wallets: WalletsService; loggers: Loggers 
   );
   router.get(
     '/me/transactions/:reference',
-    member,
+    either('business.view'),
     json((r) => w.transaction(principal(r), param(r, 'reference'))),
   );
   router.get(
     '/me/transactions/:reference/receipt.pdf',
-    member,
+    either('business.view'),
     wrap(async (req, res) => {
       const out = await w.receiptPdf(principal(req), param(req, 'reference'));
       res.setHeader('Cache-Control', 'no-store');

@@ -80,7 +80,11 @@ describe.skipIf(!adminUrl)('Phase 2.1 building blocks on real MySQL', () => {
       });
       expect(await security.revocations.isRevoked(first.sessionId)).toBe(true);
       expect(await security.revocations.isRevoked(second.sessionId)).toBe(false);
-      await expect(sessions.refresh(first.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
+      // Said so, not a bare "no active session" (client 2026-10-13).
+      await expect(sessions.refresh(first.refreshToken)).rejects.toMatchObject({
+        statusCode: 401,
+        code: 'AUTH.SIGNED_IN_ELSEWHERE',
+      });
       const ended = await t.db
         .selectFrom('sessions')
         .select(['end_reason'])
@@ -163,7 +167,11 @@ describe.skipIf(!adminUrl)('Phase 2.1 building blocks on real MySQL', () => {
         surface: 'member',
       });
       const r1 = await sessions.refresh(s.refreshToken);
-      await expect(sessions.refresh(s.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
+      // Superseded, not ended: the caller keeps the winner's tokens.
+      await expect(sessions.refresh(s.refreshToken)).rejects.toMatchObject({
+        statusCode: 401,
+        code: 'AUTH.REFRESH_SUPERSEDED',
+      });
       await expect(sessions.refresh(r1.refreshToken)).resolves.toMatchObject({
         sessionId: s.sessionId,
       });

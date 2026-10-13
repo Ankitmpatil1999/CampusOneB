@@ -14,6 +14,8 @@
  *   route-session pair (BR-61).
  * - An allocation gives members a route and a stop on it for dates inside the year — never two active
  *   allocations over the same dates — and tells them and their families; it is ended, not deleted.
+ * - A student whose admission form declined school transport is not allocated (client 2026-10-12);
+ *   one with no choice on record (admitted before the form asked, imported, added directly) is.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { Database, CrewRole, RouteType, TripDirection } from '../models/ringpe_models';
@@ -1355,9 +1357,15 @@ export class TransportService {
     if (f.cursor && /^\d+$/.test(f.cursor)) q = q.where('m.id', '>', f.cursor);
     const rows = await q.orderBy('m.id').limit(101).execute();
     const page = rows.slice(0, 100);
+    const choices = await this.transportChoices(
+      db,
+      page.map((r) => String(r.id)),
+    );
     return {
       year: yearView(year),
       items: page.map((r) => ({
+        // Opted on the admission form or not, with the stop preferred; null: no choice on record.
+        transport: choices.get(String(r.id)) ?? null,
         member: {
           id: binToUuid(r.public_id),
           name: nameOf(r.first_name, r.last_name),
@@ -1379,6 +1387,42 @@ export class TransportService {
       })),
       nextCursor: rows.length > 100 ? String(page.at(-1)!.id) : null,
     };
+  }
+
+  /**
+   * What each student chose about school transport on the admission form (client 2026-10-12): opted
+   * or not, and the pick-up stop preferred — from the approved application that made them a
+   * member. Students with no choice on record are left out.
+   */
+  private async transportChoices(db: Db, profileIds: readonly string[]) {
+    const out = new Map<string, { opted: boolean; stop: string | null }>();
+    if (!profileIds.length) return out;
+    const rows = await db
+      .selectFrom('admission_applications')
+      .select([
+        'member_profile_id',
+        sql<string | null>`JSON_UNQUOTE(JSON_EXTRACT(data, '$.parents.transport'))`.as('opted'),
+        sql<string | null>`JSON_UNQUOTE(JSON_EXTRACT(data, '$.parents.transportStop.name'))`.as(
+          'stop',
+        ),
+      ])
+      .where('member_profile_id', 'in', [...profileIds])
+      .where('status', '=', 'APPROVED')
+      .orderBy('id', 'desc')
+      .execute();
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const id = String(r.member_profile_id);
+      // The latest approved application decides.
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (r.opted !== 'true' && r.opted !== 'false') continue;
+      out.set(id, {
+        opted: r.opted === 'true',
+        stop: r.stop && r.stop !== 'null' ? r.stop : null,
+      });
+    }
+    return out;
   }
 
   private async familyAccounts(db: Db, profileRowId: string) {
@@ -1444,7 +1488,7 @@ export class TransportService {
       if (!onRoute) throw new ValidationError([{ field: 'stopId', code: 'TRN.STOP_NOT_ON_ROUTE' }]);
       const members = await trx
         .selectFrom('member_profiles')
-        .select(['id', 'public_id'])
+        .select(['id', 'public_id', 'first_name', 'last_name'])
         .where('institution_id', '=', inst.id)
         .where('status', '=', 'ACTIVE')
         .where(
@@ -1456,6 +1500,17 @@ export class TransportService {
         .execute();
       if (members.length !== ids.length)
         throw new ValidationError([{ field: 'memberIds', code: 'TRN.MEMBERS' }]);
+      // Only students who opted for school transport on the admission form (client 2026-10-12).
+      const choices = await this.transportChoices(
+        trx,
+        members.map((m) => String(m.id)),
+      );
+      const declined = members.filter((m) => choices.get(String(m.id))?.opted === false);
+      if (declined.length) {
+        throw new CustomAPIError(409, 'TRN.NOT_OPTED', {
+          params: { names: declined.map((m) => nameOf(m.first_name, m.last_name)).join(', ') },
+        });
+      }
       for (const m of members) {
         const clash = await trx
           .selectFrom('transport_allocations')
@@ -1507,6 +1562,87 @@ export class TransportService {
       });
     });
     return { allocated: made.length, ids: made };
+  }
+
+  /** A member of the caller's school (404 otherwise). */
+  async memberFor(p: Principal, memberId: string) {
+    const inst = await institutionOf(this.deps.db, p);
+    const m = isUuid(memberId)
+      ? await this.deps.db
+          .selectFrom('member_profiles')
+          .select(['id', 'first_name', 'last_name'])
+          .where('institution_id', '=', inst.id)
+          .where('public_id', '=', uuidToBin(memberId))
+          .executeTakeFirst()
+      : undefined;
+    if (!m) throw new NotFoundError();
+    return { inst, member: m };
+  }
+
+  /**
+   * TRN-035: the transport desk changes a student's transport choice from the admission form when
+   * the family changes its mind after admission (client 2026-10-12). The choice stays on the
+   * approved application that holds it, the reason goes to the audit log. A student with no choice
+   * on record is eligible already; one opted out must have their current allocation ended first.
+   */
+  async setTransportChoice(
+    p: Principal,
+    memberId: string,
+    input: { opted: boolean; reason: string },
+  ) {
+    const { inst, member } = await this.memberFor(p, memberId);
+    const reason = input.reason.trim();
+    if (reason.length < 3)
+      throw new ValidationError([{ field: 'reason', code: 'TRN.CHOICE_REASON' }]);
+    const app = await this.deps.db
+      .selectFrom('admission_applications')
+      .select([
+        'id',
+        'public_id',
+        sql<string | null>`JSON_UNQUOTE(JSON_EXTRACT(data, '$.parents.transport'))`.as('opted'),
+      ])
+      .where('institution_id', '=', inst.id)
+      .where('member_profile_id', '=', String(member.id))
+      .where('status', '=', 'APPROVED')
+      .orderBy('id', 'desc')
+      .executeTakeFirst();
+    if (!app || (app.opted !== 'true' && app.opted !== 'false')) {
+      throw new CustomAPIError(409, 'TRN.NO_TRANSPORT_CHOICE');
+    }
+    const before = app.opted === 'true';
+    const today = istBusinessDate(this.now());
+    if (!input.opted) {
+      const current = await this.deps.db
+        .selectFrom('transport_allocations')
+        .select('id')
+        .where('profile_id', '=', String(member.id))
+        .where('active', '=', 1)
+        .where('effective_to', '>=', today)
+        .executeTakeFirst();
+      if (current) throw new CustomAPIError(409, 'TRN.OPT_OUT_ALLOCATED');
+    }
+    const at = this.now();
+    await this.deps.db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('admission_applications')
+        .set({
+          data: sql`JSON_SET(data, '$.parents.transport', CAST(${input.opted ? 'true' : 'false'} AS JSON))`,
+          updated_at: at,
+          row_version: sql<number>`row_version + 1`,
+        })
+        .where('id', '=', app.id)
+        .execute();
+      await recordAudit(trx, {
+        institutionId: inst.id,
+        action: 'TRANSPORT_CHOICE_CHANGED',
+        entityType: 'member',
+        entityRef: memberId,
+        before: { opted: before },
+        after: { opted: input.opted, reason, application: binToUuid(app.public_id) },
+      });
+    });
+    const now = await this.transportChoices(this.deps.db, [String(member.id)]);
+    return { memberId: memberId.toLowerCase(), transport: now.get(String(member.id)) ?? null };
   }
 
   /** TRN-022: end an allocation (kept on record). */

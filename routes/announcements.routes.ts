@@ -5,6 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import {
   authorize,
+  memberOrConsole,
   requireSurface,
   requireTenant,
   teacherAccess,
@@ -136,7 +137,7 @@ doc({
   path: '/api/v1/me/announcements',
   summary:
     'Announcements sent to the member (for: a child on the account) with their own acknowledgement',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view,business.view',
   query: forQuery,
   responses: { 200: { description: 'Announcements' } },
 });
@@ -145,7 +146,7 @@ doc({
   method: 'get',
   path: '/api/v1/me/announcements/{announcementId}',
   summary: 'One announcement sent to the member, with their own acknowledgement',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view,business.view',
   query: forQuery,
   responses: { 200: { description: 'Announcement' } },
 });
@@ -154,7 +155,7 @@ doc({
   method: 'post',
   path: '/api/v1/me/announcements/{announcementId}/acknowledgement',
   summary: 'Acknowledge for oneself (or a child on the account); once',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view,business.view',
   query: forQuery,
   idempotent: 'required',
   responses: { 200: { description: 'Announcement' } },
@@ -183,7 +184,7 @@ doc({
   method: 'post',
   path: '/api/v1/principal/announcements',
   summary: 'The principal’s announcement (the console’s rules)',
-  auth: 'member',
+  auth: 'member|principal.announce',
   request: announcementSchema,
   idempotent: 'required',
   responses: { 202: { description: 'Accepted' } },
@@ -195,7 +196,7 @@ doc({
   path: '/api/v1/principal/announcements',
   summary:
     'The school’s announcements for the principal in the app: dispatch outcome and acknowledgement counts (COM-001’s view)',
-  auth: 'member',
+  auth: 'member|principal.view',
   query: principalListQuery,
   responses: { 200: { description: 'Announcements' } },
 });
@@ -205,7 +206,7 @@ doc({
   path: '/api/v1/me/announcement-options',
   summary:
     'For a teacher’s or the principal’s new announcement: categories, the channels the school has on (a class announcement: in the app), target groups and the title and text limits (settings)',
-  auth: 'member|teaching.announce',
+  auth: 'member|teaching.announce,principal.announce',
   responses: { 200: { description: 'Options' } },
 });
 doc({
@@ -233,7 +234,7 @@ doc({
   path: '/api/v1/principal/announcements/{announcementId}/acknowledgements',
   summary:
     'The principal in the app: who has and hasn’t acknowledged one of the school’s announcements (COM-005’s view)',
-  auth: 'member',
+  auth: 'member|principal.view',
   query: ackQuery,
   responses: { 200: { description: 'Acknowledgements' } },
 });
@@ -243,7 +244,7 @@ doc({
   path: '/api/v1/principal/announcements/{announcementId}/reminders',
   summary:
     'The principal in the app reminds those who haven’t acknowledged, in the app and the channels chosen (the school’s channels only; COM-006’s rules)',
-  auth: 'member',
+  auth: 'member|principal.announce',
   request: remindSchema,
   idempotent: 'required',
   responses: { 202: { description: 'Reminded' } },
@@ -256,8 +257,10 @@ export function announcementsRoutes(deps: {
 }): Router {
   const router = Router();
   const L = deps.loggers;
+  // The app's member, or the web console with one of the sub-tasks (teachers, Phase 10; the
+  // principal, merchants and vendor merchants, client 2026-10-13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const once = idempotency({ db: deps.db, mode: 'required' });
-  const member = requireSurface(L, 'member');
   const teaching = (sub: string) => teacherAccess(`teaching.${sub}`, L);
   const console = [requireSurface(L, 'console'), requireTenant(L)];
   const view = authorize('comms.view', L);
@@ -355,19 +358,19 @@ export function announcementsRoutes(deps: {
 
   router.get(
     '/me/announcements',
-    member,
+    either('teaching.view', 'principal.view', 'business.view'),
     json((req) => A.mine(principal(req), forQuery.parse(req.query))),
   );
   router.get(
     '/me/announcements/:announcementId',
-    member,
+    either('teaching.view', 'principal.view', 'business.view'),
     json((req) =>
       A.mineOne(principal(req), param(req, 'announcementId'), forQuery.parse(req.query)),
     ),
   );
   router.post(
     '/me/announcements/:announcementId/acknowledgement',
-    member,
+    either('teaching.view', 'principal.view', 'business.view'),
     once,
     json((req) =>
       A.acknowledge(principal(req), param(req, 'announcementId'), forQuery.parse(req.query)),
@@ -411,7 +414,7 @@ export function announcementsRoutes(deps: {
   );
   router.get(
     '/principal/announcements',
-    member,
+    either('principal.view'),
     json((req) => {
       const q = principalListQuery.parse(req.query);
       return A.principalList(principal(req), { ...q, importantOnly: q.importantOnly === 'true' });
@@ -419,7 +422,7 @@ export function announcementsRoutes(deps: {
   );
   router.get(
     '/principal/announcements/:announcementId/acknowledgements',
-    member,
+    either('principal.view'),
     json((req) => {
       const q = ackQuery.parse(req.query);
       return A.principalAcknowledgements(principal(req), param(req, 'announcementId'), {
@@ -431,7 +434,7 @@ export function announcementsRoutes(deps: {
   );
   router.post(
     '/principal/announcements/:announcementId/reminders',
-    member,
+    either('principal.announce'),
     once,
     json(
       (req) =>
@@ -445,12 +448,12 @@ export function announcementsRoutes(deps: {
   );
   router.get(
     '/me/announcement-options',
-    teaching('announce'),
+    either('teaching.announce', 'principal.announce'),
     json((req) => A.composeOptions(principal(req))),
   );
   router.post(
     '/principal/announcements',
-    member,
+    either('principal.announce'),
     once,
     json(
       (req) => A.createFromPrincipal(principal(req), announcementSchema.parse(req.body ?? {})),

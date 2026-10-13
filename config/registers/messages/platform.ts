@@ -157,6 +157,30 @@ export const PLATFORM_MESSAGES = [
     refs: ['5.7'],
   },
   {
+    // Two tabs renewed the same session at once: the other renewal won and its cookies stand, so
+    // the session goes on (client 2026-10-13: signed out on a plain-HTTP server, no Web Locks).
+    key: 'AUTH.REFRESH_SUPERSEDED',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'error',
+    http: 401,
+    en: 'Your session was just renewed in another tab. Try again.',
+    approval: 'approved',
+    refs: ['ADR-0011', 'client 2026-10-13'],
+  },
+  {
+    key: 'AUTH.SIGNED_IN_ELSEWHERE',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'error',
+    http: 401,
+    en: 'You were signed out because this account signed in on another device or browser. Sign in again to continue here.',
+    approval: 'approved',
+    refs: ['BR-05', 'client 2026-10-13'],
+  },
+  {
     key: 'AUTH.FORBIDDEN',
     register: 'MSG-GAS-03',
     srsText: 'You don’t have permission to view this page.',

@@ -29,6 +29,7 @@ export interface RefreshTokenRow {
   readonly sessionPublicId: Buffer;
   readonly surface: SurfaceCode;
   readonly endedAt: Date | null;
+  readonly endReason: string | null;
   readonly absoluteExpiresAt: Date;
   readonly accountId: string;
   readonly accountPublicId: Buffer;
@@ -120,6 +121,7 @@ export const sessionRepository = {
         's.public_id as sessionPublicId',
         's.surface as surface',
         's.ended_at as endedAt',
+        's.end_reason as endReason',
         's.absolute_expires_at as absoluteExpiresAt',
         's.account_id as accountId',
         'a.public_id as accountPublicId',

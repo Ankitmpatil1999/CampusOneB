@@ -116,6 +116,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.AGE_TOO_HIGH': 'Age is too high for <standard> (maximum is <n> years)',
   'ADM.AGE_TOO_LOW': 'Age must be at least {n} years for {standard} as of {date}.',
   'ADM.ALREADY_DECIDED': 'Application is already <status>',
+  'ADM.APPLICATION_FEE_FIRST':
+    'The admission fee can’t be paid on its own while the application fee is due. Pay both together, or both later at the school’s accounts desk.',
   'ADM.CLASS_INVALID': 'Please select a valid admission standard',
   'ADM.CONSENT_REQUIRED':
     'Agree that the information collected will be used to register your account in RingPe.',
@@ -130,6 +132,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.FEE_CONFIG_MISSING': 'Fee configuration not found for this academic year',
   'ADM.FEE_NOT_PAID': 'This fee is not paid yet, so there is no receipt to confirm.',
   'ADM.FEE_REQUIRED': 'Application fee is mandatory',
+  'ADM.FORM_NOT_SUBMITTED': 'The application form can be downloaded once it is submitted.',
   'ADM.GATEWAY_NOT_CONFIGURED':
     'Online payment isn’t available yet. Please pay at the school’s accounts desk.',
   'ADM.ID_INVALID': 'Enter a valid 12-digit Aadhaar number.',
@@ -138,6 +141,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'This admission link has expired. Ask the school for its current link or QR code.',
   'ADM.LINK_INVALID':
     'This admission link isn’t valid any more. Ask the school for its current link or QR code.',
+  'ADM.MOBILE_INTL_INVALID': 'Enter the mobile number without the country code: 6 to 12 digits.',
   'ADM.MOBILE_INVALID': 'Mobile number must contain 10 digits and start with 6, 7, 8 or 9',
   'ADM.NOT_DRAFT': 'This application has been submitted, so it can’t be changed here.',
   'ADM.NOT_EDITABLE': 'An approved or rejected application can’t be changed.',
@@ -156,9 +160,12 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.SECTION_NOT_IN_CLASS': 'Choose a section of {class}, the class applied for.',
   'ADM.STATUS_NOT_FOUND':
     'No application matches these details. Check the application number on your confirmation SMS or e-mail.',
+  'ADM.TC_DUE_DATE':
+    'Choose the date you’ll hand in the transfer certificate: from today, and no later than {latest}.',
   'ADM.TC_NOT_MID_TERM': 'A transfer certificate is recorded only for a mid-term admission.',
   'ADM.TC_OR_UNDERTAKING_REQUIRED':
     'Attach the transfer certificate, or give an undertaking with the date you’ll produce it.',
+  'ADM.TRANSPORT_OR_HOSTEL': 'Choose school transport or the hostel, not both.',
   'ADM.TRANSPORT_STOP_INVALID':
     'Choose a pick-up point from the list, or leave it for the school to decide.',
   'ADM.YEAR_NOT_OPEN': 'The selected academic year isn’t open for admissions.',
@@ -216,6 +223,9 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'AUTH.OTP_INVALID': 'Invalid OTP !!!',
   'AUTH.OTP_RESEND_LIMIT': 'OTP Re-Send can be done only once !!!',
   'AUTH.OTP_RESEND_TOO_SOON': 'Resend code in {time}',
+  'AUTH.REFRESH_SUPERSEDED': 'Your session was just renewed in another tab. Try again.',
+  'AUTH.SIGNED_IN_ELSEWHERE':
+    'You were signed out because this account signed in on another device or browser. Sign in again to continue here.',
   'AUTH.UNAUTHENTICATED': 'No active sessions. Please log in again.',
   'CF.ACK_REQUIRED': "Confirm that this field won't capture identity-document numbers",
   'CF.FILTER_TYPE': 'Only Dropdown, Multi-select and Yes/No fields can be offered as a filter.',
@@ -472,6 +482,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     "This role can't be given or taken away here. RingPe assigns the Institution Administrator role, and students have no console roles.",
   'IDN.ROLE_NOT_EDITABLE':
     "These are the platform's default institution roles; they can't be changed here.",
+  'IDN.ROLE_WRONG_PROFILE': 'The {role} role can be given only to {who}.',
   'IDN.SECURITY_ANSWER_FORMAT': 'Invalid security_answer Format !!!',
   'IDN.SECURITY_ANSWER_WRONG': 'Security Answer Not Matched for User !!!!',
   'IDN.SECURITY_QUESTION_INVALID': 'Invalid security_question_id!',
@@ -809,6 +820,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'TRN.BOARDING_ORDER': 'Record the boarding before the passenger gets off.',
   'TRN.CANCEL_REMARKS': 'Give the reason for cancelling the trip (5 to 300 characters).',
   'TRN.CAPACITY': 'Capacity should be greater than zero.',
+  'TRN.CHOICE_REASON': 'Give the reason for changing the transport choice (3 to 200 characters).',
   'TRN.CREW_NOT_FOUND': 'Staff not found.',
   'TRN.DATES': 'Effective To cannot be earlier than Effective From.',
   'TRN.DISTANCE': 'Distance From Previous cannot be negative.',
@@ -826,7 +838,13 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'TRN.NOT_A_PASSENGER': '{name} isn’t allocated to this route today.',
   'TRN.NOT_CREW': 'Only drivers and attendants can open this.',
   'TRN.NOT_DRIVER': 'Selected user is not registered as a DRIVER.',
+  'TRN.NOT_OPTED':
+    'Only students who opted for school transport can be allocated a bus. Not opted on the admission form: {names}.',
   'TRN.NOT_YOUR_TRIP': 'You are not assigned as Driver or Attendant for this trip.',
+  'TRN.NO_TRANSPORT_CHOICE':
+    'This student has no transport choice on record from the admission form, so they can be allocated already.',
+  'TRN.OPT_OUT_ALLOCATED':
+    'End the student’s current transport allocation before marking them as not opted.',
   'TRN.RANGE_DATES': 'To Date cannot be earlier than From Date.',
   'TRN.REGISTRATION': 'Enter the registration number (up to 15 characters).',
   'TRN.REGISTRATION_TAKEN': 'Registration Number already exists.',
@@ -870,13 +888,21 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'UPL.FILE_REQUIRED': 'Choose the filled-in template (CSV) to upload.',
   'UPL.HAS_REJECTED':
     '{n} rows were rejected. Fix them and upload again, or onboard the accepted rows only.',
+  'UPL.HEADER_COLUMN':
+    'Column {n} of the first row should be “{expected}”, but the file has “{found}”. Download the template and keep its first row as it is.',
   'UPL.HEADER_MISMATCH':
     "The columns don't match the template. Download the template and fill it in.",
+  'UPL.HEADER_UNKNOWN':
+    'The file has a column the template doesn’t: “{found}”. Remove it, or download the template again — your institution’s own fields may have changed.',
   'UPL.NOTHING_ACCEPTED': 'No successful records.',
+  'UPL.NOT_CSV':
+    'This is an Excel workbook, not a CSV file. In Excel choose File › Save As › CSV (Comma delimited), then upload that file.',
   'UPL.NO_ROWS': 'No records received',
   'UPL.ROW_CHANGED':
     'Row {row} can no longer be onboarded: {reason} Nothing was onboarded; upload the sheet again.',
   'UPL.TOO_MANY_ROWS': 'Upload at most {max} rows at a time.',
+  'UPL.WRONG_TEMPLATE':
+    'This file is the {used} template. Upload it with the {used} upload, or download the {wanted} template.',
   'VALIDATION.AMOUNT': 'Enter an amount greater than ₹0 with up to 2 decimals.',
   'VALIDATION.CONFIRM_MISMATCH': "The two entries don't match.",
   'VALIDATION.DATE': 'Enter a valid date.',
@@ -1177,6 +1203,10 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'subtask.institution.attendance.config': 'Attendance rules',
   'subtask.institution.attendance.mark': 'Mark attendance',
   'subtask.institution.attendance.view': 'See attendance',
+  'subtask.institution.business.assets': 'The approved assets a vendor merchant is paid against',
+  'subtask.institution.business.collect':
+    'Take payments: dynamic QR and NFC requests, e-mail QR codes',
+  'subtask.institution.business.view': 'Home, QR codes, collections, settlements and wallet',
   'subtask.institution.cards.edit': 'Issue, block and re-issue cards',
   'subtask.institution.cards.view': 'See cards',
   'subtask.institution.commreport.view': 'Read the communication report',
@@ -1217,6 +1247,10 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'subtask.institution.merchants.view': 'See merchants',
   'subtask.institution.passes.edit': 'Edit passes',
   'subtask.institution.passes.view': 'See passes',
+  'subtask.institution.principal.announce': 'Send school announcements and reminders',
+  'subtask.institution.principal.leave': 'Decide teacher and staff leave',
+  'subtask.institution.principal.view':
+    'The school at a glance: people, attendance, academics, leave and announcements',
   'subtask.institution.readers.edit': 'Register and change readers',
   'subtask.institution.readers.view': 'See readers',
   'subtask.institution.recon.view': 'See transactions',
@@ -1269,6 +1303,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'task.institution.allowances': 'Allowances',
   'task.institution.approvals': 'Approvals',
   'task.institution.attendance': 'Attendance',
+  'task.institution.business': 'Merchant counter',
   'task.institution.cards': 'NFC cards',
   'task.institution.commreport': 'Communication report',
   'task.institution.comms': 'Announcements',
@@ -1284,6 +1319,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'task.institution.members': 'Members',
   'task.institution.merchants': 'Merchants & QR',
   'task.institution.passes': 'Entry passes',
+  'task.institution.principal': 'Principal',
   'task.institution.readers': 'Readers',
   'task.institution.recon': 'Transactions & MIS',
   'task.institution.reports': 'Reports',

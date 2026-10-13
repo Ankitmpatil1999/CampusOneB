@@ -38,6 +38,7 @@ import type {
 } from '../models/ringpe_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
+  PRIMARY_CARDS,
   SECTIONS,
   type ApplicationInput,
   type SectionName,
@@ -65,6 +66,7 @@ import { PATTERNS } from '../utils/validators';
 import type { AdmissionLinksService } from './admission-links.service';
 import { classOrder } from './admission-links.service';
 import { recordAudit } from './audit.service';
+import { admissionFormPdf } from './admission-form-pdf';
 import { activeFields, parseValues } from './custom-values.service';
 import type { FileService } from './file.service';
 import type { MembersService, OnboardInput } from './members.service';
@@ -124,7 +126,12 @@ interface State {
   studentPan?: string | null;
   primaryAadhaar?: string | null;
   primaryPan?: string | null;
+  /** Mid-term: the family's answer on the transfer certificate to write; undefined keeps it. */
+  tc?: { mode: 'TC' | 'UNDERTAKING'; due: string | null };
 }
+
+/** An undertaking's certificate is due at the latest this many days after joining (OI-ADM-27). */
+const TC_DUE_DAYS = 60;
 
 const ADMISSION_HEADER = 'X-Admission-Token';
 /** Stands in for the mobile in a resume token when nothing matched (never a valid mobile). */
@@ -519,9 +526,12 @@ export class AdmissionsService {
       case 'addresses':
         s.data.addresses = SECTIONS.addresses.parse(raw);
         return;
-      case 'previous':
-        s.data.previous = SECTIONS.previous.parse(raw);
+      case 'previous': {
+        const { tc, ...previous } = SECTIONS.previous.parse(raw);
+        s.data.previous = previous;
+        if (tc && s.midTerm) s.tc = this.tcAnswer(s, tc);
         return;
+      }
       case 'parents': {
         const v = SECTIONS.parents.parse(raw);
         const primary =
@@ -529,6 +539,16 @@ export class AdmissionsService {
         if (!primary) {
           throw new ValidationError([
             { field: `parents.${v.primary.toLowerCase()}`, code: 'VALIDATION.REQUIRED' },
+          ]);
+        }
+        // School transport or the hostel, not both (client 2026-10-13).
+        if (v.transport && v.hostel) {
+          throw new ValidationError([{ field: 'parents.hostel', code: 'ADM.TRANSPORT_OR_HOSTEL' }]);
+        }
+        // The primary contact's e-mail is required (client 2026-10-13): notices go there too.
+        if (!primary.email) {
+          throw new ValidationError([
+            { field: `parents.${v.primary.toLowerCase()}.email`, code: 'VALIDATION.REQUIRED' },
           ]);
         }
         // The primary contact's Aadhaar and PAN go to their encrypted columns, never into the
@@ -631,6 +651,37 @@ export class AdmissionsService {
         ? {}
         : { primary_pan_enc: enc('adm_pan', 'primary', pp), primary_pan_last4: last4(pp) }),
     };
+  }
+
+  /**
+   * Mid-term (client 2026-10-13): the family says they have the transfer certificate, or give an
+   * undertaking to hand it in by a date — from today, at most TC_DUE_DAYS after joining.
+   */
+  private tcAnswer(
+    s: State,
+    tc: { mode: 'TC' | 'UNDERTAKING'; dueDate?: string | null | undefined },
+  ) {
+    if (tc.mode === 'TC') return { mode: 'TC' as const, due: null };
+    const today = istBusinessDate(this.now());
+    const from = s.joiningDate && s.joiningDate > today ? s.joiningDate : today;
+    const latest = new Date(`${from}T00:00:00Z`);
+    latest.setUTCDate(latest.getUTCDate() + TC_DUE_DAYS);
+    const last = latest.toISOString().slice(0, 10);
+    if (!tc.dueDate || tc.dueDate < today || tc.dueDate > last) {
+      throw new ValidationError([
+        {
+          field: 'previous.tc.dueDate',
+          code: 'ADM.TC_DUE_DATE',
+          params: { latest: formatDate(last) },
+        },
+      ]);
+    }
+    return { mode: 'UNDERTAKING' as const, due: tc.dueDate };
+  }
+
+  /** The family's transfer-certificate answer; a number or date the office recorded stays. */
+  private tcColumns(s: State) {
+    return s.tc === undefined ? {} : { tc_mode: s.tc.mode, tc_due: s.tc.due };
   }
 
   private aadhaarIndex(institutionId: string, value: string) {
@@ -771,6 +822,7 @@ export class AdmissionsService {
           source,
           ...this.columns(s),
           ...this.identityColumns(institutionId, pub.id, s),
+          ...this.tcColumns(s),
           created_by: by,
           created_at: at,
           updated_at: at,
@@ -806,6 +858,14 @@ export class AdmissionsService {
     const s = this.stateOf(r);
     await this.apply(this.deps.db, institutionId, s, input.section, input.data);
     if (input.step !== undefined) s.step = Math.max(s.step, input.step);
+    // Another primary contact: the cards uploaded were the previous one's, like the numbers.
+    if (r.primary_relation && s.primaryRelation !== r.primary_relation) {
+      await this.deps.db
+        .deleteFrom('admission_documents')
+        .where('application_id', '=', r.id)
+        .where('doc_type', 'in', [...PRIMARY_CARDS])
+        .execute();
+    }
     if (input.section === 'student' || input.section === 'class') {
       await this.duplicate(this.deps.db, institutionId, s, String(r.id));
     }
@@ -814,6 +874,7 @@ export class AdmissionsService {
       .set({
         ...this.columns(s),
         ...this.identityColumns(institutionId, binToUuid(r.public_id), s),
+        ...this.tcColumns(s),
         updated_at: this.now(),
         row_version: sql<number>`row_version + 1`,
       })
@@ -1067,6 +1128,24 @@ export class AdmissionsService {
     };
   }
 
+  /**
+   * The submitted application as a PDF (client 2026-10-13): for the family that holds the resume
+   * token — never a payment link — once it is submitted. Identity numbers appear masked.
+   */
+  async publicFormPdf(id: string, token: string | undefined) {
+    const a = await this.access(id, token, 'read');
+    if (a.scope !== 'resume') throw new CustomAPIError(404, 'ADM.NOT_FOUND');
+    if (a.row.status === 'DRAFT') throw new CustomAPIError(409, 'ADM.FORM_NOT_SUBMITTED');
+    const [v, fields] = await Promise.all([
+      this.view(a.row, { console: false }),
+      activeFields(this.deps.db, String(a.inst.id), 'ADMISSION_APPLICATION'),
+    ]);
+    return {
+      fileName: `Application-${v.applicationNo.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
+      pdf: admissionFormPdf({ name: a.inst.name, city: a.inst.city }, v, fields, this.now()),
+    };
+  }
+
   async publicRead(id: string, token: string | undefined) {
     const a = await this.access(id, token, 'read');
     const v = await this.view(a.row, { console: false });
@@ -1248,15 +1327,27 @@ export class AdmissionsService {
     need(r.gender, 'student.gender');
     need(r.dob, 'student.dob');
     need(data.addresses?.residential, 'addresses.residential');
+    // The area or locality (client 2026-10-13) — also for an address saved before it was required.
+    if (data.addresses?.residential) {
+      need(data.addresses.residential.line2, 'addresses.residential.line2');
+    }
+    if (data.addresses && !data.addresses.sameAsResidential && data.addresses.correspondence) {
+      need(data.addresses.correspondence.line2, 'addresses.correspondence.line2');
+    }
     need(r.primary_name, 'parents.primary');
     need(r.primary_mobile, 'parents.primaryMobile', 'ADM.MOBILE_INVALID');
-    // The mother's details and the children question (client 2026-10-12) — also for a draft saved
-    // before they were asked.
+    // The father's and the mother's details and the children question (client 2026-10-12,
+    // 2026-10-13) — also for a draft saved before they were asked.
+    need(data.parents?.father?.name, 'parents.father.name');
+    need(data.parents?.father?.mobile, 'parents.father.mobile');
     need(data.parents?.mother?.name, 'parents.mother.name');
     need(data.parents?.mother?.mobile, 'parents.mother.mobile');
     need(data.parents?.children, 'parents.children');
-    // The student's Aadhaar, and the primary contact's Aadhaar and PAN (client 2026-10-12).
-    need(r.student_aadhaar_enc, 'student.aadhaar');
+    // The primary contact's e-mail (client 2026-10-13).
+    if (r.primary_relation) {
+      need(r.primary_email, `parents.${r.primary_relation.toLowerCase()}.email`);
+    }
+    // The primary contact's Aadhaar and PAN (client 2026-10-12); the student's Aadhaar is optional.
     need(r.primary_aadhaar_enc, 'parents.primaryAadhaar');
     need(r.primary_pan_enc, 'parents.primaryPan');
     const docs = await this.deps.db
@@ -1267,6 +1358,8 @@ export class AdmissionsService {
     const has = (t: AdmissionDocType) => docs.some((d) => d.doc_type === t);
     need(has('BIRTH'), 'documents.BIRTH');
     need(has('ADDRESS'), 'documents.ADDRESS');
+    // The primary contact's Aadhaar and PAN cards, front and back (client 2026-10-13).
+    for (const t of PRIMARY_CARDS) need(has(t), `documents.${t}`);
     const order = r.class_name ? classOrder(r.class_name) : null;
     // Grade 1 and above bring the last report card (prototype p.form).
     if (order !== null && order >= 3) need(has('REPORT'), 'documents.REPORT');
@@ -1475,20 +1568,59 @@ export class AdmissionsService {
       return {
         status: submitNow ? ('SUBMITTED' as const) : ('DRAFT' as const),
         applicationNo: r.application_no,
-        feeDue: !paid && appFee > 0 ? { ...toMoneyDto(appFee), mandatory: false } : null,
+        feeDue: !paid && appFee > 0 ? { ...toMoneyDto(appFee), mandatory: !submitNow } : null,
       };
     });
     if (out.status === 'SUBMITTED') await this.tellFamily(institutionId, id, 'SUBMITTED');
     return out;
   }
 
+  /**
+   * The family's submission: the application fee is paid online to submit (client 2026-10-13) — a
+   * "pay later" is no longer offered, so the form waits for the payment. Only the admission fee may
+   * be left for later. (The counsellor's desk still takes it in cash.)
+   */
   async publicSubmit(
     id: string,
     token: string | undefined,
-    input: { payLater?: boolean | undefined },
+    _input: { payLater?: boolean | undefined },
   ) {
     const a = await this.access(id, token, 'edit');
-    return this.submit(a.inst.id, id, { ...input, declaredBy: a.row.primary_name }, null);
+    return this.submit(a.inst.id, id, { payLater: false, declaredBy: a.row.primary_name }, null);
+  }
+
+  /** ADM-033: an attachment removed from the draft (client 2026-10-13). */
+  async publicRemoveDocument(id: string, token: string | undefined, docType: AdmissionDocType) {
+    const a = await this.access(id, token, 'edit');
+    if (a.row.status !== 'DRAFT') throw new CustomAPIError(409, 'ADM.NOT_DRAFT');
+    const out = await this.deps.db
+      .deleteFrom('admission_documents')
+      .where('application_id', '=', a.row.id)
+      .where('doc_type', '=', docType)
+      .executeTakeFirst();
+    if (Number(out.numDeletedRows) !== 1) throw new NotFoundError();
+    await this.touch(a.row.id);
+    return this.view(await this.lockless(a.inst.id, id), { console: false });
+  }
+
+  /** ADM-034: a short-lived link to open one of the family's attachments (client 2026-10-13). */
+  async publicDocumentLink(id: string, token: string | undefined, docType: AdmissionDocType) {
+    const a = await this.access(id, token, 'read');
+    if (a.scope !== 'resume') throw new CustomAPIError(404, 'ADM.NOT_FOUND');
+    const d = await this.deps.db
+      .selectFrom('admission_documents as d')
+      .innerJoin('files as f', 'f.id', 'd.file_id')
+      .select(['f.public_id', 'f.original_name', 'f.mime_type', 'f.size_bytes'])
+      .where('d.application_id', '=', a.row.id)
+      .where('d.doc_type', '=', docType)
+      .executeTakeFirst();
+    if (!d) throw new NotFoundError();
+    return {
+      ...this.deps.files.linkFor(binToUuid(d.public_id)),
+      name: d.original_name,
+      mimeType: d.mime_type,
+      sizeBytes: Number(d.size_bytes),
+    };
   }
 
   // --- payments (ADM-010 / ADM-011; ADM-022…024) -----------------------------------------------------
@@ -1623,6 +1755,21 @@ export class AdmissionsService {
     return amount;
   }
 
+  /**
+   * The admission fee is never paid online on its own while the application fee is due (client
+   * 2026-10-12): it goes with the application fee in one payment, or both are paid later at the
+   * accounts desk.
+   */
+  private async assertApplicationFeeSettled(applicationRowId: string) {
+    const app = await this.deps.db
+      .selectFrom('admission_payments')
+      .select('status')
+      .where('application_id', '=', applicationRowId)
+      .where('fee_type', '=', 'APPLICATION')
+      .executeTakeFirst();
+    if (app && app.status !== 'PAID') throw new CustomAPIError(409, 'ADM.APPLICATION_FEE_FIRST');
+  }
+
   async startPayment(
     id: string,
     token: string | undefined,
@@ -1633,6 +1780,7 @@ export class AdmissionsService {
     const feeType: AdmissionFeeType =
       a.fee ?? input.feeType ?? (a.row.status === 'DRAFT' ? 'APPLICATION' : 'ADMISSION');
     const amount = await this.payable(a.row, feeType);
+    if (feeType === 'ADMISSION') await this.assertApplicationFeeSettled(a.row.id);
     // The family chose on the form to pay the admission fee now (client 2026-10-09): it joins the
     // application fee in one order, unless it is paid already or the year has none.
     let admission = 0;
@@ -2345,6 +2493,9 @@ export class AdmissionsService {
       relation: 'FATHER' | 'MOTHER' | 'GUARDIAN',
     ) => {
       if (!who?.mobile || guardians.some((g) => g.mobile === who.mobile)) return;
+      // A RingPe account is keyed on an Indian mobile: a parent with a number from another
+      // country (client 2026-10-13) stays on the application, without an account for now.
+      if (!PATTERNS.mobile.test(who.mobile)) return;
       const n = splitName(title(who.name));
       guardians.push({
         firstName: n.firstName,
@@ -2966,6 +3117,8 @@ export class AdmissionsService {
     const i = await this.consoleInst(p);
     const r = await this.lockless(i.id, id);
     const amount = await this.payable(r, 'ADMISSION');
+    // A link the family could not use: the application fee is still due (client 2026-10-12).
+    await this.assertApplicationFeeSettled(r.id);
     await this.deps.db.transaction().execute(async (trx) => {
       const f = await this.feeRow(trx, i.id, r.id, 'ADMISSION', amount);
       if (f.status === 'PAID') throw new CustomAPIError(409, 'ADM.FEE_ALREADY_PAID');

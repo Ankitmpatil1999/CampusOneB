@@ -3,7 +3,7 @@ import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { requireSurface } from '../middlewares/auth.middleware';
+import { memberOrConsole } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import { DM_GROUPS, type MessagingService } from '../services/messaging.service';
@@ -42,7 +42,7 @@ doc({
   path: '/api/v1/me/contacts',
   summary:
     'People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: contactsQuery,
   responses: { 200: { description: 'Contacts' } },
 });
@@ -52,7 +52,7 @@ doc({
   path: '/api/v1/me/conversations',
   summary:
     'Conversations, newest message first, active or archived, with unread counts and whether the member may still send',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: listQuery,
   responses: { 200: { description: 'Conversations' } },
 });
@@ -62,7 +62,7 @@ doc({
   path: '/api/v1/me/conversations',
   summary:
     'Start (or continue) the conversation with a member and send the first message; the role matrix and, for students and teachers, the relationship apply; 30 messages a minute',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: forQuery,
   request: startConversationSchema,
   idempotent: 'required',
@@ -74,7 +74,7 @@ doc({
   path: '/api/v1/me/conversations/{conversationId}/messages',
   summary:
     'Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: messagesQuery,
   responses: { 200: { description: 'Messages' } },
 });
@@ -83,7 +83,7 @@ doc({
   method: 'post',
   path: '/api/v1/me/conversations/{conversationId}/messages',
   summary: 'Send a message (1 to 4,000 characters; 30 a minute per member, shared by every server)',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: forQuery,
   request: directMessageSchema,
   idempotent: 'required',
@@ -94,7 +94,7 @@ doc({
   method: 'post',
   path: '/api/v1/me/conversations/{conversationId}/archive',
   summary: 'Archive or restore the conversation for the member only',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: forQuery,
   request: archiveSchema,
   responses: { 204: { description: 'Done' } },
@@ -107,7 +107,8 @@ export function messagingRoutes(deps: {
 }): Router {
   const router = Router();
   const once = idempotency({ db: deps.db, mode: 'required' });
-  const member = requireSurface(deps.loggers, 'member');
+  // The app's member, or a teacher or the principal on the web console (client 2026-10-12/13).
+  const teacherOrMember = memberOrConsole(['teaching.view', 'principal.view'], deps.loggers);
   const M = deps.messaging;
   const wrap =
     (fn: RequestHandler): RequestHandler =>
@@ -131,12 +132,12 @@ export function messagingRoutes(deps: {
 
   router.get(
     '/me/contacts',
-    member,
+    teacherOrMember,
     json((req) => M.contacts(principal(req), contactsQuery.parse(req.query))),
   );
   router.get(
     '/me/conversations',
-    member,
+    teacherOrMember,
     json((req) => {
       const q = listQuery.parse(req.query);
       return M.conversations(principal(req), { ...q, archived: q.archived === 'true' });
@@ -144,7 +145,7 @@ export function messagingRoutes(deps: {
   );
   router.post(
     '/me/conversations',
-    member,
+    teacherOrMember,
     once,
     json((req) => {
       const q = forQuery.parse(req.query);
@@ -154,12 +155,12 @@ export function messagingRoutes(deps: {
   );
   router.get(
     '/me/conversations/:conversationId/messages',
-    member,
+    teacherOrMember,
     json((req) => M.messages(principal(req), param(req), messagesQuery.parse(req.query))),
   );
   router.post(
     '/me/conversations/:conversationId/messages',
-    member,
+    teacherOrMember,
     once,
     json(async (req) => {
       const q = forQuery.parse(req.query);
@@ -170,7 +171,7 @@ export function messagingRoutes(deps: {
   );
   router.post(
     '/me/conversations/:conversationId/archive',
-    member,
+    teacherOrMember,
     wrap(async (req, res) => {
       const q = forQuery.parse(req.query);
       await M.lookup(principal(req), param(req), q.for);

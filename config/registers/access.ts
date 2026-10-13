@@ -167,7 +167,27 @@ export const INSTITUTION_TASKS: readonly TaskDefinition[] = [
     ['send', 'Send announcements'],
   ]),
   inst('commreport', 'Communication report', [['view', 'Read the communication report']]),
+  // Client 2026-10-13: the principal on the web — what the principal does in the app. Every route
+  // still checks that the signed-in profile is the school's principal.
+  inst('principal', 'Principal', [
+    ['view', 'The school at a glance: people, attendance, academics, leave and announcements'],
+    ['leave', 'Decide teacher and staff leave'],
+    ['announce', 'Send school announcements and reminders'],
+  ]),
+  // Client 2026-10-13: merchants and vendor merchants on the web — their own counter, as in the
+  // app. Every route still checks that the signed-in profile is the merchant.
+  inst('business', 'Merchant counter', [
+    ['view', 'Home, QR codes, collections, settlements and wallet'],
+    ['collect', 'Take payments: dynamic QR and NFC requests, e-mail QR codes'],
+    ['assets', 'The approved assets a vendor merchant is paid against'],
+  ]),
 ];
+
+/**
+ * Tasks of one person's own work, never part of the administrator's console: a teacher's classes,
+ * the principal's desk and a merchant's counter. Their roles go only to the matching profiles.
+ */
+export const PERSONAL_TASKS: readonly string[] = ['teaching', 'principal', 'business'];
 
 const op = (code: string, en: string, subs: readonly SubTaskDefinition[], cr?: string) =>
   ({ scope: 'OPERATOR', code, en, subTasks: subs, ...(cr ? { cr } : {}) }) as TaskDefinition;
@@ -288,8 +308,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     scope: 'INSTITUTION',
     name: 'Institution Administrator',
     description: 'Everything in the institution console',
-    // Teaching is a teacher's own work: an administrator who teaches is given the Teacher role too.
-    tasks: INSTITUTION_TASKS.map((t) => t.code).filter((c) => c !== 'teaching'),
+    // Teaching, the principal's desk and a merchant's counter are one person's own work: an
+    // administrator who teaches is given the Teacher role too.
+    tasks: INSTITUTION_TASKS.map((t) => t.code).filter((c) => !PERSONAL_TASKS.includes(c)),
   },
   {
     code: 'TEACHER',
@@ -297,6 +318,32 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     name: 'Teacher',
     description: 'Their own classes on the web: marks, attendance, homework, leave, announcements',
     tasks: ['teaching'],
+  },
+  // Client 2026-10-13: the principal, merchants and vendor merchants on the web.
+  {
+    code: 'PRINCIPAL',
+    scope: 'INSTITUTION',
+    name: 'Principal',
+    description:
+      'The principal on the web: the school at a glance, teacher leave decisions, announcements, and their own leave, notices and messages',
+    tasks: ['principal'],
+  },
+  {
+    code: 'MERCHANT',
+    scope: 'INSTITUTION',
+    name: 'Merchant',
+    description:
+      'A merchant on the web: take payments, QR codes, collections, settlements and the wallet',
+    tasks: ['business'],
+    subTasks: grantsExcept('MERCHANT', ['business'], ['business.assets']),
+  },
+  {
+    code: 'VENDOR_MERCHANT',
+    scope: 'INSTITUTION',
+    name: 'Vendor merchant',
+    description:
+      'A vendor merchant on the web: the merchant pages and the approved assets it is paid against',
+    tasks: ['business'],
   },
   {
     code: 'ACCOUNTANT',

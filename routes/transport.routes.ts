@@ -3,7 +3,12 @@ import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import {
+  authorize,
+  memberOrConsole,
+  requireSurface,
+  requireTenant,
+} from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import type { TransportService } from '../services/transport.service';
@@ -124,6 +129,12 @@ export const allocateSchema = z
 export const allocationEndSchema = z
   .strictObject({ endDate: date, reason: z.string().max(200) })
   .meta({ id: 'PassengerAllocationEnd' });
+export const transportChoiceSchema = z
+  .strictObject({
+    opted: z.boolean({ message: 'VALIDATION.REQUIRED' }),
+    reason: z.string({ message: 'TRN.CHOICE_REASON' }).max(200, { message: 'TRN.CHOICE_REASON' }),
+  })
+  .meta({ id: 'TransportChoiceChange' });
 export const tripCancelSchema = z
   .strictObject({
     remarks: z
@@ -316,6 +327,16 @@ doc({
   responses: { 200: { description: 'Ended' } },
 });
 doc({
+  id: 'TRN-035',
+  method: 'put',
+  path: '/api/v1/console/transport-choices/{memberId}',
+  summary:
+    'Change a student’s school transport choice from the admission form — opted or not — when the family changes its mind (client 2026-10-12); the reason is kept in the audit log',
+  auth: 'transport.edit',
+  request: transportChoiceSchema,
+  responses: { 200: { description: 'The choice as it now stands' } },
+});
+doc({
   id: 'TRN-023',
   method: 'get',
   path: '/api/v1/console/trips',
@@ -424,7 +445,7 @@ doc({
   path: '/api/v1/me/transport',
   summary:
     'The allocation, today’s trips and their progress for the member (for: a child on the account)',
-  auth: 'member',
+  auth: 'member|teaching.view,principal.view',
   query: forQuery,
   responses: { 200: { description: 'Transport' } },
 });
@@ -439,6 +460,9 @@ export function transportRoutes(deps: {
   const L = deps.loggers;
   const once = idempotency({ db: deps.db, mode: 'required' });
   const member = requireSurface(L, 'member');
+  // The app's member, or the web console with one of the sub-tasks (a teacher or the principal on
+  // the web, client 2026-10-12/13).
+  const either = (...subTasks: string[]) => memberOrConsole(subTasks, L);
   const console = [requireSurface(L, 'console'), requireTenant(L)];
   const view = authorize('transport.view', L);
   const edit = authorize('transport.edit', L);
@@ -683,6 +707,21 @@ export function transportRoutes(deps: {
     }),
   );
 
+  router.put(
+    '/console/transport-choices/:memberId',
+    ...console,
+    edit,
+    json(async (req) => {
+      // The member is found in the caller's school before the body is read.
+      await T.memberFor(principal(req), param(req, 'memberId'));
+      return T.setTransportChoice(
+        principal(req),
+        param(req, 'memberId'),
+        transportChoiceSchema.parse(req.body ?? {}),
+      );
+    }),
+  );
+
   // trips and reports
   router.get(
     '/console/trips',
@@ -769,7 +808,7 @@ export function transportRoutes(deps: {
   );
   router.get(
     '/me/transport',
-    member,
+    either('teaching.view', 'principal.view'),
     json((req) => deps.trips.mine(principal(req), forQuery.parse(req.query))),
   );
   return router;

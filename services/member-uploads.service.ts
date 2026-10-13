@@ -14,7 +14,7 @@ import { academicsRepository } from '../repositories/academics.repository';
 import { userTypesRepository } from '../repositories/institution-setup.repository';
 import { membersRepository as repo, KIND_CATEGORIES } from '../repositories/members.repository';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
-import { toCsv, parseCsv } from '../utils/csv';
+import { detectDelimiter, toCsv, parseCsv } from '../utils/csv';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
 import { institutionsRepository } from '../repositories/institutions.repository';
@@ -167,16 +167,51 @@ export class MemberUploadsService {
   }
 
   // --- IDN-049 ------------------------------------------------------------------------------------
+  /**
+   * Where each column is in the file (client 2026-10-13). The template's own columns must come first,
+   * in order, as written (case and spacing aside); the institution's fields may follow in any order,
+   * and one missing (a template from before it was added) is read as empty. A refusal says what is
+   * wrong: the other kind's template, the first column that differs, or a column no one knows.
+   */
+  private columnIndex(kind: UploadKind, first: readonly string[], fields: readonly CfField[]) {
+    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+    const got = first.map(norm);
+    const base = kind === 'STAFF' ? STAFF_COLUMNS : MEMBER_COLUMNS;
+    const other = kind === 'STAFF' ? MEMBER_COLUMNS : STAFF_COLUMNS;
+    const same = (cols: readonly string[]) => cols.every((h, i) => got[i] === norm(h));
+    if (!same(base)) {
+      if (same(other)) {
+        const [used, wanted] = kind === 'STAFF' ? ['members', 'staff'] : ['staff', 'members'];
+        throw new CustomAPIError(422, 'UPL.WRONG_TEMPLATE', { params: { used, wanted } });
+      }
+      const i = base.findIndex((h, n) => got[n] !== norm(h));
+      throw new CustomAPIError(422, 'UPL.HEADER_COLUMN', {
+        params: { n: i + 1, expected: base[i]!, found: first[i]?.trim() || '(empty)' },
+      });
+    }
+    const index = new Map<string, number>(base.map((h, i) => [h, i]));
+    for (let i = base.length; i < got.length; i++) {
+      if (!got[i]) continue;
+      const f = fields.find((x) => norm(x.label) === got[i]);
+      if (!f) {
+        throw new CustomAPIError(422, 'UPL.HEADER_UNKNOWN', {
+          params: { found: first[i]!.trim() },
+        });
+      }
+      index.set(f.label, i);
+    }
+    return index;
+  }
+
   async upload(p: Principal, input: { kind: UploadKind; fileName: string; content: string }) {
     const db = this.deps.db;
     const inst = await this.own(p);
-    const rows = parseCsv(input.content);
+    // An Excel workbook (a zip) instead of the CSV the template is.
+    if (input.content.startsWith('PK\u0003\u0004')) throw new CustomAPIError(422, 'UPL.NOT_CSV');
+    const rows = parseCsv(input.content, detectDelimiter(input.content));
+    if (!rows.length) throw new CustomAPIError(422, 'UPL.HEADER_MISMATCH');
     const fields = await activeFields(db, inst.id, 'MEMBER');
-    const header = this.columns(input.kind, fields);
-    const got = (rows[0] ?? []).map((c) => c.trim().toLowerCase());
-    if (!rows.length || header.some((h, i) => got[i] !== h.toLowerCase())) {
-      throw new CustomAPIError(422, 'UPL.HEADER_MISMATCH');
-    }
+    const index = this.columnIndex(input.kind, rows[0]!, fields);
     const data = rows.slice(1);
     if (!data.length) throw new CustomAPIError(422, 'UPL.NO_ROWS');
     const max = await this.limit(LIMITS.uploadMaxRows);
@@ -196,7 +231,10 @@ export class MemberUploadsService {
     const seenMobile = new Map<string, number>();
     const report: RowReport[] = [];
     for (const [i, cells] of data.entries()) {
-      const cell = (name: string) => (cells[header.indexOf(name)] ?? '').trim();
+      const cell = (name: string) => {
+        const at = index.get(name);
+        return at === undefined ? '' : (cells[at] ?? '').trim();
+      };
       const errors: { column: string; message: string }[] = [];
       const err = (column: string, code: MessageKey, params?: Record<string, string | number>) =>
         errors.push({ column, message: renderMessage(code, params) });

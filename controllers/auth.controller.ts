@@ -66,7 +66,11 @@ export function authController(deps: {
       try {
         sendWeb(res, surface, await deps.sessions.refresh(token, client, surface));
       } catch (e) {
-        clearSessionCookies(res, surface);
+        // A renewal that lost to a parallel one (another tab) leaves the winner's cookies alone:
+        // clearing them here signed every tab out (client 2026-10-13).
+        if (!(e instanceof CustomAPIError && e.code === 'AUTH.REFRESH_SUPERSEDED')) {
+          clearSessionCookies(res, surface);
+        }
         throw e;
       }
     } catch (e) {

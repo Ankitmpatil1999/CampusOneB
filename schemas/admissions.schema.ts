@@ -28,10 +28,47 @@ const name = (max = 50) =>
     .regex(PATTERNS.personName, { message: 'VALIDATION.FORMAT' });
 const optText = (max: number) =>
   z.string().trim().max(max, { message: 'VALIDATION.FORMAT' }).nullish();
+/**
+ * The country codes the admission form offers for a mobile number (client 2026-10-13), India first.
+ * An Indian number is kept as its 10 digits (as before); another as +<code><number>, 6 to 12 digits.
+ */
+export const DIAL_CODES = [
+  '+91',
+  '+971',
+  '+966',
+  '+974',
+  '+968',
+  '+965',
+  '+973',
+  '+65',
+  '+60',
+  '+1',
+  '+44',
+  '+61',
+  '+64',
+  '+977',
+  '+94',
+  '+880',
+] as const;
+const INTERNATIONAL = new RegExp(
+  `^(${DIAL_CODES.filter((c) => c !== '+91')
+    .map((c) => `\\${c}`)
+    .join('|')})\\d{6,12}$`,
+);
+/** An Indian mobile (10 digits) or one with another listed country code. */
+export const isAdmissionMobile = (v: string) => PATTERNS.mobile.test(v) || INTERNATIONAL.test(v);
 const mobile = z
   .string({ message: 'ADM.MOBILE_INVALID' })
   .trim()
-  .regex(PATTERNS.mobile, { message: 'ADM.MOBILE_INVALID' });
+  // "+91 98450 12345" is the Indian number 9845012345.
+  .transform((v) => v.replace(/[\s-]/g, '').replace(/^\+91(?=\d{10}$)/, ''))
+  .superRefine((v, ctx) => {
+    if (isAdmissionMobile(v)) return;
+    ctx.addIssue({
+      code: 'custom',
+      message: v.startsWith('+') ? 'ADM.MOBILE_INTL_INVALID' : 'ADM.MOBILE_INVALID',
+    });
+  });
 const email = z
   .string()
   .trim()
@@ -41,7 +78,12 @@ const email = z
 
 export const addressSchema = z.strictObject({
   line1: z.string({ message: 'VALIDATION.REQUIRED' }).trim().min(1).max(120),
-  line2: optText(120),
+  // The area or locality is required (client 2026-10-13).
+  line2: z
+    .string({ message: 'VALIDATION.REQUIRED' })
+    .trim()
+    .min(1, { message: 'VALIDATION.REQUIRED' })
+    .max(120, { message: 'VALIDATION.FORMAT' }),
   city: z.string({ message: 'VALIDATION.REQUIRED' }).trim().min(1).max(60),
   state: z.string({ message: 'VALIDATION.REQUIRED' }).trim().min(1).max(60),
   pin: z
@@ -67,10 +109,11 @@ export const studentSectionSchema = z.strictObject({
   lastName: name(),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER'], { message: 'VALIDATION.FORMAT' }),
   dob: date,
-  // Omitted: what is stored stays (the numbers are never read back in full). Required to submit.
+  // Optional (client 2026-10-12). Omitted: what is stored stays (the numbers are never read back
+  // in full); null clears it.
   aadhaar: aadhaar
-    .optional()
-    .describe("The student's Aadhaar number; kept encrypted, shown masked"),
+    .nullish()
+    .describe("The student's Aadhaar number, if given; kept encrypted, shown masked"),
   // Optional; null clears it.
   pan: pan().nullish().describe("The student's PAN, if any; kept encrypted, shown masked"),
   category: z
@@ -98,10 +141,22 @@ export const previousSectionSchema = z.strictObject({
     .enum(['CBSE', 'ICSE', 'STATE', 'IB', 'OTHER'], { message: 'VALIDATION.FORMAT' })
     .nullish(),
   otherBoard: optText(60),
+  // Mid-term (client 2026-10-13): the family's own answer on the transfer certificate — they have it
+  // (uploaded with the documents), or it will follow by a date (an undertaking), so the application
+  // can be submitted online. Omitted: what is recorded stays.
+  tc: z
+    .strictObject({
+      mode: z.enum(['TC', 'UNDERTAKING'], { message: 'VALIDATION.FORMAT' }),
+      dueDate: date
+        .nullish()
+        .describe('With UNDERTAKING: the date the certificate will be handed in'),
+    })
+    .optional(),
 });
 export const parentsSectionSchema = z.strictObject({
-  father: person.nullish(),
-  // The mother's name and mobile are required (client 2026-10-12); the father and a guardian are not.
+  // The father's and the mother's name and mobile are required (client 2026-10-12, 2026-10-13); a
+  // guardian is not. The primary contact's e-mail is required too (checked with the section).
+  father: person.extend({ mobile }),
   mother: person.extend({ mobile }),
   guardian: person.extend({ relation: z.string().trim().min(1).max(40) }).nullish(),
   primary: z.enum(['FATHER', 'MOTHER', 'GUARDIAN'], { message: 'VALIDATION.REQUIRED' }),
@@ -129,6 +184,32 @@ export const parentsSectionSchema = z.strictObject({
     })
     .nullish(),
 });
+
+/** The primary contact's Aadhaar and PAN cards, front and back: required to submit (client 2026-10-13). */
+export const PRIMARY_CARDS = [
+  'PRIMARY_AADHAAR_FRONT',
+  'PRIMARY_AADHAAR_BACK',
+  'PRIMARY_PAN_FRONT',
+  'PRIMARY_PAN_BACK',
+] as const;
+/** The student's Aadhaar and PAN cards, front and back: optional, like the numbers. */
+export const STUDENT_CARDS = [
+  'STUDENT_AADHAAR_FRONT',
+  'STUDENT_AADHAAR_BACK',
+  'STUDENT_PAN_FRONT',
+  'STUDENT_PAN_BACK',
+] as const;
+/** Every document an application can carry (migration 0071). */
+export const ADMISSION_DOC_TYPES = [
+  'PHOTO',
+  'BIRTH',
+  'ADDRESS',
+  'REPORT',
+  'TC',
+  'OTHER',
+  ...STUDENT_CARDS,
+  ...PRIMARY_CARDS,
+] as const;
 
 export const SECTIONS = {
   class: classSectionSchema,
