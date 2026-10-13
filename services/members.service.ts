@@ -952,7 +952,7 @@ export class MembersService {
     shown = false,
   ) {
     if (!this.deps.email) return;
-    const link = `${this.deps.webUrl ?? 'http://localhost:4200'}/console/signin`;
+    const link = `${this.deps.webUrl ?? 'https://localhost:4200'}/console/signin`;
     for (const x of list) {
       const text = x.password
         ? shown

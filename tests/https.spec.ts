@@ -26,6 +26,36 @@ const problems = (env: Record<string, string>) => {
 };
 
 describe('HTTPS settings', () => {
+  it('refuses a web address with the scheme twice, or one that is not a plain address', () => {
+    // 2026-10-13: "https://http://192.168.88.16" made every link the API sends broken.
+    expect(problems({ PUBLIC_WEB_URL: 'https://http://192.168.88.16' })).toContain(
+      'PUBLIC_WEB_URL',
+    );
+    expect(problems({ PUBLIC_WEB_URL: 'ftp://school.example.in' })).toContain('PUBLIC_WEB_URL');
+    expect(problems({ PUBLIC_WEB_URL: 'https://school.example.in/?x=1' })).toContain(
+      'PUBLIC_WEB_URL',
+    );
+    expect(problems({ CORS_ORIGINS: 'https://http://192.168.88.16' })).toContain('CORS_ORIGINS');
+    expect(problems({ CORS_ORIGINS: 'https://a.in/console' })).toContain('CORS_ORIGINS');
+    // HTTPS on: the links must be https too.
+    expect(
+      problems({
+        USE_HTTPS: 'true',
+        KEY_PATH: 'k',
+        CERTIFICATE_PATH: 'c',
+        PUBLIC_WEB_URL: 'http://192.168.88.16',
+      }),
+    ).toContain('PUBLIC_WEB_URL: must start with https://');
+    const ok = loadConfig({
+      ...base,
+      PUBLIC_WEB_URL: 'https://192.168.88.16/',
+      CORS_ORIGINS: 'https://192.168.88.16,https://localhost:4200',
+    });
+    expect(ok.publicWebUrl).toBe('https://192.168.88.16');
+    // The web app's development server is HTTPS (npm start).
+    expect(loadConfig(base).publicWebUrl).toBe('https://localhost:4200');
+  });
+
   it('needs the key and certificate files with USE_HTTPS, and HTTPS for a redirect port', () => {
     const m = problems({ USE_HTTPS: 'true' });
     expect(m).toContain('KEY_PATH');

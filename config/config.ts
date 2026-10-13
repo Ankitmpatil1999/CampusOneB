@@ -23,6 +23,22 @@ const bool = (def: boolean) =>
 const port = (def: number) => z.coerce.number().int().min(1).max(65535).default(def);
 const mysqlUrl = z.string().regex(/^mysql:\/\/[^\s]+$/, 'must be a mysql:// connection URL');
 
+/**
+ * A web address people open: http(s), a real host, the scheme written once. "https://http://x"
+ * parses as a URL whose host is "http" and made every link the API sends broken (2026-10-13).
+ */
+const webAddress = (withPath: boolean) => (raw: string) => {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (/^https?$/i.test(u.hostname) || raw.indexOf('://') !== raw.lastIndexOf('://')) return false;
+    if (u.search || u.hash || u.username || u.password) return false;
+    return withPath || u.pathname === '/';
+  } catch {
+    return false;
+  }
+};
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -36,7 +52,9 @@ export const envSchema = z
     TRUST_PROXY: z.string().default('loopback'),
     INTERNAL_ALLOWLIST: csv,
     TRUST_INBOUND_CORRELATION_ID: bool(false),
-    CORS_ORIGINS: csv,
+    CORS_ORIGINS: csv.refine((list) => list.every(webAddress(false)), {
+      message: 'must list origins such as https://school.example.in or https://192.168.1.10:4200',
+    }),
     // Web session cookies are `__Host-` and Secure, which browsers keep only over HTTPS or on
     // localhost. A plain-HTTP test server on the LAN (client 2026-10-06) needs them without: unset,
     // they are Secure everywhere except development. Production always keeps them Secure.
@@ -118,7 +136,10 @@ export const envSchema = z
     ACCOUNTING_MODE: z.enum(['test', 'off']).default('test'),
     FINANCING_PARTNER_NAME: z.string().trim().min(2).max(120).default('Example Finance (example)'),
     // Address of the web application, for links sent by e-mail (staff password reset).
-    PUBLIC_WEB_URL: z.url().default('http://localhost:4200'),
+    // The web app's development server is HTTPS (npm start, client 2026-10-12).
+    PUBLIC_WEB_URL: z.string().trim().default('https://localhost:4200').refine(webAddress(true), {
+      message: 'must be the address people open, e.g. https://school.example.in (the scheme once)',
+    }),
     SOCIAL_PROVIDERS: z.string().default('google,apple'),
     EMAIL_PROVIDER: z.enum(['log', 'smtp']).default('log'),
 
@@ -144,6 +165,9 @@ export const envSchema = z
     const problem = (path: string, message: string) =>
       ctx.addIssue({ code: 'custom', path: [path], message });
     if (env.USE_HTTPS) {
+      if (env.PUBLIC_WEB_URL.startsWith('http://')) {
+        problem('PUBLIC_WEB_URL', 'must start with https:// when USE_HTTPS is on');
+      }
       if (!env.KEY_PATH) problem('KEY_PATH', 'is required with USE_HTTPS (the private key file)');
       if (!env.CERTIFICATE_PATH) {
         problem('CERTIFICATE_PATH', 'is required with USE_HTTPS (the certificate chain file)');

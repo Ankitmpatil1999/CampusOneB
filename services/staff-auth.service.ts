@@ -337,7 +337,7 @@ export class StaffAuthService {
       minutes * 60,
     );
     const area = surface === 'ops' ? 'backoffice' : surface;
-    const link = `${this.deps.webUrl ?? 'http://localhost:4200'}/${area}/reset-password#token=${token}`;
+    const link = `${this.deps.webUrl ?? 'https://localhost:4200'}/${area}/reset-password#token=${token}`;
     const where =
       surface === 'ops'
         ? 'back office'

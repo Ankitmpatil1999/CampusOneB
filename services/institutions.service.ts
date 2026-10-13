@@ -698,7 +698,7 @@ export class InstitutionsService {
     });
 
     if (this.deps.email) {
-      const web = this.deps.webUrl ?? 'http://localhost:4200';
+      const web = this.deps.webUrl ?? 'https://localhost:4200';
       const link = `${web}/console/signin`;
       // Without an account yet: create it on the customer site with this e-mail first.
       const next = admin

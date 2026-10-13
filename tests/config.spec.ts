@@ -36,6 +36,7 @@ describe('loadConfig', () => {
         NODE_ENV: 'production',
         API_DOCS_ENABLED: 'true',
         CORS_ORIGINS: 'http://x',
+        PUBLIC_WEB_URL: 'http://console.example.in',
       });
       throw new Error('expected failure');
     } catch (e) {
