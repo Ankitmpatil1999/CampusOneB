@@ -653,6 +653,76 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
         filename: 'x.csv',
         contentType: 'text/csv',
       });
-    expect(bad.body.code).toBe('UPL.HEADER_MISMATCH');
+    // Says which column is wrong (client 2026-10-13).
+    expect(bad.body).toMatchObject({
+      code: 'UPL.HEADER_COLUMN',
+      detail:
+        'Column 1 of the first row should be “User type”, but the file has “Name”. Download the template and keep its first row as it is.',
+    });
+  });
+
+  it('reads the sheets Excel really saves, and says what is wrong with one it cannot (client 2026-10-13)', async () => {
+    const send = (body: Buffer | string, kind = 'members') =>
+      request(app)
+        .post('/api/v1/console/members/uploads')
+        .set(a.con)
+        .set('Idempotency-Key', randomUUID())
+        .field('kind', kind)
+        .attach('file', Buffer.isBuffer(body) ? body : Buffer.from(body), {
+          filename: 'sheet.csv',
+          contentType: 'text/csv',
+        });
+    const tpl = await request(app)
+      .get('/api/v1/console/members/uploads/templates/members')
+      .set(a.con);
+    const header = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
+    const cols = header.split(',');
+    const row = (v: Record<string, string>, sep = ',', only = cols) =>
+      only.map((c) => v[c] ?? '').join(sep);
+    const isha = {
+      'User type': 'Student',
+      'First name': 'Isha',
+      'Admission number': 'SPS/2026/0201',
+      Grade: 'Grade 6',
+      Section: 'A',
+      'Blood group': 'A+',
+    };
+    // Semicolons (Excel in some regional settings).
+    const semi = await send([cols.join(';'), row(isha, ';')].join('\r\n'));
+    expect(semi.status, JSON.stringify(semi.body)).toBe(201);
+    expect(semi.body).toMatchObject({ total: 1, accepted: 1 });
+    // A template from before the institution's own field was added: read as empty.
+    const base = cols.filter((c) => c !== 'Blood group');
+    const older = await send([base.join(','), row(isha, ',', base)].join('\r\n'));
+    expect(older.status, JSON.stringify(older.body)).toBe(201);
+    expect(older.body.total).toBe(1);
+    // Excel's "Unicode text": UTF-16 with tabs.
+    const utf16 = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from([cols.join('\t'), row(isha, '\t')].join('\r\n'), 'utf16le'),
+    ]);
+    const tabbed = await send(utf16);
+    expect(tabbed.status, JSON.stringify(tabbed.body)).toBe(201);
+    expect(tabbed.body.total).toBe(1);
+
+    // The staff template on the members upload.
+    const staffTpl = await request(app)
+      .get('/api/v1/console/members/uploads/templates/staff')
+      .set(a.con);
+    const staffHeader = staffTpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
+    expect((await send(`${staffHeader}\r\nTeacher`)).body).toMatchObject({
+      code: 'UPL.WRONG_TEMPLATE',
+      detail:
+        'This file is the staff template. Upload it with the staff upload, or download the members template.',
+    });
+    // A column no one knows.
+    expect((await send(`${header},Hobby\r\n${row(isha)},Chess`)).body).toMatchObject({
+      code: 'UPL.HEADER_UNKNOWN',
+      params: { found: 'Hobby' },
+    });
+    // An Excel workbook instead of the CSV.
+    expect((await send(Buffer.from('PK\u0003\u0004xl/workbook.xml'))).body.code).toBe(
+      'UPL.NOT_CSV',
+    );
   });
 });

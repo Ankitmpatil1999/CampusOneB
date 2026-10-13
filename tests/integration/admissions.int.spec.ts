@@ -1005,6 +1005,74 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     ).toBe(400);
   });
 
+  it('lets a family submit a mid-term application online with an undertaking for the transfer certificate (client 2026-10-13)', async () => {
+    const plus = (d: string, n: number) => {
+      const x = new Date(`${d}T00:00:00Z`);
+      x.setUTCDate(x.getUTCDate() + n);
+      return x.toISOString().slice(0, 10);
+    };
+    const c = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: {
+          yearId: currentYear.id,
+          classId: grade6.id,
+          joiningDate: today,
+          midTermReason: 'Moved to Shivamogga',
+        },
+        student: {
+          firstName: 'Anvi',
+          lastName: 'Kulkarni',
+          gender: 'FEMALE',
+          dob: `${Number(currentYear.label.slice(0, 4)) - 12}-08-01`,
+        },
+      },
+      {},
+    );
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect(c.body.application.midTerm).toBe(true);
+    const id = c.body.application.id as string;
+    const token = c.body.resumeToken as string;
+    await completeDraft(id, token, '9876501901');
+    const base = `/api/v1/public/admissions/applications/${id}`;
+    const submit = () =>
+      pub('post', `${base}/submission`, token, {
+        declarationAccepted: true,
+        registrationConsent: true,
+      });
+    // Before: nothing on the certificate, and the family had no way to give an undertaking.
+    expect((await submit()).body.code).toBe('ADM.TC_OR_UNDERTAKING_REQUIRED');
+    const previous = (tc: object) =>
+      pub('patch', base, token, {
+        section: 'previous',
+        data: { school: 'Vidya Mandir', lastClass: 'Grade 6', board: 'STATE', tc },
+      });
+    // At most 60 days after joining.
+    const late = await previous({ mode: 'UNDERTAKING', dueDate: plus(today, 61) });
+    expect(late.status).toBe(422);
+    expect(late.body.errors).toContainEqual(
+      expect.objectContaining({ field: 'previous.tc.dueDate', code: 'ADM.TC_DUE_DATE' }),
+    );
+    expect((await previous({ mode: 'UNDERTAKING' })).status).toBe(422);
+    const due = plus(today, 30);
+    const saved = await previous({ mode: 'UNDERTAKING', dueDate: due });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.tc).toMatchObject({ mode: 'UNDERTAKING', dueDate: due });
+    // The certificate isn't asked for any more; a reference still is.
+    expect((await submit()).body.code).toBe('ADM.REFERENCES_REQUIRED');
+    const ref = await pub('post', `${base}/references`, token, {
+      name: 'Sunita Rao',
+      relation: 'Class teacher',
+      mobile: '9845009977',
+    });
+    expect(ref.status, JSON.stringify(ref.body)).toBe(201);
+    const sub = await submit();
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+    // The school sees the undertaking and its date.
+    const seen = await request(f.app).get(`/api/v1/console/applications/${id}`).set(con);
+    expect(seen.body.tc).toMatchObject({ mode: 'UNDERTAKING', dueDate: due });
+  });
+
   it('takes a counsellor’s mid-term application through cash, approval and the admission fee (ADM-015…024)', async () => {
     // Created and submitted at once: only with the family's consent (client 2026-10-12).
     const unconsented = await post('/api/v1/console/applications', {

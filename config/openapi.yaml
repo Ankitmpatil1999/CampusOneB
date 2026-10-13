@@ -20635,6 +20635,23 @@ components:
                 - type: string
                   maxLength: 60
                 - type: "null"
+            tc:
+              type: object
+              properties:
+                mode:
+                  type: string
+                  enum:
+                    - TC
+                    - UNDERTAKING
+                dueDate:
+                  description: "With UNDERTAKING: the date the certificate will be handed in"
+                  anyOf:
+                    - type: string
+                      pattern: ^\d{4}-\d{2}-\d{2}$
+                    - type: "null"
+              required:
+                - mode
+              additionalProperties: false
           additionalProperties: false
         parents:
           type: object
@@ -25526,6 +25543,23 @@ components:
                 - type: string
                   maxLength: 60
                 - type: "null"
+            tc:
+              type: object
+              properties:
+                mode:
+                  type: string
+                  enum:
+                    - TC
+                    - UNDERTAKING
+                dueDate:
+                  description: "With UNDERTAKING: the date the certificate will be handed in"
+                  anyOf:
+                    - type: string
+                      pattern: ^\d{4}-\d{2}-\d{2}$
+                    - type: "null"
+              required:
+                - mode
+              additionalProperties: false
           additionalProperties: false
         parents:
           type: object

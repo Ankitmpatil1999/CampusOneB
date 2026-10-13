@@ -191,6 +191,34 @@ export const MEMBER_MESSAGES = [
     "The columns don't match the template. Download the template and fill it in.",
     ['6.18', 'OI-IDN-21'],
   ),
+  // What exactly is wrong with the first row (client 2026-10-13), instead of only "doesn't match".
+  n(
+    'UPL.HEADER_COLUMN',
+    422,
+    'Column {n} of the first row should be “{expected}”, but the file has “{found}”. Download the template and keep its first row as it is.',
+    ['6.18', 'OI-IDN-21', 'client 2026-10-13'],
+    ['n', 'expected', 'found'],
+  ),
+  n(
+    'UPL.HEADER_UNKNOWN',
+    422,
+    'The file has a column the template doesn’t: “{found}”. Remove it, or download the template again — your institution’s own fields may have changed.',
+    ['6.18', 'OI-IDN-21', 'client 2026-10-13'],
+    ['found'],
+  ),
+  n(
+    'UPL.WRONG_TEMPLATE',
+    422,
+    'This file is the {used} template. Upload it with the {used} upload, or download the {wanted} template.',
+    ['6.18', 'OI-IDN-21', 'client 2026-10-13'],
+    ['used', 'wanted'],
+  ),
+  n(
+    'UPL.NOT_CSV',
+    422,
+    'This is an Excel workbook, not a CSV file. In Excel choose File › Save As › CSV (Comma delimited), then upload that file.',
+    ['6.18', 'OI-IDN-21', 'client 2026-10-13'],
+  ),
   k('UPL.NO_ROWS', 'MSG-IDN-321', 'No records received', 422, ['6.18']),
   k('UPL.NOTHING_ACCEPTED', 'MSG-IDN-329', 'No successful records.', 422, ['6.18']),
   n(

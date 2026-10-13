@@ -124,7 +124,12 @@ interface State {
   studentPan?: string | null;
   primaryAadhaar?: string | null;
   primaryPan?: string | null;
+  /** Mid-term: the family's answer on the transfer certificate to write; undefined keeps it. */
+  tc?: { mode: 'TC' | 'UNDERTAKING'; due: string | null };
 }
+
+/** An undertaking's certificate is due at the latest this many days after joining (OI-ADM-27). */
+const TC_DUE_DAYS = 60;
 
 const ADMISSION_HEADER = 'X-Admission-Token';
 /** Stands in for the mobile in a resume token when nothing matched (never a valid mobile). */
@@ -519,9 +524,12 @@ export class AdmissionsService {
       case 'addresses':
         s.data.addresses = SECTIONS.addresses.parse(raw);
         return;
-      case 'previous':
-        s.data.previous = SECTIONS.previous.parse(raw);
+      case 'previous': {
+        const { tc, ...previous } = SECTIONS.previous.parse(raw);
+        s.data.previous = previous;
+        if (tc && s.midTerm) s.tc = this.tcAnswer(s, tc);
         return;
+      }
       case 'parents': {
         const v = SECTIONS.parents.parse(raw);
         const primary =
@@ -631,6 +639,37 @@ export class AdmissionsService {
         ? {}
         : { primary_pan_enc: enc('adm_pan', 'primary', pp), primary_pan_last4: last4(pp) }),
     };
+  }
+
+  /**
+   * Mid-term (client 2026-10-13): the family says they have the transfer certificate, or give an
+   * undertaking to hand it in by a date — from today, at most TC_DUE_DAYS after joining.
+   */
+  private tcAnswer(
+    s: State,
+    tc: { mode: 'TC' | 'UNDERTAKING'; dueDate?: string | null | undefined },
+  ) {
+    if (tc.mode === 'TC') return { mode: 'TC' as const, due: null };
+    const today = istBusinessDate(this.now());
+    const from = s.joiningDate && s.joiningDate > today ? s.joiningDate : today;
+    const latest = new Date(`${from}T00:00:00Z`);
+    latest.setUTCDate(latest.getUTCDate() + TC_DUE_DAYS);
+    const last = latest.toISOString().slice(0, 10);
+    if (!tc.dueDate || tc.dueDate < today || tc.dueDate > last) {
+      throw new ValidationError([
+        {
+          field: 'previous.tc.dueDate',
+          code: 'ADM.TC_DUE_DATE',
+          params: { latest: formatDate(last) },
+        },
+      ]);
+    }
+    return { mode: 'UNDERTAKING' as const, due: tc.dueDate };
+  }
+
+  /** The family's transfer-certificate answer; a number or date the office recorded stays. */
+  private tcColumns(s: State) {
+    return s.tc === undefined ? {} : { tc_mode: s.tc.mode, tc_due: s.tc.due };
   }
 
   private aadhaarIndex(institutionId: string, value: string) {
@@ -771,6 +810,7 @@ export class AdmissionsService {
           source,
           ...this.columns(s),
           ...this.identityColumns(institutionId, pub.id, s),
+          ...this.tcColumns(s),
           created_by: by,
           created_at: at,
           updated_at: at,
@@ -814,6 +854,7 @@ export class AdmissionsService {
       .set({
         ...this.columns(s),
         ...this.identityColumns(institutionId, binToUuid(r.public_id), s),
+        ...this.tcColumns(s),
         updated_at: this.now(),
         row_version: sql<number>`row_version + 1`,
       })

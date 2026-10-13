@@ -99,6 +99,17 @@ export const previousSectionSchema = z.strictObject({
     .enum(['CBSE', 'ICSE', 'STATE', 'IB', 'OTHER'], { message: 'VALIDATION.FORMAT' })
     .nullish(),
   otherBoard: optText(60),
+  // Mid-term (client 2026-10-13): the family's own answer on the transfer certificate — they have it
+  // (uploaded with the documents), or it will follow by a date (an undertaking), so the application
+  // can be submitted online. Omitted: what is recorded stays.
+  tc: z
+    .strictObject({
+      mode: z.enum(['TC', 'UNDERTAKING'], { message: 'VALIDATION.FORMAT' }),
+      dueDate: date
+        .nullish()
+        .describe('With UNDERTAKING: the date the certificate will be handed in'),
+    })
+    .optional(),
 });
 export const parentsSectionSchema = z.strictObject({
   father: person.nullish(),

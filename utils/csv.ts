@@ -4,7 +4,22 @@
  * apostrophe so a spreadsheet never runs them (CSV injection).
  */
 
-export function parseCsv(text: string): string[][] {
+/**
+ * The separator of a sheet, from its first line: a comma, or the semicolon or tab Excel writes in
+ * some regional settings and as "Unicode text" (client 2026-10-13). A comma when unsure.
+ */
+export function detectDelimiter(text: string): ',' | ';' | '\t' {
+  const s = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const first = s.split(/\r?\n/, 1)[0] ?? '';
+  const outside = first.replace(/"[^"]*"/g, '');
+  const count = (c: string) => outside.split(c).length - 1;
+  const commas = count(',');
+  if (count('\t') > commas && count('\t') >= count(';')) return '\t';
+  if (count(';') > commas) return ';';
+  return ',';
+}
+
+export function parseCsv(text: string, delimiter: ',' | ';' | '\t' = ','): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';
@@ -22,7 +37,7 @@ export function parseCsv(text: string): string[][] {
       continue;
     }
     if (ch === '"') quoted = true;
-    else if (ch === ',') {
+    else if (ch === delimiter) {
       row.push(cell);
       cell = '';
     } else if (ch === '\n' || ch === '\r') {

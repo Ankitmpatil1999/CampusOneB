@@ -172,6 +172,26 @@ describe.skipIf(!adminUrl)('staff sign-in on real MySQL', () => {
       .set('Cookie', [at, ...cookies.filter((c) => !c.startsWith('__Host-rp_console_at='))]);
     expect(again.status).toBe(200);
     expect(again.body.institution.id).toBe(s.institution.publicId);
+
+    // A second tab renewing with the same (now rotated) cookie at the same moment: refused as
+    // superseded, and the cookies the first renewal set are left alone (client 2026-10-13).
+    const late = await request(app)
+      .post('/api/v1/auth/token/refresh')
+      .set('Cookie', cookies)
+      .set('X-RingPe-Surface', 'console')
+      .set('X-CSRF-Token', csrf)
+      .send({});
+    expect(late.status).toBe(401);
+    expect(late.body.code).toBe('AUTH.REFRESH_SUPERSEDED');
+    expect(late.headers['set-cookie']).toBeUndefined();
+    const rt = fresh.find((c) => c.startsWith('__Host-rp_console_rt='))!;
+    const next = await request(app)
+      .post('/api/v1/auth/token/refresh')
+      .set('Cookie', [at, rt, cookies.find((c) => c.startsWith('__Host-rp_console_csrf='))!])
+      .set('X-RingPe-Surface', 'console')
+      .set('X-CSRF-Token', csrf)
+      .send({});
+    expect(next.status).toBe(200);
   });
 
   it('refuses every reason with the one 6.4 message and issues no code', async () => {

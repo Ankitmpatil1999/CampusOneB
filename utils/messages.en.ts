@@ -158,6 +158,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.SECTION_NOT_IN_CLASS': 'Choose a section of {class}, the class applied for.',
   'ADM.STATUS_NOT_FOUND':
     'No application matches these details. Check the application number on your confirmation SMS or e-mail.',
+  'ADM.TC_DUE_DATE':
+    'Choose the date you’ll hand in the transfer certificate: from today, and no later than {latest}.',
   'ADM.TC_NOT_MID_TERM': 'A transfer certificate is recorded only for a mid-term admission.',
   'ADM.TC_OR_UNDERTAKING_REQUIRED':
     'Attach the transfer certificate, or give an undertaking with the date you’ll produce it.',
@@ -218,6 +220,9 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'AUTH.OTP_INVALID': 'Invalid OTP !!!',
   'AUTH.OTP_RESEND_LIMIT': 'OTP Re-Send can be done only once !!!',
   'AUTH.OTP_RESEND_TOO_SOON': 'Resend code in {time}',
+  'AUTH.REFRESH_SUPERSEDED': 'Your session was just renewed in another tab. Try again.',
+  'AUTH.SIGNED_IN_ELSEWHERE':
+    'You were signed out because this account signed in on another device or browser. Sign in again to continue here.',
   'AUTH.UNAUTHENTICATED': 'No active sessions. Please log in again.',
   'CF.ACK_REQUIRED': "Confirm that this field won't capture identity-document numbers",
   'CF.FILTER_TYPE': 'Only Dropdown, Multi-select and Yes/No fields can be offered as a filter.',
@@ -880,13 +885,21 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'UPL.FILE_REQUIRED': 'Choose the filled-in template (CSV) to upload.',
   'UPL.HAS_REJECTED':
     '{n} rows were rejected. Fix them and upload again, or onboard the accepted rows only.',
+  'UPL.HEADER_COLUMN':
+    'Column {n} of the first row should be “{expected}”, but the file has “{found}”. Download the template and keep its first row as it is.',
   'UPL.HEADER_MISMATCH':
     "The columns don't match the template. Download the template and fill it in.",
+  'UPL.HEADER_UNKNOWN':
+    'The file has a column the template doesn’t: “{found}”. Remove it, or download the template again — your institution’s own fields may have changed.',
   'UPL.NOTHING_ACCEPTED': 'No successful records.',
+  'UPL.NOT_CSV':
+    'This is an Excel workbook, not a CSV file. In Excel choose File › Save As › CSV (Comma delimited), then upload that file.',
   'UPL.NO_ROWS': 'No records received',
   'UPL.ROW_CHANGED':
     'Row {row} can no longer be onboarded: {reason} Nothing was onboarded; upload the sheet again.',
   'UPL.TOO_MANY_ROWS': 'Upload at most {max} rows at a time.',
+  'UPL.WRONG_TEMPLATE':
+    'This file is the {used} template. Upload it with the {used} upload, or download the {wanted} template.',
   'VALIDATION.AMOUNT': 'Enter an amount greater than ₹0 with up to 2 decimals.',
   'VALIDATION.CONFIRM_MISMATCH': "The two entries don't match.",
   'VALIDATION.DATE': 'Enter a valid date.',

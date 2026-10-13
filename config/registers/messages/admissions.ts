@@ -190,6 +190,13 @@ export const ADMISSION_MESSAGES = [
     ['19.12.1', 'CR-14', 'OI-ADM-27'],
   ),
   n(
+    'ADM.TC_DUE_DATE',
+    422,
+    'Choose the date you’ll hand in the transfer certificate: from today, and no later than {latest}.',
+    ['19.12.1', 'OI-ADM-27', 'client 2026-10-13'],
+    ['latest'],
+  ),
+  n(
     'ADM.TC_NOT_MID_TERM',
     409,
     'A transfer certificate is recorded only for a mid-term admission.',

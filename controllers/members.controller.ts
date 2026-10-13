@@ -136,7 +136,11 @@ export function membersController(
       const out = await uploads.upload(principal(req), {
         kind: kind.data,
         fileName: req.file.originalname || 'upload.csv',
-        content: req.file.buffer.toString('utf8'),
+        // Excel's "Unicode text" is UTF-16 with a byte-order mark; every other save is UTF-8.
+        content:
+          req.file.buffer[0] === 0xff && req.file.buffer[1] === 0xfe
+            ? req.file.buffer.toString('utf16le')
+            : req.file.buffer.toString('utf8'),
       });
       res.status(201).json(out);
     }),
