@@ -8,6 +8,7 @@ import { authorize, requireSurface, requireTenant } from '../middlewares/auth.mi
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import {
+  ADMISSION_DOC_TYPES,
   applicationInputSchema,
   approvalSchema,
   cashSchema,
@@ -32,9 +33,8 @@ import { expectedVersion, setEtag } from '../utils/etag';
 
 const money = z.object({ amount: z.string(), currency: z.literal('INR') });
 const appStatus = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED']);
-const docType = z.enum(['PHOTO', 'BIRTH', 'ADDRESS', 'REPORT', 'TC', 'OTHER'], {
-  message: 'VALIDATION.FORMAT',
-});
+// With the Aadhaar and PAN cards, front and back (client 2026-10-13).
+const docType = z.enum(ADMISSION_DOC_TYPES, { message: 'VALIDATION.FORMAT' });
 const application = z
   .looseObject({
     id: z.uuid(),
@@ -186,6 +186,14 @@ doc({
   responses: { 200: { description: 'Application', schema: application } },
 });
 doc({
+  id: 'ADM-032',
+  method: 'get',
+  path: '/api/v1/public/admissions/applications/{applicationId}/form.pdf',
+  summary: `The submitted application form as a PDF for the family (${tokenHeader}; not a payment link): every section as submitted, identity numbers masked (client 2026-10-13)`,
+  auth: 'public (admission token)',
+  responses: { 200: { description: 'PDF', contentType: 'application/pdf' } },
+});
+doc({
   id: 'ADM-005',
   method: 'patch',
   path: '/api/v1/public/admissions/applications/{applicationId}',
@@ -205,6 +213,24 @@ doc({
   requestContentType: 'multipart/form-data',
   idempotent: 'required',
   responses: { 201: { description: 'Application', schema: application } },
+});
+doc({
+  id: 'ADM-033',
+  method: 'delete',
+  path: '/api/v1/public/admissions/applications/{applicationId}/documents/{docType}',
+  summary:
+    'Remove an attachment from the draft (client 2026-10-13); a required one must be attached again before submitting',
+  auth: 'public (admission token)',
+  responses: { 200: { description: 'Application', schema: application } },
+});
+doc({
+  id: 'ADM-034',
+  method: 'get',
+  path: '/api/v1/public/admissions/applications/{applicationId}/documents/{docType}',
+  summary:
+    'An attachment of the family’s application: a short-lived link to open it, with its name and type (client 2026-10-13)',
+  auth: 'public (admission token)',
+  responses: { 200: { description: 'The link' } },
 });
 doc({
   id: 'ADM-007',
@@ -665,6 +691,16 @@ export function admissionsRoutes(deps: {
       res.json(out);
     }),
   );
+  router.get(
+    '/public/admissions/applications/:applicationId/form.pdf',
+    wrap(async (req, res) => {
+      const out = await A.publicFormPdf(param(req, 'applicationId'), token(req));
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
+      res.send(out.pdf);
+    }),
+  );
   router.patch(
     '/public/admissions/applications/:applicationId',
     wrap(async (req, res) => {
@@ -683,6 +719,23 @@ export function admissionsRoutes(deps: {
       res
         .status(201)
         .json(await A.publicDocument(param(req, 'applicationId'), token(req), fileOf(req)));
+    }),
+  );
+  router.delete(
+    '/public/admissions/applications/:applicationId/documents/:docType',
+    wrap(async (req, res) => {
+      const t = docType.safeParse(param(req, 'docType'));
+      if (!t.success) throw new ValidationError([{ field: 'docType', code: 'VALIDATION.FORMAT' }]);
+      res.json(await A.publicRemoveDocument(param(req, 'applicationId'), token(req), t.data));
+    }),
+  );
+  router.get(
+    '/public/admissions/applications/:applicationId/documents/:docType',
+    wrap(async (req, res) => {
+      const t = docType.safeParse(param(req, 'docType'));
+      if (!t.success) throw new ValidationError([{ field: 'docType', code: 'VALIDATION.FORMAT' }]);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await A.publicDocumentLink(param(req, 'applicationId'), token(req), t.data));
     }),
   );
   router.post(

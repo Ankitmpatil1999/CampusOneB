@@ -132,6 +132,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.FEE_CONFIG_MISSING': 'Fee configuration not found for this academic year',
   'ADM.FEE_NOT_PAID': 'This fee is not paid yet, so there is no receipt to confirm.',
   'ADM.FEE_REQUIRED': 'Application fee is mandatory',
+  'ADM.FORM_NOT_SUBMITTED': 'The application form can be downloaded once it is submitted.',
   'ADM.GATEWAY_NOT_CONFIGURED':
     'Online payment isn’t available yet. Please pay at the school’s accounts desk.',
   'ADM.ID_INVALID': 'Enter a valid 12-digit Aadhaar number.',
@@ -140,6 +141,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'This admission link has expired. Ask the school for its current link or QR code.',
   'ADM.LINK_INVALID':
     'This admission link isn’t valid any more. Ask the school for its current link or QR code.',
+  'ADM.MOBILE_INTL_INVALID': 'Enter the mobile number without the country code: 6 to 12 digits.',
   'ADM.MOBILE_INVALID': 'Mobile number must contain 10 digits and start with 6, 7, 8 or 9',
   'ADM.NOT_DRAFT': 'This application has been submitted, so it can’t be changed here.',
   'ADM.NOT_EDITABLE': 'An approved or rejected application can’t be changed.',
@@ -163,6 +165,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.TC_NOT_MID_TERM': 'A transfer certificate is recorded only for a mid-term admission.',
   'ADM.TC_OR_UNDERTAKING_REQUIRED':
     'Attach the transfer certificate, or give an undertaking with the date you’ll produce it.',
+  'ADM.TRANSPORT_OR_HOSTEL': 'Choose school transport or the hostel, not both.',
   'ADM.TRANSPORT_STOP_INVALID':
     'Choose a pick-up point from the list, or leave it for the school to decide.',
   'ADM.YEAR_NOT_OPEN': 'The selected academic year isn’t open for admissions.',

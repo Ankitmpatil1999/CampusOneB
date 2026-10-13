@@ -18,7 +18,22 @@ export type AdmissionPaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
 /** An application's fees together (migration 0067). */
 export type AdmissionPaymentState = 'PENDING' | 'PAID' | 'CONFIRMED';
 export type AdmissionFeeType = 'APPLICATION' | 'ADMISSION';
-export type AdmissionDocType = 'PHOTO' | 'BIRTH' | 'ADDRESS' | 'REPORT' | 'TC' | 'OTHER';
+/** With the Aadhaar and PAN cards, front and back, of the student and the primary contact (0071). */
+export type AdmissionDocType =
+  | 'PHOTO'
+  | 'BIRTH'
+  | 'ADDRESS'
+  | 'REPORT'
+  | 'TC'
+  | 'OTHER'
+  | 'STUDENT_AADHAAR_FRONT'
+  | 'STUDENT_AADHAAR_BACK'
+  | 'STUDENT_PAN_FRONT'
+  | 'STUDENT_PAN_BACK'
+  | 'PRIMARY_AADHAAR_FRONT'
+  | 'PRIMARY_AADHAAR_BACK'
+  | 'PRIMARY_PAN_FRONT'
+  | 'PRIMARY_PAN_BACK';
 
 export interface AdmissionLinksTable {
   id: Generated<string>;
