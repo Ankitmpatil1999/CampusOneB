@@ -29,6 +29,7 @@ import { securityHeaders } from './middlewares/security-headers.middleware';
 import { corsPolicy } from './middlewares/cors.middleware';
 import { jsonBody, requireJsonBody } from './middlewares/body.middleware';
 import { AXIS_BANK_PREFIXES } from './routes/axis-bank.routes';
+import { webAppRoutes } from './middlewares/web-app.middleware';
 import { createRateLimiter } from './middlewares/rate-limit.middleware';
 import { authenticate } from './middlewares/auth.middleware';
 import { csrfProtection } from './middlewares/csrf.middleware';
@@ -82,6 +83,12 @@ export function createApp(deps: AppDependencies): Express {
 
   app.use(correlationId({ trustInbound: config.http.trustInboundCorrelationId }));
   app.use(requestLogger(loggers, metrics, deps.requestLog));
+  // The built web application on the same address (WEB_ROOT), with its own page headers.
+  if (config.http.webRoot) {
+    app.use(
+      webAppRoutes({ root: config.http.webRoot, production: config.nodeEnv === 'production' }),
+    );
+  }
   app.use(securityHeaders({ production: config.nodeEnv === 'production' }));
   app.use(corsPolicy(config.http.corsOrigins));
   const body = {

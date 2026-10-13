@@ -286,6 +286,7 @@ export const AXIS_BANK_RESPONSES = {
   INVALID_VAN: { flag: 'F', code: '002', message: 'Invalid Van' },
   INCORRECT_VAN: { flag: 'F', code: '002', message: 'Incorrect Van' },
   INVALID_DATE: { flag: 'F', code: '006', message: 'Invalid date format' },
+  INVALID_SENDER_ACCOUNT: { flag: 'F', code: '003', message: 'Invalid sender account number' },
   SERVER_ERROR: { flag: 'F', code: '999', message: 'Internal server error' },
   // notification
   MISSING_FIELDS: {

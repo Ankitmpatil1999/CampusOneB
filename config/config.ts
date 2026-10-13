@@ -46,6 +46,19 @@ export const envSchema = z
       .transform((v) => (v === undefined ? undefined : v === 'true')),
     API_DOCS_ENABLED: bool(false),
 
+    // HTTPS served by the API itself (reference server.js: USE_HTTPS, KEY_PATH, CERTIFICATE_PATH,
+    // CERT_PASSPHRASE; TLS 1.2 or newer). Leave it off when a load balancer or reverse proxy ends
+    // TLS in front of the API. CERTIFICATE_PATH is the full chain (certificate + intermediates).
+    USE_HTTPS: bool(false),
+    KEY_PATH: z.string().trim().optional(),
+    CERTIFICATE_PATH: z.string().trim().optional(),
+    CERT_PASSPHRASE: z.string().optional(),
+    // With USE_HTTPS: a plain-HTTP port that only redirects to the HTTPS address (e.g. 80).
+    HTTP_REDIRECT_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+    // The built web application (RingPe_Web_App: npm run build → dist/browser). Set, the API
+    // serves it on the same address, so the console, terminals and API share one HTTPS origin.
+    WEB_ROOT: z.string().trim().optional(),
+
     LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug']).default('info'),
     LOG_DIR: z.string().optional(),
     LOG_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(365),
@@ -128,9 +141,20 @@ export const envSchema = z
     SHUTDOWN_GRACE_SECONDS: z.coerce.number().int().min(1).max(120).default(20),
   })
   .superRefine((env, ctx) => {
-    if (env.NODE_ENV !== 'production') return;
     const problem = (path: string, message: string) =>
       ctx.addIssue({ code: 'custom', path: [path], message });
+    if (env.USE_HTTPS) {
+      if (!env.KEY_PATH) problem('KEY_PATH', 'is required with USE_HTTPS (the private key file)');
+      if (!env.CERTIFICATE_PATH) {
+        problem('CERTIFICATE_PATH', 'is required with USE_HTTPS (the certificate chain file)');
+      }
+      if (env.HTTP_REDIRECT_PORT === env.HTTP_PORT) {
+        problem('HTTP_REDIRECT_PORT', 'must differ from HTTP_PORT');
+      }
+    } else if (env.HTTP_REDIRECT_PORT) {
+      problem('HTTP_REDIRECT_PORT', 'needs USE_HTTPS=true');
+    }
+    if (env.NODE_ENV !== 'production') return;
     if (env.API_DOCS_ENABLED) problem('API_DOCS_ENABLED', 'must be false in production');
     if (!env.REDIS_URL) problem('REDIS_URL', 'is required in production (several instances)');
     if (env.CORS_ORIGINS.length === 0) problem('CORS_ORIGINS', 'is required in production');
@@ -213,6 +237,15 @@ export interface Config {
     readonly secureCookies: boolean;
     readonly apiDocsEnabled: boolean;
     readonly jsonBodyLimitBytes: number;
+    /** The built web application served on the same address, when set. */
+    readonly webRoot?: string;
+  };
+  /** HTTPS served by the API (USE_HTTPS); absent when TLS ends in front of it. */
+  readonly tls?: {
+    readonly keyPath: string;
+    readonly certPath: string;
+    readonly passphrase?: string;
+    readonly redirectPort?: number;
   };
   readonly log: {
     readonly level: Env['LOG_LEVEL'];
@@ -308,7 +341,18 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
       secureCookies: e.COOKIE_SECURE ?? e.NODE_ENV !== 'development',
       apiDocsEnabled: e.API_DOCS_ENABLED,
       jsonBodyLimitBytes: e.JSON_BODY_LIMIT_BYTES,
+      ...(e.WEB_ROOT ? { webRoot: e.WEB_ROOT } : {}),
     },
+    ...(e.USE_HTTPS && e.KEY_PATH && e.CERTIFICATE_PATH
+      ? {
+          tls: {
+            keyPath: e.KEY_PATH,
+            certPath: e.CERTIFICATE_PATH,
+            ...(e.CERT_PASSPHRASE ? { passphrase: e.CERT_PASSPHRASE } : {}),
+            ...(e.HTTP_REDIRECT_PORT ? { redirectPort: e.HTTP_REDIRECT_PORT } : {}),
+          },
+        }
+      : {}),
     log: {
       level: e.LOG_LEVEL,
       ...(e.LOG_DIR ? { dir: e.LOG_DIR } : {}),

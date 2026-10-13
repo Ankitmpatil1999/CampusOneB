@@ -374,30 +374,19 @@ export class PartnersService {
     };
   }
 
-  /**
-   * Ends every live token of the client (deny-list by token id until it would have expired); with
-   * `sameScopes`, only the live tokens holding exactly those scopes.
-   */
-  private async endLiveTokens(
-    id: string,
-    reason: string,
-    exceptTokenId?: string,
-    sameScopes?: readonly string[],
-  ) {
+  /** Ends every live token of the client (deny-list by token id until it would have expired). */
+  private async endLiveTokens(id: string, reason: string, exceptTokenId?: string) {
     const r = await this.row(id);
     const now = this.now();
     let q = this.deps.db
       .selectFrom('api_client_tokens')
-      .select(['id', 'public_id', 'expires_at', 'scopes'])
+      .select(['id', 'public_id', 'expires_at'])
       .where('api_client_id', '=', r.id)
       .where('outcome', '=', 'ISSUED')
       .where('revoked_at', 'is', null)
       .where('expires_at', '>', now);
     if (exceptTokenId) q = q.where('id', '<>', exceptTokenId);
-    const key = (list: readonly string[]) => [...list].sort().join(' ');
-    const live = (await q.execute()).filter(
-      (t) => !sameScopes || key(parseList(t.scopes)) === key(sameScopes),
-    );
+    const live = await q.execute();
     for (const t of live) {
       await this.deps.revocations?.revoke(
         binToUuid(t.public_id),
@@ -407,7 +396,7 @@ export class PartnersService {
     if (live.length) {
       await this.deps.db
         .updateTable('api_client_tokens')
-        .set({ revoked_at: now, revoke_reason: reason })
+        .set({ revoked_at: now, revoke_reason: reason, token_enc: null })
         .where(
           'id',
           'in',
@@ -488,12 +477,15 @@ export class PartnersService {
     },
     ip: string | undefined,
     /**
-     * Which earlier live tokens the new one ends: all of the client's (27.2, the default), or only
-     * those with the same scopes — the Axis Bank asks for one token per scope (client 2026-10-12).
+     * The Axis Bank's way (client 2026-10-12):
+     * - `widenTo`: the token holds every one of these scopes the client holds, whichever of them
+     *   was asked for, so one token serves both calls;
+     * - `reuseMinSeconds`: while the client's last token has at least this long left, the same
+     *   token is returned again (kept encrypted for that), not a new one.
      */
-    ends: 'all' | 'sameScopes' = 'all',
+    opts: { widenTo?: readonly string[]; reuseMinSeconds?: number } = {},
   ): Promise<
-    | { ok: true; accessToken: string; expiresIn: number; scope: string }
+    | { ok: true; accessToken: string; expiresIn: number; expiresAt: Date; scope: string }
     | {
         ok: false;
         error: 'invalid_grant_type' | 'invalid_client' | 'invalid_scope' | 'IP_NOT_ALLOWED';
@@ -545,10 +537,47 @@ export class PartnersService {
       return { ok: false, error: 'IP_NOT_ALLOWED' };
     }
     const held = parseList(c.scopes);
-    const asked = input.scope?.trim() ? input.scope.trim().split(/\s+/) : held;
-    if (!asked.length || asked.some((s) => !held.includes(s))) {
+    const requested = input.scope?.trim() ? input.scope.trim().split(/\s+/) : held;
+    if (!requested.length || requested.some((s) => !held.includes(s))) {
       await log('REFUSED', 'invalid_scope', null, null);
       return { ok: false, error: 'invalid_scope' };
+    }
+    const asked = opts.widenTo
+      ? [...new Set([...requested, ...opts.widenTo.filter((s) => held.includes(s))])]
+      : requested;
+    const aad = (sid: string) => `api_client_tokens.token:${sid}`;
+    if (opts.reuseMinSeconds !== undefined) {
+      const key = (list: readonly string[]) => [...list].sort().join(' ');
+      const live = await this.deps.db
+        .selectFrom('api_client_tokens')
+        .select(['public_id', 'expires_at', 'scopes', 'token_enc'])
+        .where('api_client_id', '=', c.id)
+        .where('outcome', '=', 'ISSUED')
+        .where('revoked_at', 'is', null)
+        .where('token_enc', 'is not', null)
+        .where('expires_at', '>', new Date(now.getTime() + opts.reuseMinSeconds * 1000))
+        .orderBy('id', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      const sid = live ? binToUuid(live.public_id) : null;
+      if (
+        live?.token_enc &&
+        live.expires_at &&
+        sid &&
+        key(parseList(live.scopes)) === key(asked) &&
+        !(await this.deps.revocations?.isRevoked(sid))
+      ) {
+        // Logged as a request answered with the live token (no expiry of its own: not a new token).
+        await log('ISSUED', 'REUSED', asked, null);
+        const expiresAt = new Date(live.expires_at);
+        return {
+          ok: true,
+          accessToken: this.deps.cipher.decrypt('partner_token', live.token_enc, aad(sid)),
+          expiresIn: Math.floor((expiresAt.getTime() - now.getTime()) / 1000),
+          expiresAt,
+          scope: asked.join(' '),
+        };
+      }
     }
     const minutes = await this.limit(LIMITS.partnerTokenMinutes);
     const expiresAt = new Date(now.getTime() + minutes * 60_000);
@@ -558,14 +587,26 @@ export class PartnersService {
       minutes * 60,
     );
     const logged = await log('ISSUED', null, asked, expiresAt, pub);
+    if (opts.reuseMinSeconds !== undefined && 'rowId' in logged) {
+      await this.deps.db
+        .updateTable('api_client_tokens')
+        .set({ token_enc: this.deps.cipher.encrypt('partner_token', token.token, aad(pub.id)) })
+        .where('id', '=', logged.rowId)
+        .execute();
+    }
     // 27.2: a new token for the client ends its earlier live tokens.
     await this.endLiveTokens(
       binToUuid(c.public_id),
       'A newer token was issued',
       'rowId' in logged ? logged.rowId : undefined,
-      ends === 'sameScopes' ? asked : undefined,
     );
-    return { ok: true, accessToken: token.token, expiresIn: minutes * 60, scope: asked.join(' ') };
+    return {
+      ok: true,
+      accessToken: token.token,
+      expiresIn: minutes * 60,
+      expiresAt,
+      scope: asked.join(' '),
+    };
   }
 
   /**

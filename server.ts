@@ -12,6 +12,7 @@ import { createRateLimiter } from './middlewares/rate-limit.middleware';
 import { createSecurity } from './config/security';
 import { buildApiServices } from './config/services';
 import { startRealtime } from './services/realtime.service';
+import { createApiServer, createRedirectServer } from './utils/https-server';
 import {
   createRuntime,
   installShutdown,
@@ -87,13 +88,21 @@ async function main(): Promise<void> {
     requestLog,
   });
 
-  const server = app.listen(config.http.port, config.http.host, () => {
+  // HTTPS when USE_HTTPS is on (reference server.js); otherwise TLS ends in front of the API.
+  const { server, scheme } = createApiServer(app, config.tls);
+  server.listen(config.http.port, config.http.host, () => {
     loggers.app.info('api listening', {
+      scheme,
       host: config.http.host,
       port: config.http.port,
       env: config.appEnv,
       version: config.version,
+      ...(config.http.webRoot ? { web: 'served' } : {}),
     });
+  });
+  const redirect = config.tls?.redirectPort ? createRedirectServer(config.http.port) : null;
+  redirect?.listen(config.tls!.redirectPort, config.http.host, () => {
+    loggers.app.info('http redirect listening', { port: config.tls!.redirectPort });
   });
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
@@ -113,6 +122,7 @@ async function main(): Promise<void> {
     stopSchemaWatch();
     await realtime.close();
     await requestLog.close();
+    redirect?.close();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
       server.closeIdleConnections();

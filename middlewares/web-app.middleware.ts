@@ -1,0 +1,98 @@
+/**
+ * The built web application served by the API (WEB_ROOT), so the console, back office, admissions,
+ * portal and terminals share one HTTPS origin with the API: no proxy, no cross-origin cookies, and
+ * the browser's secure-only features (the terminal's device key store) work at the server's address.
+ *
+ * - Files from the build; hashed bundles are cached for a year, everything else is revalidated.
+ * - Any other page address (no file extension, not the API) gets index.html: the app routes it.
+ * - Pages get their own security headers. The API's policy blocks everything; a page needs its own
+ *   scripts and styles, the inline loader script the build writes (allowed by its hash), Razorpay
+ *   Checkout, and the RingPe Card Reader helper on this computer (http://127.0.0.1:47821).
+ */
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import express, { type RequestHandler, Router } from 'express';
+import helmet from 'helmet';
+
+/** Paths that are never the web app. */
+const NOT_WEB = ['/api/', '/health', '/metrics', '/.well-known/', '/cug/', '/realtime'];
+/** Bundles whose name carries a content hash (Angular: main-5WA2J7F2.js, chunk-BgJdChRW.js). */
+const HASHED = /-[A-Za-z0-9_]{8,}\.(?:js|css|woff2?|ttf)$/;
+export const CARD_READER_ORIGIN = 'http://127.0.0.1:47821';
+
+/** sha256 sources for the inline scripts the build writes into index.html. */
+export function inlineScriptHashes(html: string): string[] {
+  return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
+    .map((m) => m[1] ?? '')
+    .filter((body) => body.trim().length > 0)
+    .map((body) => `'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`);
+}
+
+export function webAppRoutes(opts: { root: string; production: boolean }): Router {
+  const root = resolve(opts.root);
+  const indexPath = join(root, 'index.html');
+  if (!existsSync(indexPath)) {
+    throw new Error(
+      'WEB_ROOT: index.html not found (build RingPe_Web_App and point to dist/browser)',
+    );
+  }
+  const index = readFileSync(indexPath, 'utf8');
+
+  const headers = helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", ...inlineScriptHashes(index), 'https://checkout.razorpay.com'],
+        // Angular writes component styles and style attributes at run time.
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        fontSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", CARD_READER_ORIGIN, 'https://*.razorpay.com'],
+        frameSrc: ['https://api.razorpay.com', 'https://checkout.razorpay.com'],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'", 'https://api.razorpay.com'],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    strictTransportSecurity: opts.production
+      ? { maxAge: 31_536_000, includeSubDomains: true, preload: false }
+      : false,
+    xFrameOptions: { action: 'deny' },
+  });
+
+  const isWeb: RequestHandler = (req, _res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next('router');
+    if (NOT_WEB.some((p) => req.path === p.replace(/\/$/, '') || req.path.startsWith(p))) {
+      return next('router');
+    }
+    next();
+  };
+
+  const router = Router();
+  router.use(isWeb, headers);
+  router.use(
+    express.static(root, {
+      index: false,
+      dotfiles: 'ignore',
+      setHeaders: (res, path) => {
+        res.setHeader(
+          'Cache-Control',
+          HASHED.test(path) ? 'public, max-age=31536000, immutable' : 'no-cache',
+        );
+      },
+    }),
+  );
+  // A page address the app routes itself (/console/readers, /terminal, …).
+  router.use((req, res, next) => {
+    if (/\.[A-Za-z0-9]{1,8}$/.test(req.path)) return next('router');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.type('html').send(index);
+  });
+  return router;
+}

@@ -1,16 +1,20 @@
 /**
- * Axis Bank Power E-coll (client 2026-10-12, "Updated Axis Bank APIs for Integration"; BNK-001…003):
- * the bank's token, validation and notification calls in its own request and answer format, as the
- * earlier application served them. Underneath, the same rules as WAL-012/013 (BankCreditsService):
- * the account must be ours and able to take money, a credit is posted once per UTR + transaction id
- * through the ledger, and a suspended wallet's credit is held.
+ * Axis Bank Power E-coll (client 2026-10-12, "Updated Axis Bank APIs for Integration", the bank's
+ * scope document v4.0 and the client's answers; BNK-001…003): the bank's token, validation and
+ * notification calls in its own request and answer format, as the earlier application served them.
+ * Underneath, the same rules as WAL-012/013 (BankCreditsService): the account must be ours and able
+ * to take money, a credit is posted once per UTR + transaction id through the ledger, and a
+ * suspended wallet's credit is held.
  *
  * - Token: OAuth 2 client credentials on a Partner API client (back office); the bank's scope names
  *   map to ours (transaction_validation → va.validate, transaction_notification_posting → va.notify).
- *   A new token ends only the client's live tokens with the same scopes, since the bank asks for one
- *   token per scope.
- * - Validation: every call is logged with its answer. Notification: posted only after a successful
- *   validation of the same UTR + transaction id (setting `bank.axis.requireValidation`).
+ *   One token serves both calls, and while it is valid the token call returns the same token again
+ *   (client 2026-10-12; setting `bank.axis.tokenReuseMinSeconds`).
+ * - Validation: every call is logged with its answer. A repeat for the same UTR + Tran_id (the bank's
+ *   retries, and its second call for IMPS) gets the same success while the credit isn't posted. The
+ *   account number may come with or without the corporate-code prefix.
+ * - Notification: always refused without a successful validation of the same UTR + Tran_id, account
+ *   and amount (client 2026-10-12: mandatory).
  * - The sender's account number is never stored or logged: only its last four digits.
  */
 import type { Kysely } from 'kysely';
@@ -23,6 +27,7 @@ import {
 } from '../config/registers';
 import type { Database } from '../models/ringpe_models';
 import { ipToBin } from '../utils/ip';
+import { parseAmount } from '../utils/money';
 import type { BankCreditInput, BankCreditsService } from './bank-credits.service';
 import type { PartnersService } from './partners.service';
 import { defaultValues, type SettingValues, type SettingsService } from './settings.service';
@@ -44,6 +49,10 @@ const MODE_LETTERS: Record<string, BankCreditInput['mode']> = {
   N: 'NEFT',
   R: 'RTGS',
 };
+/** Our scope → the bank's name for it. */
+const AXIS_NAME = Object.fromEntries(
+  Object.entries(AXIS_BANK_SCOPES).map(([axis, ours]) => [ours, axis]),
+) as Record<string, string>;
 
 const str = (v: unknown) =>
   typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '';
@@ -63,6 +72,15 @@ const answer = (r: AxisBankResponse): AxisAnswer => ({
   ...('error' in r ? { error: r.error } : {}),
 });
 
+/** Paise of the bank's amount text, or null when it isn't an amount. */
+const paiseOf = (text: string | null | undefined) => {
+  try {
+    return text ? parseAmount(text) : null;
+  } catch {
+    return null;
+  }
+};
+
 interface Fields {
   readonly utr: string;
   readonly txnId: string;
@@ -74,6 +92,7 @@ interface Fields {
   readonly senderAccount: string;
   readonly senderName: string;
   readonly senderIfsc: string;
+  readonly corpCode: string;
 }
 
 const fieldsOf = (b: AxisBankCall): Fields => ({
@@ -87,6 +106,7 @@ const fieldsOf = (b: AxisBankCall): Fields => ({
   senderAccount: str(b['Sndr_acnt']),
   senderName: str(b['Sndr_nm']),
   senderIfsc: str(b['Sndr_ifsc']).toUpperCase(),
+  corpCode: str(b['Corp_code']).toUpperCase(),
 });
 
 /** Within the stored column sizes (a longer value is refused as invalid parameters). */
@@ -98,6 +118,12 @@ const modeOf = (m: string): BankCreditInput['mode'] =>
     ? (m as BankCreditInput['mode'])
     : (MODE_LETTERS[m] ?? (m ? 'OTHER' : undefined));
 
+interface Account {
+  readonly va_number: string;
+  readonly corporate_code: string;
+  readonly institution_id: string;
+}
+
 export class AxisBankService {
   constructor(
     private readonly deps: {
@@ -108,12 +134,11 @@ export class AxisBankService {
     },
   ) {}
 
-  private async requireValidation() {
+  private async setting(l: { key: string; value: number }) {
     const v: SettingValues = this.deps.settings
       ? await this.deps.settings.values()
       : defaultValues();
-    const l = LIMITS.bankAxisRequireValidation;
-    return Number(v[l.key] ?? l.value) === 1;
+    return Number(v[l.key] ?? l.value);
   }
 
   // --- BNK-001 ------------------------------------------------------------------------------------
@@ -137,13 +162,21 @@ export class AxisBankService {
       body: { status: false, statusCode: 400, message, data: null },
     });
     if (grantType !== 'client_credentials') return refused('INVALID_GRANT_TYPE');
-    const asked = [...new Set(scope.split(/\s+/))].sort();
+    const asked = [...new Set(scope.split(/\s+/))];
     if (asked.some((s) => !(s in AXIS_BANK_SCOPES))) return refused('INVALID_SCOPE');
-    const ours = asked.map((s) => AXIS_BANK_SCOPES[s as AxisBankScope]);
     const out = await this.deps.partners.issueToken(
-      { grantType, clientId, clientSecret, scope: ours.join(' ') },
+      {
+        grantType,
+        clientId,
+        clientSecret,
+        scope: asked.map((s) => AXIS_BANK_SCOPES[s as AxisBankScope]).join(' '),
+      },
       ip,
-      'sameScopes',
+      {
+        // One token for both calls, returned again while it is valid (client 2026-10-12).
+        widenTo: Object.values(AXIS_BANK_SCOPES),
+        reuseMinSeconds: await this.setting(LIMITS.bankAxisTokenReuseMinSeconds),
+      },
     );
     if (!out.ok) {
       if (out.error === 'IP_NOT_ALLOWED') {
@@ -172,19 +205,34 @@ export class AxisBankService {
         access_token: out.accessToken,
         token_type: 'Bearer',
         expires_in: out.expiresIn,
-        expires_at: new Date(Date.now() + out.expiresIn * 1000).toISOString(),
-        scope: asked.join(' '),
+        expires_at: out.expiresAt.toISOString(),
+        scope: out.scope
+          .split(' ')
+          .map((s) => AXIS_NAME[s] ?? s)
+          .sort()
+          .join(' '),
       },
     };
   }
 
-  /** The bank's account number holds the corporate code; ours is read from the account itself. */
-  private async creditInput(f: Fields): Promise<BankCreditInput> {
-    const va = await this.deps.db
-      .selectFrom('virtual_accounts')
-      .select('corporate_code')
-      .where('va_number', '=', f.vaNumber)
-      .executeTakeFirst();
+  /**
+   * The virtual account, from the bank's account number with or without the corporate-code prefix
+   * (scope document: "Virtual account no. prefixed / not prefixed by corp code").
+   */
+  private async account(f: Fields): Promise<Account | undefined> {
+    const by = (n: string) =>
+      this.deps.db
+        .selectFrom('virtual_accounts')
+        .select(['va_number', 'corporate_code', 'institution_id'])
+        .where('va_number', '=', n)
+        .executeTakeFirst();
+    const found = await by(f.vaNumber);
+    if (found) return found;
+    if (f.corpCode && !f.vaNumber.startsWith(f.corpCode)) return by(f.corpCode + f.vaNumber);
+    return undefined;
+  }
+
+  private creditInput(f: Fields, va: Account | undefined): BankCreditInput {
     const mode = modeOf(f.mode);
     const sender = {
       ...(f.senderName ? { name: f.senderName } : {}),
@@ -193,9 +241,8 @@ export class AxisBankService {
     };
     return {
       requestId: `${f.utr}:${f.txnId}`,
-      // The account number is unique; its corporate code is read from it (Corp_code is informative).
       corporateCode: va?.corporate_code ?? f.vaNumber.slice(0, 4),
-      vaNumber: f.vaNumber,
+      vaNumber: va?.va_number ?? f.vaNumber,
       amount: f.amount,
       utr: f.utr,
       bankTxnId: f.txnId,
@@ -204,11 +251,42 @@ export class AxisBankService {
     };
   }
 
+  /** An optional sender account must be letters and digits of a bank account's length. */
+  private async senderOk(account: string) {
+    if (!account) return true;
+    const min = await this.setting(LIMITS.bankAxisSenderAccountMinLength);
+    const max = await this.setting(LIMITS.bankAxisSenderAccountMaxLength);
+    return /^[A-Za-z0-9]+$/.test(account) && account.length >= min && account.length <= max;
+  }
+
+  /** The latest successful validation of this credit (same UTR, Tran_id and account). */
+  private lastSuccess(f: Fields, vaNumber: string) {
+    return this.deps.db
+      .selectFrom('bank_va_validations')
+      .select(['amount_text'])
+      .where('utr', '=', f.utr)
+      .where('bank_txn_id', '=', f.txnId)
+      .where('va_number', '=', vaNumber)
+      .where('status_flag', '=', 'S')
+      .where('response_code', '=', '000')
+      .orderBy('id', 'desc')
+      .executeTakeFirst();
+  }
+
+  private async posted(f: Fields) {
+    return !!(await this.deps.db
+      .selectFrom('bank_credits')
+      .select('id')
+      .where('utr', '=', f.utr)
+      .where('bank_txn_id', '=', f.txnId)
+      .executeTakeFirst());
+  }
+
   // --- BNK-002 ------------------------------------------------------------------------------------
   async validate(body: AxisBankCall, clientRowId: string, ip: string | undefined) {
     const f = fieldsOf(body ?? {});
     let out: AxisAnswer;
-    let institutionId: string | null = null;
+    let va: Account | undefined;
     try {
       if (
         !f.utr ||
@@ -224,24 +302,26 @@ export class AxisBankService {
         out = answer(AXIS_BANK_RESPONSES.INVALID_VAN);
       } else if (!isStrictDate(f.reqDate)) {
         out = answer(AXIS_BANK_RESPONSES.INVALID_DATE);
+      } else if (!(va = await this.account(f))) {
+        out = answer(AXIS_BANK_RESPONSES.INCORRECT_VAN);
+      } else if (!(await this.senderOk(f.senderAccount))) {
+        out = answer(AXIS_BANK_RESPONSES.INVALID_SENDER_ACCOUNT);
       } else {
-        const r = await this.deps.bankCredits.validate(await this.creditInput(f));
-        out = answer(
-          r.code === '000'
-            ? AXIS_BANK_RESPONSES.SUCCESS
-            : r.code === '003'
-              ? AXIS_BANK_RESPONSES.INVALID_PARAMS
-              : r.code === '004'
-                ? AXIS_BANK_RESPONSES.DUPLICATE_UTR
-                : AXIS_BANK_RESPONSES.INCORRECT_VAN,
-        );
-        if (r.code === '000') {
-          const va = await this.deps.db
-            .selectFrom('virtual_accounts')
-            .select('institution_id')
-            .where('va_number', '=', f.vaNumber)
-            .executeTakeFirst();
-          institutionId = va ? String(va.institution_id) : null;
+        const prior = await this.lastSuccess(f, va.va_number);
+        if (prior && paiseOf(prior.amount_text) === paiseOf(f.amount) && !(await this.posted(f))) {
+          // The bank asks again (a retry, or IMPS's second call): the same answer as the first.
+          out = answer(AXIS_BANK_RESPONSES.SUCCESS);
+        } else {
+          const r = await this.deps.bankCredits.validate(this.creditInput(f, va));
+          out = answer(
+            r.code === '000'
+              ? AXIS_BANK_RESPONSES.SUCCESS
+              : r.code === '003'
+                ? AXIS_BANK_RESPONSES.INVALID_PARAMS
+                : r.code === '004'
+                  ? AXIS_BANK_RESPONSES.DUPLICATE_UTR
+                  : AXIS_BANK_RESPONSES.INCORRECT_VAN,
+          );
         }
       }
     } catch {
@@ -251,10 +331,10 @@ export class AxisBankService {
       .insertInto('bank_va_validations')
       .values({
         api_client_id: clientRowId,
-        institution_id: institutionId,
+        institution_id: va ? String(va.institution_id) : null,
         utr: f.utr.slice(0, 32),
         bank_txn_id: f.txnId.slice(0, 40),
-        va_number: f.vaNumber.slice(0, 32),
+        va_number: (va?.va_number ?? f.vaNumber).slice(0, 32),
         amount_text: f.amount.slice(0, 20) || null,
         req_date: f.reqDate.slice(0, 20) || null,
         pay_mode: f.mode.slice(0, 20) || null,
@@ -281,21 +361,13 @@ export class AxisBankService {
     }
     if (!fits(f)) return answer(AXIS_BANK_RESPONSES.INVALID_PARAMS);
     try {
-      if (await this.requireValidation()) {
-        const last = await this.deps.db
-          .selectFrom('bank_va_validations')
-          .select(['status_flag', 'response_code'])
-          .where('utr', '=', f.utr)
-          .where('bank_txn_id', '=', f.txnId)
-          .where('va_number', '=', f.vaNumber)
-          .where('status_flag', '=', 'S')
-          .orderBy('id', 'desc')
-          .executeTakeFirst();
-        if (!last || last.response_code !== '000') {
-          return answer(AXIS_BANK_RESPONSES.NOT_VALIDATED);
-        }
+      const va = await this.account(f);
+      // Mandatory (client 2026-10-12): the same credit — account and amount — passed validation.
+      const last = await this.lastSuccess(f, va?.va_number ?? f.vaNumber);
+      if (!last || paiseOf(last.amount_text) !== paiseOf(f.amount)) {
+        return answer(AXIS_BANK_RESPONSES.NOT_VALIDATED);
       }
-      const r = await this.deps.bankCredits.notify(await this.creditInput(f), clientRowId);
+      const r = await this.deps.bankCredits.notify(this.creditInput(f, va), clientRowId);
       if (r.replayed) return answer(AXIS_BANK_RESPONSES.DUPLICATE_UTR);
       return answer(
         r.code === '000'
@@ -306,8 +378,9 @@ export class AxisBankService {
       );
     } catch (e) {
       // Two deliveries of one credit at once: the second meets the unique UTR + transaction id.
-      if ((e as { errno?: number }).errno === 1062)
+      if ((e as { errno?: number }).errno === 1062) {
         return answer(AXIS_BANK_RESPONSES.DUPLICATE_UTR);
+      }
       return answer(AXIS_BANK_RESPONSES.NOTIFY_FAILED);
     }
   }
