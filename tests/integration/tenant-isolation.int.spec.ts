@@ -475,6 +475,8 @@ describe.skipIf(!adminUrl)(
         })
         .execute();
       ids['receiptId'] = adPay.id;
+      // The same paid fee, for Accounts' confirmation (ADM-031).
+      ids['paymentId'] = adPay.id;
       // A settlement of school A (STL-011, STL-014).
       const stl = newPublicIdPair();
       await t.db
@@ -863,7 +865,7 @@ describe.skipIf(!adminUrl)(
             'ADM-019': { reasonCode: 'OTHER', remarks: 'Testing isolation' },
             'ADM-022': { receivedAt: today, paidBy: 'Some One' },
             'ADM-026': { name: 'Ref Person', mobile: '9845000002' },
-            'ADM-030': { declarationAccepted: true },
+            'ADM-030': { declarationAccepted: true, registrationConsent: true },
             'ACA-036': { date: today },
             'ACA-043': { decision: 'APPROVED' },
             'TRN-004': { stops: [] },

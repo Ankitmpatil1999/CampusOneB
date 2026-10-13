@@ -10,12 +10,19 @@ import { createTestDatabase, type TestDatabase } from './db';
 import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
+import { hasAadhaarCheckDigit } from '../../utils/validators';
 
 let panSeq = randomInt(0, 5_000);
 const uniquePan = () => `ABCDE${String(++panSeq % 10_000).padStart(4, '0')}F`;
 export const PASSWORD = 'Ringpe@2026';
 export const PIN = '4826';
 export const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
+/** A valid, random Aadhaar number: eleven digits and the one Verhoeff check digit that fits. */
+export const aadhaar = () => {
+  const base = `${randomInt(2, 10)}${String(randomInt(0, 10_000_000_000)).padStart(10, '0')}`;
+  for (let d = 0; d < 10; d++) if (hasAadhaarCheckDigit(`${base}${d}`)) return `${base}${d}`;
+  throw new Error('no Verhoeff check digit');
+};
 export const inr = (amount: string) => ({ amount, currency: 'INR' });
 
 export type Auth = Record<string, string>;

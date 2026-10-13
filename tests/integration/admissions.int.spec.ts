@@ -15,7 +15,7 @@ import { adminUrl } from './db';
 import { buildHttpApp, codeOf } from './http-app';
 import type { GatewayPayment, PaymentGateway } from '../../integrations/payment-gateway.provider';
 import type { SchoolGatewayFactory } from '../../services/payment-gateways.service';
-import { inr, schoolFixture, type Auth } from './school';
+import { aadhaar, inr, schoolFixture, type Auth } from './school';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
@@ -29,6 +29,8 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
   let nextYear: { id: string; rowId: string; label: string };
   let grade6: { id: string; sectionId: string };
   let today: string;
+  /** The school's pick-up stop (client 2026-10-12: the family may opt for transport). */
+  let stop: { id: string; name: string };
 
   const post = (path: string, body: object = {}, headers: Record<string, string> = con) =>
     request(f.app).post(path).set(headers).set('Idempotency-Key', randomUUID()).send(body);
@@ -66,8 +68,13 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         'parents',
         {
           father: { name: 'Rakesh Shetty', mobile, email: 'rakesh@example.in' },
-          mother: { name: 'Pallavi Shetty' },
+          // The mother's name and mobile, and the children question, are required (client 2026-10-12).
+          mother: { name: 'Pallavi Shetty', mobile: mobile.replace(/^9/, '8') },
           primary: 'FATHER',
+          children: 'MORE',
+          // The primary contact's Aadhaar and PAN (client 2026-10-12).
+          primaryAadhaar: aadhaar(),
+          primaryPan: 'ABCPS1234F',
         },
       ],
     ] as const) {
@@ -169,8 +176,32 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(listed.body.history).toEqual([
       expect.objectContaining({ status: 'REPLACED', url: null }),
     ]);
+    // The school's active pick-up stops are offered to a family opting for transport.
+    const at = new Date();
+    const stopRow = (name: string, active: number) => {
+      const pid = newPublicIdPair();
+      return {
+        id: pid.id,
+        row: {
+          public_id: pid.bin,
+          institution_id: f.school.rowId,
+          name,
+          landmark: active ? 'Near the bus shelter' : null,
+          active,
+          created_at: at,
+          updated_at: at,
+        },
+      };
+    };
+    const open = stopRow('Gopala Circle', 1);
+    const closed = stopRow('Old Market', 0);
+    await f.t.db.insertInto('transport_stops').values([open.row, closed.row]).execute();
+    stop = { id: open.id, name: 'Gopala Circle' };
     const land = await request(f.app).get(`/api/v1/public/admissions/${link.token}`);
     expect(land.status, JSON.stringify(land.body)).toBe(200);
+    expect(land.body.transportStops).toEqual([
+      { id: open.id, name: 'Gopala Circle', landmark: 'Near the bus shelter' },
+    ]);
     expect(land.body.years.map((y: { label: string; kind: string }) => [y.label, y.kind])).toEqual([
       [nextYear.label, 'REGULAR'],
       [currentYear.label, 'MID_TERM'],
@@ -182,16 +213,35 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
   });
 
   it('takes a public application to submission, payment and status (ADM-004…012)', async () => {
+    const diya = {
+      firstName: 'Diya',
+      lastName: 'Shetty',
+      gender: 'FEMALE',
+      dob: `${Number(nextYear.label.slice(0, 4)) - 11}-02-14`,
+    };
+    // The student's Aadhaar is checked: twelve digits, not starting with 0 or 1 (client 2026-10-12).
+    const wrong = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: { ...diya, aadhaar: '123456789012' },
+      },
+      {},
+    );
+    expect(wrong.status).toBe(422);
+    expect(wrong.body.errors).toEqual([
+      expect.objectContaining({ field: 'student.aadhaar', code: 'ADM.ID_INVALID' }),
+    ]);
+    const diyaAadhaar = aadhaar();
     const created = await post(
       `/api/v1/public/admissions/${link.token}/applications`,
       {
         class: { yearId: nextYear.id, classId: grade6.id },
+        // Typed in groups of four; the PAN in lower case.
         student: {
-          firstName: 'Diya',
-          lastName: 'Shetty',
-          gender: 'FEMALE',
-          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-02-14`,
-          idNumber: '657410',
+          ...diya,
+          aadhaar: diyaAadhaar.replace(/(\d{4})(?=\d)/g, '$1 '),
+          pan: 'bxsps4821k',
         },
       },
       {},
@@ -199,27 +249,42 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const app = created.body.application;
     const token = created.body.resumeToken as string;
-    expect(app).toMatchObject({ status: 'DRAFT', midTerm: false, student: { idNumber: '••7410' } });
+    expect(app).toMatchObject({ status: 'DRAFT', midTerm: false, student: { firstName: 'Diya' } });
+    // The identity number is no longer asked for (client 2026-10-12).
+    expect(app.student).not.toHaveProperty('idNumber');
+    // The numbers come back masked only; the full ones never leave the server.
+    expect(app.student).toMatchObject({
+      aadhaar: `XXXX XXXX ${diyaAadhaar.slice(-4)}`,
+      pan: '••••••821K',
+    });
+    expect(JSON.stringify(created.body)).not.toContain(diyaAadhaar);
+    expect(JSON.stringify(created.body)).not.toContain('BXSPS4821K');
+    // The same Aadhaar under other names is the same child.
+    const sameAadhaar = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: { ...diya, firstName: 'Riya', lastName: 'Kamath', aadhaar: diyaAadhaar },
+      },
+      {},
+    );
+    expect(sameAadhaar.body.code).toBe('ADM.DUPLICATE');
     expect(app.applicationNo).toMatch(/^[A-Z0-9]{2,5}\/\d{4}\/000001$/);
-    // The same child twice for the same year is refused.
-    expect(
-      (
-        await post(
-          `/api/v1/public/admissions/${link.token}/applications`,
-          {
-            class: { yearId: nextYear.id, classId: grade6.id },
-            student: {
-              firstName: 'Diya',
-              lastName: 'S',
-              gender: 'FEMALE',
-              dob: app.student.dob,
-              idNumber: '657410',
-            },
-          },
-          {},
-        )
-      ).body.code,
-    ).toBe('ADM.DUPLICATE');
+    // The same child twice for the same year is refused: the same names and birth date, whatever
+    // the case of the letters.
+    const sameChild = (lastName: string) =>
+      post(
+        `/api/v1/public/admissions/${link.token}/applications`,
+        {
+          class: { yearId: nextYear.id, classId: grade6.id },
+          student: { firstName: 'DIYA', lastName, gender: 'FEMALE', dob: app.student.dob },
+        },
+        {},
+      );
+    expect((await sameChild('shetty')).body.code).toBe('ADM.DUPLICATE');
+    // A twin or a namesake with another surname is not the same child.
+    const twin = await sameChild('Shenoy');
+    expect(twin.status, JSON.stringify(twin.body)).toBe(201);
     // Without the token the draft can't be read; with it, it can.
     expect(
       (await request(f.app).get(`/api/v1/public/admissions/applications/${app.id}`)).status,
@@ -232,23 +297,95 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       'post',
       `/api/v1/public/admissions/applications/${app.id}/submission`,
       token,
-      { declarationAccepted: true },
+      { declarationAccepted: true, registrationConsent: true },
     );
     expect(early.status).toBe(422);
     expect(early.body.errors.map((e: { field: string }) => e.field)).toEqual(
-      expect.arrayContaining(['addresses.residential', 'parents.primary', 'documents.BIRTH']),
+      expect.arrayContaining([
+        'addresses.residential',
+        'parents.primary',
+        'parents.primaryAadhaar',
+        'parents.primaryPan',
+        'documents.BIRTH',
+      ]),
+    );
+    // The mother's details and the children question are required (client 2026-10-12).
+    const noMother = await pub('patch', `/api/v1/public/admissions/applications/${app.id}`, token, {
+      section: 'parents',
+      data: { father: { name: 'Rakesh Shetty', mobile: '9876501234' }, primary: 'FATHER' },
+    });
+    expect(noMother.status).toBe(422);
+    expect(noMother.body.errors.map((e: { field: string }) => e.field)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/mother$/),
+        expect.stringMatching(/children$/),
+      ]),
     );
     await completeDraft(app.id, token, '9876501234');
-    const sub = await pub(
+    // School transport, with a pick-up stop from the school's list (client 2026-10-12).
+    const parents = {
+      father: { name: 'Rakesh Shetty', mobile: '9876501234', email: 'rakesh@example.in' },
+      mother: { name: 'Pallavi Shetty', mobile: '8876501234' },
+      primary: 'FATHER',
+      children: 'MORE',
+    };
+    const base = `/api/v1/public/admissions/applications/${app.id}`;
+    const badStop = await pub('patch', base, token, {
+      section: 'parents',
+      data: { ...parents, transport: true, transportStopId: randomUUID() },
+    });
+    expect(badStop.status).toBe(422);
+    expect(badStop.body.errors).toEqual([
+      expect.objectContaining({
+        field: 'parents.transportStopId',
+        code: 'ADM.TRANSPORT_STOP_INVALID',
+      }),
+    ]);
+    const bus = await pub('patch', base, token, {
+      section: 'parents',
+      data: { ...parents, transport: true, transportStopId: stop.id },
+    });
+    expect(bus.status, JSON.stringify(bus.body)).toBe(200);
+    expect(bus.body.parents).toMatchObject({ transport: true, transportStop: stop });
+    expect(bus.body.parents).not.toHaveProperty('transportStopId');
+    // The primary contact stayed the same: their Aadhaar and PAN are kept.
+    expect(bus.body.primaryContact.pan).toBe('••••••234F');
+    // The admission fee comes with the submitted form or after it, never before (client 2026-10-09).
+    const early2 = await pub(
+      'post',
+      `/api/v1/public/admissions/applications/${app.id}/fee-payments`,
+      token,
+      { feeType: 'ADMISSION' },
+    );
+    expect(early2.status).toBe(409);
+    expect(early2.body.code).toBe('ADM.ADMISSION_FEE_NOT_YET');
+    // The primary contact's numbers, masked too.
+    const filled = await pub('get', `/api/v1/public/admissions/applications/${app.id}`, token);
+    expect(filled.body.primaryContact).toMatchObject({
+      aadhaar: expect.stringMatching(/^XXXX XXXX \d{4}$/),
+      pan: '••••••234F',
+    });
+    // The family's consent to register their RingPe account is required (client 2026-10-12).
+    const noConsent = await pub(
       'post',
       `/api/v1/public/admissions/applications/${app.id}/submission`,
       token,
       { declarationAccepted: true },
     );
+    expect(noConsent.status).toBe(422);
+    expect(noConsent.body.errors).toEqual([
+      expect.objectContaining({ field: 'registrationConsent', code: 'ADM.CONSENT_REQUIRED' }),
+    ]);
+    const sub = await pub(
+      'post',
+      `/api/v1/public/admissions/applications/${app.id}/submission`,
+      token,
+      { declarationAccepted: true, registrationConsent: true },
+    );
     expect(sub.status, JSON.stringify(sub.body)).toBe(200);
     expect(sub.body).toMatchObject({
       status: 'DRAFT',
-      feeDue: { amount: '500.00', mandatory: true },
+      feeDue: { amount: '500.00', mandatory: false },
     });
 
     // The gateway's test mode: a bad signature fails; a new order succeeds.
@@ -363,6 +500,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
           lastName: 'Rao',
           gender: 'FEMALE',
           dob: `${Number(nextYear.label.slice(0, 4)) - 8}-01-01`,
+          aadhaar: aadhaar(),
         },
       },
       {},
@@ -372,7 +510,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       'post',
       `/api/v1/public/admissions/applications/${young.body.application.id}/submission`,
       young.body.resumeToken,
-      { declarationAccepted: true },
+      { declarationAccepted: true, registrationConsent: true },
     );
     expect(refused.body).toMatchObject({
       code: 'ADM.AGE_TOO_LOW',
@@ -415,7 +553,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         .set(TOKEN, token)
         .set('Idempotency-Key', randomUUID())
         .send(body);
-    const draft = async (first: string, idNumber: string, mobile: string) => {
+    const draft = async (first: string, mobile: string) => {
       const c = await post(
         `/api/v1/public/admissions/${link.token}/applications`,
         {
@@ -425,7 +563,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
             lastName: 'Rao',
             gender: 'FEMALE',
             dob: `${Number(nextYear.label.slice(0, 4)) - 11}-05-20`,
-            idNumber,
+            aadhaar: aadhaar(),
           },
         },
         {},
@@ -438,16 +576,14 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         'post',
         `/api/v1/public/admissions/applications/${id}/submission`,
         token,
-        {
-          declarationAccepted: true,
-        },
+        { declarationAccepted: true, registrationConsent: true },
       );
       expect(sub.status, JSON.stringify(sub.body)).toBe(200);
       return { id, token, base: `/api/v1/public/admissions/applications/${id}/fee-payments` };
     };
 
     // 1. The order carries the public key for Razorpay Checkout (never the secret).
-    const a = await draft('Ira', '771234', '9876501301');
+    const a = await draft('Ira', '9876501301');
     const order = await livePub(a.base, a.token, {});
     expect(order.status, JSON.stringify(order.body)).toBe(201);
     expect(order.body.gatewayOrder).toMatchObject({
@@ -499,7 +635,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(held.get('pay_OK')!.status).toBe('captured');
 
     // 4. The family closed the page: the signed webhook marks the fee paid, once.
-    const b = await draft('Tara', '771235', '9876501302');
+    const b = await draft('Tara', '9876501302');
     const bOrder = await livePub(b.base, b.token, {});
     const event = JSON.stringify({
       event: 'payment.captured',
@@ -540,6 +676,125 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       'evt_2',
     );
     expect(ignored.body).toEqual({ ok: true, outcome: 'IGNORED' });
+  });
+
+  it('pays both fees in one live order: checked against the order total, and settled by webhook', async () => {
+    // Before the school adds its own gateway (next test): RingPe's own gateway takes the order.
+    const hmac = (secret: string, data: string) =>
+      createHmac('sha256', secret).update(data).digest('hex');
+    const held = new Map<string, GatewayPayment>();
+    let n = 0;
+    const gateway: PaymentGateway = {
+      mode: 'live',
+      createOrder: async ({ amountPaise }) => ({
+        orderId: `order_BOTH${++n}`,
+        amountPaise,
+        checkout: { keyId: 'rzp_test_BOTH' },
+      }),
+      verify: ({ orderId, paymentId, signature }) =>
+        signature === hmac('both-secret', `${orderId}|${paymentId}`),
+      fetchPayment: async (id) => held.get(id)!,
+      verifyWebhook: (raw, sig) => sig === hmac('both-hook', raw.toString()),
+    };
+    const live = await buildHttpApp(f.t, { overrides: { gateway }, security: f.h.security });
+    const send = (path: string, token: string, body: object) =>
+      request(live.app)
+        .post(path)
+        .set(TOKEN, token)
+        .set('Idempotency-Key', randomUUID())
+        .send(body);
+    const both = async (first: string, mobile: string) => {
+      const c = await post(
+        `/api/v1/public/admissions/${link.token}/applications`,
+        {
+          class: { yearId: nextYear.id, classId: grade6.id },
+          student: {
+            firstName: first,
+            lastName: 'Rao',
+            gender: 'FEMALE',
+            dob: `${Number(nextYear.label.slice(0, 4)) - 11}-05-14`,
+            aadhaar: aadhaar(),
+          },
+        },
+        {},
+      );
+      expect(c.status, JSON.stringify(c.body)).toBe(201);
+      const id = c.body.application.id as string;
+      const token = c.body.resumeToken as string;
+      await completeDraft(id, token, mobile);
+      const sub = await pub(
+        'post',
+        `/api/v1/public/admissions/applications/${id}/submission`,
+        token,
+        { declarationAccepted: true, registrationConsent: true },
+      );
+      expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+      const base = `/api/v1/public/admissions/applications/${id}/fee-payments`;
+      const order = await send(base, token, { withAdmission: true });
+      expect(order.status, JSON.stringify(order.body)).toBe(201);
+      expect(order.body.gatewayOrder.amount).toEqual(inr('10500.00'));
+      return {
+        token,
+        base,
+        paymentId: order.body.paymentId as string,
+        orderId: order.body.gatewayOrder.orderId as string,
+      };
+    };
+    const feesOn = (orderId: string) =>
+      f.t.db
+        .selectFrom('admission_payments')
+        .select(['fee_type', 'status'])
+        .where('gateway_order_id', '=', orderId)
+        .orderBy('fee_type')
+        .execute();
+    const bothPaid = [
+      { fee_type: 'APPLICATION', status: 'PAID' },
+      { fee_type: 'ADMISSION', status: 'PAID' },
+    ];
+
+    // The gateway holds one payment for the order's total (₹500 + ₹10,000): both fees are paid.
+    const a = await both('Mira', '9876501304');
+    held.set('pay_BOTH', {
+      id: 'pay_BOTH',
+      orderId: a.orderId,
+      amountPaise: 1_050_000,
+      status: 'captured',
+      method: 'upi',
+    });
+    const ok = await send(`${a.base}/${a.paymentId}/verify`, a.token, {
+      gatewayPaymentId: 'pay_BOTH',
+      signature: hmac('both-secret', `${a.orderId}|pay_BOTH`),
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.receipts.map((r: { feeType: string }) => r.feeType)).toEqual([
+      'APPLICATION',
+      'ADMISSION',
+    ]);
+    expect(await feesOn(a.orderId)).toEqual(bothPaid);
+
+    // The family closed the page: the webhook for the order's total settles both fees.
+    const b = await both('Nila', '9876501305');
+    const event = JSON.stringify({
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: 'pay_BOTH_HOOK',
+            order_id: b.orderId,
+            amount: 1_050_000,
+            status: 'captured',
+          },
+        },
+      },
+    });
+    const hook = await request(live.app)
+      .post('/api/v1/partners/gateway/webhooks')
+      .set('Content-Type', 'application/json')
+      .set('X-Razorpay-Signature', hmac('both-hook', event))
+      .set('X-Razorpay-Event-Id', 'evt_both_1')
+      .send(event);
+    expect(hook.body).toEqual({ ok: true, outcome: 'PAID' });
+    expect(await feesOn(b.orderId)).toEqual(bothPaid);
   });
 
   it("takes the fee with the school's own default gateway; only that gateway's webhook settles it (client 2026-10-09)", async () => {
@@ -600,7 +855,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
           lastName: 'Rao',
           gender: 'FEMALE',
           dob: `${Number(nextYear.label.slice(0, 4)) - 11}-07-01`,
-          idNumber: '771240',
+          aadhaar: aadhaar(),
         },
       },
       {},
@@ -610,6 +865,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     await completeDraft(id, token, '9876501303');
     await pub('post', `/api/v1/public/admissions/applications/${id}/submission`, token, {
       declarationAccepted: true,
+      registrationConsent: true,
     });
     const order = await request(live.app)
       .post(`/api/v1/public/admissions/applications/${id}/fee-payments`)
@@ -738,6 +994,15 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
   });
 
   it('takes a counsellor’s mid-term application through cash, approval and the admission fee (ADM-015…024)', async () => {
+    // Created and submitted at once: only with the family's consent (client 2026-10-12).
+    const unconsented = await post('/api/v1/console/applications', {
+      class: { yearId: currentYear.id, classId: grade6.id, joiningDate: today },
+      submit: true,
+    });
+    expect(unconsented.status).toBe(422);
+    expect(unconsented.body.errors).toContainEqual(
+      expect.objectContaining({ field: 'registrationConsent', code: 'ADM.CONSENT_REQUIRED' }),
+    );
     const created = await post('/api/v1/console/applications', {
       class: {
         yearId: currentYear.id,
@@ -750,12 +1015,20 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         lastName: 'Bhat',
         gender: 'MALE',
         dob: `${Number(currentYear.label.slice(0, 4)) - 12}-08-01`,
+        aadhaar: aadhaar(),
       },
       addresses: {
         residential: { line1: 'Temple Road', city: 'Udupi', state: 'Karnataka', pin: '576101' },
         sameAsResidential: true,
       },
-      parents: { father: { name: 'Mohan Bhat', mobile: '9845001122' }, primary: 'FATHER' },
+      parents: {
+        father: { name: 'Mohan Bhat', mobile: '9845001122' },
+        mother: { name: 'Sunita Bhat', mobile: '9845001133' },
+        primary: 'FATHER',
+        children: 'SINGLE',
+        primaryAadhaar: aadhaar(),
+        primaryPan: 'ABCPB1122K',
+      },
     });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const id = created.body.id as string;
@@ -766,7 +1039,10 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       ).toBe(201);
     }
     const submit = () =>
-      post(`/api/v1/console/applications/${id}/submission`, { declarationAccepted: true });
+      post(`/api/v1/console/applications/${id}/submission`, {
+        declarationAccepted: true,
+        registrationConsent: true,
+      });
     expect((await submit()).body.code).toBe('ADM.TC_OR_UNDERTAKING_REQUIRED');
     const due = `${Number(today.slice(0, 4)) + 1}-01-15`;
     expect(
@@ -813,62 +1089,16 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         .set('Idempotency-Key', randomUUID())
         .send({ userTypeId: studentType, sectionId: grade6.sectionId, admissionNo });
     expect((await approve(detail.body.version - 1, 'ADM/2026/0042')).status).toBe(412);
-    // A school without a Parent user type (a new one has only Staff): refused before anything is
-    // written, with what to add — not a validation error on a field the form does not show.
-    const parentTypes = await f.t.db
-      .selectFrom('user_types')
-      .select('id')
-      .where('category', '=', 'PARENT')
-      .where('status', '=', 'ACTIVE')
-      .execute();
-    const setParentTypes = (status: 'ACTIVE' | 'INACTIVE') =>
-      f.t.db
-        .updateTable('user_types')
-        .set({ status })
-        .where(
-          'id',
-          'in',
-          parentTypes.map((t) => t.id),
-        )
-        .execute();
-    await setParentTypes('INACTIVE');
-    const noParentType = await approve(detail.body.version, 'ADM/2026/0042');
-    await setParentTypes('ACTIVE');
-    expect(noParentType.status).toBe(409);
-    expect(noParentType.body.code).toBe('ADM.PARENT_TYPE_MISSING');
-    const ok = await approve(detail.body.version, 'ADM/2026/0042');
-    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
-    expect(ok.body.application).toMatchObject({
-      status: 'APPROVED',
-      admissionNo: 'ADM/2026/0042',
-      section: { name: 'A' },
+    // The admission number and section wait for Accounts to confirm both fees (client 2026-10-09).
+    expect(detail.body).toMatchObject({
+      paymentStatus: 'PENDING',
+      admissionFeeDue: inr('10000.00'),
     });
-    const member = await f.t.db
-      .selectFrom('member_profiles')
-      .select(['id', 'first_name', 'admission_no'])
-      .where('public_id', '=', uuidToBin(ok.body.memberId))
-      .executeTakeFirstOrThrow();
-    expect(member).toMatchObject({ admission_no: 'ADM/2026/0042' });
-    expect(
-      await f.t.db
-        .selectFrom('wallets')
-        .select('kind')
-        .where('owner_profile_id', '=', String(member.id))
-        .execute(),
-    ).toEqual(expect.arrayContaining([{ kind: 'CAMPUS' }]));
-    expect(
-      await f.t.db
-        .selectFrom('enrolments')
-        .select('id')
-        .where('student_profile_id', '=', String(member.id))
-        .execute(),
-    ).toHaveLength(1);
-    expect((await approve(ok.body.application.version, 'ADM/2026/0043')).body).toMatchObject({
-      code: 'ADM.ALREADY_DECIDED',
-      params: { status: 'Approved' },
-    });
+    expect((await approve(detail.body.version, 'ADM/2026/0042')).body.code).toBe(
+      'ADM.FEES_NOT_CONFIRMED',
+    );
 
-    // The admission fee by payment link, then nothing more to collect.
+    // The admission fee before approval, by payment link; then nothing more to collect.
     const link2 = await post(`/api/v1/console/applications/${id}/admission-fee/online`);
     expect(link2.status, JSON.stringify(link2.body)).toBe(201);
     const payToken = new URL(link2.body.paymentLink).searchParams.get('token')!;
@@ -907,6 +1137,30 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         })
       ).body.code,
     ).toBe('ADM.FEE_ALREADY_PAID');
+
+    // Accounts confirms each receipt, once; paid is not enough to approve.
+    const confirm = (paymentId: string) =>
+      post(`/api/v1/console/admission-payments/${paymentId}/confirmation`);
+    const afterPaid = await request(f.app).get(`/api/v1/console/applications/${id}`).set(con);
+    expect(afterPaid.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
+    expect((await approve(afterPaid.body.version, 'ADM/2026/0042')).body.code).toBe(
+      'ADM.FEES_NOT_CONFIRMED',
+    );
+    const c1 = await confirm(cashApp.body.receipt.paymentId);
+    expect(c1.status, JSON.stringify(c1.body)).toBe(200);
+    expect(c1.body.application.paymentStatus).toBe('PAID');
+    expect((await confirm(cashApp.body.receipt.paymentId)).body.code).toBe(
+      'ADM.FEE_ALREADY_CONFIRMED',
+    );
+    expect((await approve(c1.body.application.version, 'ADM/2026/0042')).body.code).toBe(
+      'ADM.FEES_NOT_CONFIRMED',
+    );
+    const c2 = await confirm(order.body.paymentId);
+    expect(c2.status, JSON.stringify(c2.body)).toBe(200);
+    expect(c2.body.application.paymentStatus).toBe('CONFIRMED');
+    expect(
+      c2.body.application.fees.map((x: { confirmedAt: string | null }) => !!x.confirmedAt),
+    ).toEqual([true, true]);
     const fees = await request(f.app)
       .get(`/api/v1/console/admission-fees?yearId=${currentYear.id}`)
       .set(con);
@@ -916,6 +1170,63 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       expect.objectContaining({ feeType: 'APPLICATION', status: 'PAID', mode: 'CASH' }),
       expect.objectContaining({ feeType: 'ADMISSION', status: 'PAID', mode: 'ONLINE' }),
     ]);
+    const version = c2.body.application.version as number;
+
+    // A school without a Parent user type (a new one has only Staff): refused before anything is
+    // written, with what to add — not a validation error on a field the form does not show.
+    const parentTypes = await f.t.db
+      .selectFrom('user_types')
+      .select('id')
+      .where('category', '=', 'PARENT')
+      .where('status', '=', 'ACTIVE')
+      .execute();
+    const setParentTypes = (status: 'ACTIVE' | 'INACTIVE') =>
+      f.t.db
+        .updateTable('user_types')
+        .set({ status })
+        .where(
+          'id',
+          'in',
+          parentTypes.map((t) => t.id),
+        )
+        .execute();
+    await setParentTypes('INACTIVE');
+    const noParentType = await approve(version, 'ADM/2026/0042');
+    await setParentTypes('ACTIVE');
+    expect(noParentType.status).toBe(409);
+    expect(noParentType.body.code).toBe('ADM.PARENT_TYPE_MISSING');
+    const ok = await approve(version, 'ADM/2026/0042');
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.application).toMatchObject({
+      status: 'APPROVED',
+      admissionNo: 'ADM/2026/0042',
+      section: { name: 'A' },
+    });
+    const member = await f.t.db
+      .selectFrom('member_profiles')
+      .select(['id', 'first_name', 'admission_no'])
+      .where('public_id', '=', uuidToBin(ok.body.memberId))
+      .executeTakeFirstOrThrow();
+    expect(member).toMatchObject({ admission_no: 'ADM/2026/0042' });
+    expect(
+      await f.t.db
+        .selectFrom('wallets')
+        .select('kind')
+        .where('owner_profile_id', '=', String(member.id))
+        .execute(),
+    ).toEqual(expect.arrayContaining([{ kind: 'CAMPUS' }]));
+    expect(
+      await f.t.db
+        .selectFrom('enrolments')
+        .select('id')
+        .where('student_profile_id', '=', String(member.id))
+        .execute(),
+    ).toHaveLength(1);
+    expect((await approve(ok.body.application.version, 'ADM/2026/0043')).body).toMatchObject({
+      code: 'ADM.ALREADY_DECIDED',
+      params: { status: 'Approved' },
+    });
+
     const receipt = await request(f.app)
       .get(`/api/v1/console/admission-receipts/${order.body.paymentId}`)
       .set(con)
@@ -985,5 +1296,155 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         'Parent relation',
       ]),
     );
+  });
+
+  it('pays the admission fee with the application fee in one order when the family chooses it', async () => {
+    const created = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Neha',
+          lastName: 'Kamath',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-03-21`,
+          aadhaar: aadhaar(),
+        },
+      },
+      {},
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const app = created.body.application;
+    const token = created.body.resumeToken as string;
+    await completeDraft(app.id, token, '9876509876');
+    const base = `/api/v1/public/admissions/applications/${app.id}`;
+    const sub = await pub('post', `${base}/submission`, token, {
+      declarationAccepted: true,
+      registrationConsent: true,
+    });
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+    // Ticked on the form (client 2026-10-09): one order for both fees, ₹500 + ₹10,000.
+    const order = await pub('post', `${base}/fee-payments`, token, { withAdmission: true });
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    expect(order.body).toMatchObject({
+      feeType: 'APPLICATION',
+      includes: ['APPLICATION', 'ADMISSION'],
+      amount: inr('10500.00'),
+      gatewayOrder: { amount: inr('10500.00') },
+    });
+    const paid = await pub('post', `${base}/fee-payments/${order.body.paymentId}/verify`, token, {
+      gatewayPaymentId: order.body.gatewayOrder.test.paymentId,
+      signature: order.body.gatewayOrder.test.signature,
+    });
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect(paid.body).toMatchObject({ status: 'PAID', applicationStatus: 'SUBMITTED' });
+    expect(paid.body.receipts.map((r: { feeType: string }) => r.feeType)).toEqual([
+      'APPLICATION',
+      'ADMISSION',
+    ]);
+    // Two fees, each with its receipt, each for Accounts to confirm.
+    const rows = await f.t.db
+      .selectFrom('admission_payments as p')
+      .innerJoin('admission_applications as a', 'a.id', 'p.application_id')
+      .select(['p.fee_type', 'p.status', 'p.amount_paise', 'p.receipt_no', 'p.gateway_order_id'])
+      .where('a.public_id', '=', uuidToBin(app.id))
+      .orderBy('p.fee_type')
+      .execute();
+    expect(rows.map((r) => [r.fee_type, r.status, Number(r.amount_paise)])).toEqual([
+      ['APPLICATION', 'PAID', 50_000],
+      ['ADMISSION', 'PAID', 1_000_000],
+    ]);
+    expect(rows[0]!.gateway_order_id).toBe(rows[1]!.gateway_order_id);
+    expect(rows[0]!.receipt_no).not.toBe(rows[1]!.receipt_no);
+    const detail = await request(f.app).get(`/api/v1/console/applications/${app.id}`).set(con);
+    expect(detail.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
+  });
+
+  it('submits with both fees to pay later; the accounts desk records them in cash', async () => {
+    const created = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Ira',
+          lastName: 'Bhat',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-04-02`,
+          aadhaar: aadhaar(),
+        },
+      },
+      {},
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const app = created.body.application;
+    const token = created.body.resumeToken as string;
+    await completeDraft(app.id, token, '9876504321');
+    // A new primary contact: the last one's Aadhaar and PAN don't carry over; theirs are asked for.
+    const parents = (extra: object) =>
+      pub('patch', `/api/v1/public/admissions/applications/${app.id}`, token, {
+        section: 'parents',
+        data: {
+          father: { name: 'Suresh Bhat', mobile: '9876504321' },
+          mother: { name: 'Latha Bhat', mobile: '8876504321' },
+          primary: 'MOTHER',
+          children: 'MORE',
+          ...extra,
+        },
+      });
+    expect((await parents({})).status).toBe(200);
+    const read = () => pub('get', `/api/v1/public/admissions/applications/${app.id}`, token);
+    expect((await read()).body.primaryContact).toMatchObject({
+      relation: 'MOTHER',
+      aadhaar: null,
+      pan: null,
+    });
+    expect((await parents({ primaryAadhaar: aadhaar(), primaryPan: 'LATPB4321H' })).status).toBe(
+      200,
+    );
+    expect((await read()).body.primaryContact.pan).toBe('••••••321H');
+    // "Pay later" (client 2026-10-12): submitted at once, nothing paid.
+    const sub = await pub(
+      'post',
+      `/api/v1/public/admissions/applications/${app.id}/submission`,
+      token,
+      { declarationAccepted: true, registrationConsent: true, payLater: true },
+    );
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+    expect(sub.body).toMatchObject({
+      status: 'SUBMITTED',
+      feeDue: { amount: '500.00', mandatory: false },
+    });
+    const detail = () => request(f.app).get(`/api/v1/console/applications/${app.id}`).set(con);
+    expect((await detail()).body).toMatchObject({
+      status: 'SUBMITTED',
+      paymentStatus: 'PENDING',
+      admissionFeeDue: inr('10000.00'),
+      fees: [expect.objectContaining({ feeType: 'APPLICATION', status: 'PENDING' })],
+    });
+    // Both fees wait on the accounts desk's list.
+    const list = await request(f.app)
+      .get(`/api/v1/console/admission-fees?yearId=${nextYear.id}`)
+      .set(con);
+    expect(
+      list.body.items
+        .filter((x: { applicationId: string }) => x.applicationId === app.id)
+        .map((x: { feeType: string; status: string }) => [x.feeType, x.status]),
+    ).toEqual([
+      ['APPLICATION', 'PENDING'],
+      ['ADMISSION', 'PENDING'],
+    ]);
+    // Collected later in cash and recorded by Accounts, each with its receipt.
+    for (const feeType of ['APPLICATION', 'ADMISSION']) {
+      const cash = await post(`/api/v1/console/applications/${app.id}/admission-fee/cash`, {
+        feeType,
+        receivedAt: today,
+        paidBy: 'Suresh Bhat',
+      });
+      expect(cash.status, JSON.stringify(cash.body)).toBe(201);
+      expect(cash.body.receipt.receiptNo).toMatch(/\/R\/\d{4}\/\d{6}$/);
+    }
+    const after = (await detail()).body;
+    expect(after).toMatchObject({ status: 'SUBMITTED', paymentStatus: 'PAID' });
+    expect(after.fees.map((x: { mode: string }) => x.mode)).toEqual(['CASH', 'CASH']);
   });
 });

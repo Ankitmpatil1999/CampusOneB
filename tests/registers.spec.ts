@@ -13,6 +13,7 @@ import {
   validateCatalogue,
   validateDomain,
 } from '../config/registers/index';
+import { ROLE_TEMPLATES, grantsOf } from '../config/registers/access';
 
 describe('status register', () => {
   it.each(ALL_STATUS_DOMAINS.map((d) => [d.domain, d]))('%s is well formed', (_name, domain) => {
@@ -135,5 +136,39 @@ describe('limits register', () => {
     expect(LIMITS.sessionConsoleHours.value).toBe(24);
     expect(LIMITS.sessionMemberMobileDays.value).toBe(365);
     expect(LIMITS.otpDigits.value).toBe(4);
+  });
+});
+
+describe('admission roles (client 2026-10-09)', () => {
+  const admissions = (code: string) =>
+    grantsOf(ROLE_TEMPLATES.find((r) => r.code === code)!).filter((s) =>
+      /^(admissions|admfees)\./.test(s),
+    );
+
+  it('lets only the Co-ordinator and the Institution Administrator assign admission numbers', () => {
+    expect(admissions('ACADEMIC_COORDINATOR')).toEqual(
+      expect.arrayContaining(['admissions.view', 'admissions.approve']),
+    );
+    expect(admissions('INSTITUTION_ADMIN')).toContain('admissions.approve');
+    for (const r of ROLE_TEMPLATES.filter((x) => x.scope === 'INSTITUTION')) {
+      if (['ACADEMIC_COORDINATOR', 'INSTITUTION_ADMIN'].includes(r.code)) continue;
+      expect(grantsOf(r), r.code).not.toContain('admissions.approve');
+    }
+  });
+
+  it('lets Accounts see applications and confirm fees, without editing applications', () => {
+    expect(admissions('ACCOUNTANT')).toEqual([
+      'admissions.view',
+      'admfees.view',
+      'admfees.collect',
+      'admfees.verify',
+    ]);
+    expect(admissions('INSTITUTION_ADMIN')).toContain('admfees.verify');
+    expect(admissions('COUNSELLOR')).toEqual([
+      'admissions.view',
+      'admissions.edit',
+      'admfees.view',
+      'admfees.collect',
+    ]);
   });
 });

@@ -111,20 +111,28 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ACC.PACKAGE_OFF': 'Transfers to the accounting package are not set up yet.',
   'ACC.PACKAGE_REFUSED': 'The accounting package refused the voucher: {reason}',
   'ACC.VOUCHER_NOT_FOUND': 'Voucher not found.',
+  'ADM.ADMISSION_FEE_NOT_YET':
+    'Submit the application first: the admission fee is paid with it or after it.',
   'ADM.AGE_TOO_HIGH': 'Age is too high for <standard> (maximum is <n> years)',
   'ADM.AGE_TOO_LOW': 'Age must be at least {n} years for {standard} as of {date}.',
   'ADM.ALREADY_DECIDED': 'Application is already <status>',
   'ADM.CLASS_INVALID': 'Please select a valid admission standard',
+  'ADM.CONSENT_REQUIRED':
+    'Agree that the information collected will be used to register your account in RingPe.',
   'ADM.DECLARATION': 'Declaration must be accepted',
   'ADM.DUPLICATE':
     'An application for this child already exists for {year}. Resume it instead of starting a new one.',
+  'ADM.FEES_NOT_CONFIRMED':
+    'Accounts has not confirmed both fees yet: the admission number and section are assigned once the application fee and the admission fee are confirmed.',
   'ADM.FEE_AFTER_APPROVAL': 'Only approved applications can pay the admission fee.',
+  'ADM.FEE_ALREADY_CONFIRMED': 'This fee’s receipt is already confirmed.',
   'ADM.FEE_ALREADY_PAID': 'Payment already completed',
   'ADM.FEE_CONFIG_MISSING': 'Fee configuration not found for this academic year',
+  'ADM.FEE_NOT_PAID': 'This fee is not paid yet, so there is no receipt to confirm.',
   'ADM.FEE_REQUIRED': 'Application fee is mandatory',
   'ADM.GATEWAY_NOT_CONFIGURED':
     'Online payment isn’t available yet. Please pay at the school’s accounts desk.',
-  'ADM.ID_INVALID': 'Enter the last 6 digits of the identity number.',
+  'ADM.ID_INVALID': 'Enter a valid 12-digit Aadhaar number.',
   'ADM.JOINING_DATE': 'For this academic year, choose a joining date from today to {to}.',
   'ADM.LINK_EXPIRED':
     'This admission link has expired. Ask the school for its current link or QR code.',
@@ -144,13 +152,15 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.REFERENCE_MINIMUM':
     'A mid-term application needs at least one reference, so this one can’t be removed.',
   'ADM.REJECTED_NO_PAYMENT': 'Rejected application cannot make payment',
-  'ADM.RESUME_NEEDS': 'Enter the identity number or the mobile number on the application.',
+  'ADM.RESUME_NEEDS': "Enter the primary contact's mobile number from the application.",
   'ADM.SECTION_NOT_IN_CLASS': 'Choose a section of {class}, the class applied for.',
   'ADM.STATUS_NOT_FOUND':
     'No application matches these details. Check the application number on your confirmation SMS or e-mail.',
   'ADM.TC_NOT_MID_TERM': 'A transfer certificate is recorded only for a mid-term admission.',
   'ADM.TC_OR_UNDERTAKING_REQUIRED':
     'Attach the transfer certificate, or give an undertaking with the date you’ll produce it.',
+  'ADM.TRANSPORT_STOP_INVALID':
+    'Choose a pick-up point from the list, or leave it for the school to decide.',
   'ADM.YEAR_NOT_OPEN': 'The selected academic year isn’t open for admissions.',
   'ALW.AMOUNT_RANGE':
     'The amount should not exceed 99999999.99 or be lower than 0.01. Please enter a valid amount.',
@@ -1153,6 +1163,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'subtask.institution.academics.view': 'See academics',
   'subtask.institution.academics.year': 'Open and close academic years',
   'subtask.institution.admfees.collect': 'Collect admission fees',
+  'subtask.institution.admfees.verify': 'Confirm receipt of admission fees',
   'subtask.institution.admfees.view': 'See admission fees',
   'subtask.institution.admissions.approve': 'Approve admissions',
   'subtask.institution.admissions.edit': 'Work on applications',

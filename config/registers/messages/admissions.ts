@@ -106,8 +106,8 @@ export const ADMISSION_MESSAGES = [
     'MSG-ADM-001',
     'Enter a valid 12-digit Aadhaar number',
     422,
-    'Enter the last 6 digits of the identity number.',
-    ['19.2', 'Q16 e'],
+    'Enter a valid 12-digit Aadhaar number.',
+    ['19.2', 'client 2026-10-12'],
   ),
   k(
     'ADM.MOBILE_INVALID',
@@ -121,8 +121,8 @@ export const ADMISSION_MESSAGES = [
     'MSG-ADM-130',
     'Aadhaar number or mobile number is required',
     422,
-    'Enter the identity number or the mobile number on the application.',
-    ['19.2', 'Q16 e'],
+    "Enter the primary contact's mobile number from the application.",
+    ['19.2', 'Q16 e', 'client 2026-10-12'],
   ),
   r(
     'ADM.AGE_TOO_LOW',
@@ -245,6 +245,38 @@ export const ADMISSION_MESSAGES = [
     'Choose a section of {class}, the class applied for.',
     ['19.4', 'CR-09'],
     ['class'],
+  ),
+  n(
+    'ADM.TRANSPORT_STOP_INVALID',
+    422,
+    'Choose a pick-up point from the list, or leave it for the school to decide.',
+    ['19.2', 'client 2026-10-12'],
+  ),
+  n(
+    'ADM.CONSENT_REQUIRED',
+    422,
+    'Agree that the information collected will be used to register your account in RingPe.',
+    ['19.2', 'client 2026-10-12'],
+  ),
+  n(
+    'ADM.FEES_NOT_CONFIRMED',
+    409,
+    'Accounts has not confirmed both fees yet: the admission number and section are assigned once the application fee and the admission fee are confirmed.',
+    ['19.4', 'client 2026-10-09'],
+  ),
+  n('ADM.FEE_NOT_PAID', 409, 'This fee is not paid yet, so there is no receipt to confirm.', [
+    '19.8',
+    'client 2026-10-09',
+  ]),
+  n('ADM.FEE_ALREADY_CONFIRMED', 409, 'This fee’s receipt is already confirmed.', [
+    '19.8',
+    'client 2026-10-09',
+  ]),
+  n(
+    'ADM.ADMISSION_FEE_NOT_YET',
+    409,
+    'Submit the application first: the admission fee is paid with it or after it.',
+    ['19.8', 'client 2026-10-09'],
   ),
   n(
     'ADM.PARENT_TYPE_MISSING',

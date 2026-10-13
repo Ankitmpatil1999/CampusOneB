@@ -261,7 +261,6 @@ export class AdmissionLinksService {
         'y.starts_on',
         'y.ends_on',
         'f.application_fee_paise',
-        'f.application_mandatory',
         'f.admission_fee_paise',
       ])
       .where('y.institution_id', '=', institutionId)
@@ -281,7 +280,8 @@ export class AdmissionLinksService {
           ? null
           : {
               applicationFee: toMoneyDto(Number(y.application_fee_paise)),
-              applicationMandatory: !!Number(y.application_mandatory),
+              // The family may pay it with the form or later (client 2026-10-12).
+              applicationMandatory: false,
               admissionFee: toMoneyDto(Number(y.admission_fee_paise ?? 0)),
             },
     }));
@@ -307,6 +307,14 @@ export class AdmissionLinksService {
       .orderBy('name')
       .execute();
     const fields = await activeFields(this.deps.db, c.institutionId, 'ADMISSION_APPLICATION');
+    // The school's pick-up stops, for a family opting for transport (client 2026-10-12).
+    const stops = await this.deps.db
+      .selectFrom('transport_stops')
+      .select(['public_id', 'name', 'landmark'])
+      .where('institution_id', '=', c.institutionId)
+      .where('active', '=', 1)
+      .orderBy('name')
+      .execute();
     const refs = await this.limit(LIMITS.admReferencesMax);
     const docMax = await this.limit(LIMITS.fileMaxBytes);
     return {
@@ -326,6 +334,11 @@ export class AdmissionLinksService {
         type: f.type,
         required: !!f.required,
         options: f.options.map((o) => ({ id: o.id, label: o.label })),
+      })),
+      transportStops: stops.map((s) => ({
+        id: binToUuid(s.public_id),
+        name: s.name,
+        landmark: s.landmark,
       })),
       rules: {
         ageMeasuredOn: 'June 1 of the year’s start; the joining date for a mid-term admission',

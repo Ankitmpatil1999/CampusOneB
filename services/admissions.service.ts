@@ -32,6 +32,7 @@ import type { PaymentGatewaysService } from './payment-gateways.service';
 import type {
   AdmissionDocType,
   AdmissionFeeType,
+  AdmissionPaymentStatus,
   ApplicationStatus,
   Database,
 } from '../models/ringpe_models';
@@ -52,7 +53,7 @@ import {
   ValidationError,
 } from '../utils/CustomAPIError';
 import { parseCsv, toCsv } from '../utils/csv';
-import type { FieldCipher } from '../utils/fieldEncryption';
+import { type FieldCipher, maskIdNumber, maskPan } from '../utils/fieldEncryption';
 import type { FlowTokens } from '../utils/flow-tokens';
 import { formatDate, formatDateTime, formatInr, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
@@ -73,7 +74,14 @@ import type { z } from 'zod';
 
 type Db = Kysely<Database> | Transaction<Database>;
 type Addresses = z.infer<typeof addressesSectionSchema>;
-type Parents = z.infer<typeof parentsSectionSchema>;
+/**
+ * The parents section as kept: the primary contact's numbers go to their own columns, and the
+ * pick-up stop is kept with its name (client 2026-10-12).
+ */
+type Parents = Omit<
+  z.infer<typeof parentsSectionSchema>,
+  'primaryAadhaar' | 'primaryPan' | 'transportStopId'
+> & { transportStop?: { id: string; name: string } | null };
 type Previous = z.infer<typeof previousSectionSchema>;
 
 /** The form beyond the searchable columns, kept as one document. */
@@ -102,13 +110,20 @@ interface State {
   lastName: string | null;
   gender: 'MALE' | 'FEMALE' | 'OTHER' | null;
   dob: string | null;
-  idNumber?: string | null;
   primaryName: string | null;
   primaryRelation: 'FATHER' | 'MOTHER' | 'GUARDIAN' | null;
   primaryMobile: string | null;
   primaryEmail: string | null;
   data: StoredData;
   step: number;
+  /**
+   * Identity numbers to write (client 2026-10-12): undefined keeps what is stored, null clears it, a
+   * value replaces it — encrypted. They are never read back in full.
+   */
+  studentAadhaar?: string | null;
+  studentPan?: string | null;
+  primaryAadhaar?: string | null;
+  primaryPan?: string | null;
 }
 
 const ADMISSION_HEADER = 'X-Admission-Token';
@@ -224,19 +239,6 @@ export class AdmissionsService {
     return `${prefix}/${yyyy}/${String(Number(r.rows[0]?.n ?? 1)).padStart(6, '0')}`;
   }
 
-  private idFields(institutionId: string, appPublicId: string, value: string | null) {
-    if (!value) return { id_number_enc: null, id_number_bidx: null, id_number_last4: null };
-    return {
-      id_number_enc: this.deps.cipher.encrypt('adm_id_number', value, appPublicId),
-      id_number_bidx: this.idIndex(institutionId, value),
-      id_number_last4: value.slice(-4),
-    };
-  }
-
-  private idIndex(institutionId: string, value: string) {
-    return this.deps.cipher.blindIndex('adm_id_number', `${institutionId}:${value}`);
-  }
-
   // --- reading -----------------------------------------------------------------------------------------
   private rows(db: Db) {
     return db
@@ -269,7 +271,7 @@ export class AdmissionsService {
     opts: { console: boolean; p?: Principal },
   ) {
     const data = this.dataOf(r);
-    const [refs, docs, fees] = await Promise.all([
+    const [refs, docs, fees, cfg] = await Promise.all([
       this.deps.db
         .selectFrom('admission_references')
         .select(['public_id', 'name', 'relation', 'mobile', 'email', 'created_at'])
@@ -296,7 +298,9 @@ export class AdmissionsService {
         .where('application_id', '=', r.id)
         .orderBy('fee_type')
         .execute(),
+      this.entryFees(this.deps.db, String(r.institution_id), String(r.year_id)),
     ]);
+    const owed = this.statesOf(cfg, fees);
     const band = r.class_name ? await this.deps.links.band(r.class_name) : null;
     const ref = this.ageReference(r);
     const age = r.dob && ref ? ageOn(day(r.dob), ref) : null;
@@ -320,7 +324,9 @@ export class AdmissionsService {
         lastName: r.last_name,
         gender: r.gender,
         dob: dayOrNull(r.dob),
-        idNumber: r.id_number_last4 ? `••${r.id_number_last4}` : null,
+        // Masked only ("XXXX XXXX 4821", "••••••234F"): the full numbers never leave the server.
+        aadhaar: maskIdNumber('AADHAAR', r.student_aadhaar_last4),
+        pan: maskPan(r.student_pan_last4),
         ...data.student,
       },
       age:
@@ -340,6 +346,8 @@ export class AdmissionsService {
         relation: r.primary_relation,
         mobile: r.primary_mobile,
         email: r.primary_email,
+        aadhaar: maskIdNumber('AADHAAR', r.primary_aadhaar_last4),
+        pan: maskPan(r.primary_pan_last4),
       },
       customFields: data.customFields ?? {},
       tc: r.tc_mode
@@ -379,9 +387,19 @@ export class AdmissionsService {
         receiptNo: f.receipt_no,
         paidAt: iso(f.paid_at),
         paidBy: opts.console ? f.paid_by : null,
+        confirmedAt: iso(f.confirmed_at),
         failureReason: f.failure_reason,
       })),
+      // Where the fees stand together (client 2026-10-09), and the admission fee still to pay — with
+      // the form, or later — when nothing is started for it yet.
+      paymentStatus: this.paymentState(owed),
+      admissionFeeDue: (() => {
+        const adm = owed.find((f) => f.type === 'ADMISSION');
+        return adm && !adm.paid ? toMoneyDto(adm.configured) : null;
+      })(),
       declaration: r.declared_at ? { at: iso(r.declared_at), by: r.declared_by } : null,
+      // The family agreed that what is collected registers their RingPe account (client 2026-10-12).
+      registrationConsentAt: iso(r.registration_consent_at),
       submittedAt: iso(r.submitted_at),
       decidedAt: iso(r.decided_at),
       rejection: r.rejection_reason
@@ -444,6 +462,25 @@ export class AdmissionsService {
     return { rowId: String(c.id), name: c.name };
   }
 
+  /** The pick-up stop a family prefers (client 2026-10-12): one of the school's active stops. */
+  private async stopFor(db: Db, institutionId: string, stopId: string) {
+    const s = isUuid(stopId)
+      ? await db
+          .selectFrom('transport_stops')
+          .select(['public_id', 'name'])
+          .where('institution_id', '=', institutionId)
+          .where('public_id', '=', uuidToBin(stopId))
+          .where('active', '=', 1)
+          .executeTakeFirst()
+      : undefined;
+    if (!s) {
+      throw new ValidationError([
+        { field: 'parents.transportStopId', code: 'ADM.TRANSPORT_STOP_INVALID' },
+      ]);
+    }
+    return { id: binToUuid(s.public_id), name: s.name };
+  }
+
   /** Applies one section to the working state (a section replaces its earlier answer). */
   private async apply(db: Db, institutionId: string, s: State, section: SectionName, raw: unknown) {
     switch (section) {
@@ -468,7 +505,8 @@ export class AdmissionsService {
         if (v.dob > istBusinessDate(this.now())) {
           throw new ValidationError([{ field: 'student.dob', code: 'VALIDATION.DATE' }]);
         }
-        if (v.idNumber !== undefined) s.idNumber = v.idNumber ?? null;
+        if (v.aadhaar !== undefined) s.studentAadhaar = v.aadhaar;
+        if (v.pan !== undefined) s.studentPan = v.pan ?? null;
         s.data.student = {
           category: v.category ?? null,
           medium: v.medium ?? null,
@@ -493,7 +531,20 @@ export class AdmissionsService {
             { field: `parents.${v.primary.toLowerCase()}`, code: 'VALIDATION.REQUIRED' },
           ]);
         }
-        s.data.parents = v;
+        // The primary contact's Aadhaar and PAN go to their encrypted columns, never into the
+        // stored section; a new primary contact's numbers never carry the last one's over.
+        const { primaryAadhaar, primaryPan, transportStopId, ...rest } = v;
+        const changed = s.primaryRelation !== null && s.primaryRelation !== v.primary;
+        if (primaryAadhaar !== undefined) s.primaryAadhaar = primaryAadhaar;
+        else if (changed) s.primaryAadhaar = null;
+        if (primaryPan !== undefined) s.primaryPan = primaryPan;
+        else if (changed) s.primaryPan = null;
+        // The pick-up stop is kept with its name, as the school's stop list read then.
+        const transportStop =
+          rest.transport && transportStopId
+            ? await this.stopFor(db, institutionId, transportStopId)
+            : null;
+        s.data.parents = { ...rest, transportStop };
         s.primaryName = primary.name;
         s.primaryRelation = v.primary;
         s.primaryMobile = primary.mobile ?? null;
@@ -518,7 +569,8 @@ export class AdmissionsService {
     s.lastName = v.lastName ?? null;
     s.gender = v.gender ?? null;
     s.dob = v.dob ?? null;
-    s.idNumber = v.idNumber ?? null;
+    if (v.aadhaar !== undefined) s.studentAadhaar = v.aadhaar;
+    if (v.pan !== undefined) s.studentPan = v.pan ?? null;
     s.data.student = {
       category: v.category ?? null,
       medium: v.medium ?? null,
@@ -546,6 +598,43 @@ export class AdmissionsService {
       data: JSON.stringify(s.data),
       step: s.step,
     };
+  }
+
+  /**
+   * The identity numbers to write (client 2026-10-12): each encrypted under its own purpose key with
+   * the application and the person as context, its last four characters kept for masked display.
+   * The student's Aadhaar also gets a blind index (the same child twice for a year).
+   */
+  private identityColumns(institutionId: string, appPublicId: string, s: State) {
+    const enc = (purpose: string, who: string, v: string | null) =>
+      v ? this.deps.cipher.encrypt(purpose, v, `${appPublicId}:${who}`) : null;
+    const last4 = (v: string | null) => (v ? v.slice(-4) : null);
+    const { studentAadhaar: sa, studentPan: sp, primaryAadhaar: pa, primaryPan: pp } = s;
+    return {
+      ...(sa === undefined
+        ? {}
+        : {
+            student_aadhaar_enc: enc('adm_aadhaar', 'student', sa),
+            student_aadhaar_bidx: sa ? this.aadhaarIndex(institutionId, sa) : null,
+            student_aadhaar_last4: last4(sa),
+          }),
+      ...(sp === undefined
+        ? {}
+        : { student_pan_enc: enc('adm_pan', 'student', sp), student_pan_last4: last4(sp) }),
+      ...(pa === undefined
+        ? {}
+        : {
+            primary_aadhaar_enc: enc('adm_aadhaar', 'primary', pa),
+            primary_aadhaar_last4: last4(pa),
+          }),
+      ...(pp === undefined
+        ? {}
+        : { primary_pan_enc: enc('adm_pan', 'primary', pp), primary_pan_last4: last4(pp) }),
+    };
+  }
+
+  private aadhaarIndex(institutionId: string, value: string) {
+    return this.deps.cipher.blindIndex('adm_aadhaar', `${institutionId}:${value}`);
   }
 
   private stateOf(r: {
@@ -584,21 +673,40 @@ export class AdmissionsService {
     };
   }
 
-  /** One application of this child and year is enough (OI-ADM-02): identity digits + birth date. */
+  /**
+   * One application of this child and year is enough (OI-ADM-02): the same first and last name
+   * (case and accents aside, the column collation) and birth date. The identity number that told
+   * children apart is no longer asked for (client 2026-10-12).
+   */
   private async duplicate(db: Db, institutionId: string, s: State, exceptRowId?: string) {
-    if (!s.idNumber || !s.dob) return;
+    if (!s.firstName || !s.lastName || !s.dob) return;
     let q = db
       .selectFrom('admission_applications as a')
       .innerJoin('academic_years as y', 'y.id', 'a.year_id')
       .select(['a.id', 'y.label'])
       .where('a.institution_id', '=', institutionId)
       .where('a.year_id', '=', s.yearRowId)
-      .where('a.id_number_bidx', '=', this.idIndex(institutionId, s.idNumber))
+      .where('a.first_name', '=', s.firstName.trim())
+      .where('a.last_name', '=', s.lastName.trim())
       .where('a.dob', '=', s.dob)
       .where('a.status', '<>', 'REJECTED');
     if (exceptRowId) q = q.where('a.id', '<>', exceptRowId);
     const d = await q.executeTakeFirst();
     if (d) throw new CustomAPIError(409, 'ADM.DUPLICATE', { params: { year: d.label } });
+    // The same student's Aadhaar number, whatever the names typed (client 2026-10-12).
+    if (s.studentAadhaar) {
+      let byId = db
+        .selectFrom('admission_applications as a')
+        .innerJoin('academic_years as y', 'y.id', 'a.year_id')
+        .select(['a.id', 'y.label'])
+        .where('a.institution_id', '=', institutionId)
+        .where('a.year_id', '=', s.yearRowId)
+        .where('a.student_aadhaar_bidx', '=', this.aadhaarIndex(institutionId, s.studentAadhaar))
+        .where('a.status', '<>', 'REJECTED');
+      if (exceptRowId) byId = byId.where('a.id', '<>', exceptRowId);
+      const same = await byId.executeTakeFirst();
+      if (same) throw new CustomAPIError(409, 'ADM.DUPLICATE', { params: { year: same.label } });
+    }
   }
 
   /** Creates a draft (public form or counsellor). */
@@ -618,7 +726,6 @@ export class AdmissionsService {
       lastName: null,
       gender: null,
       dob: null,
-      idNumber: null,
       primaryName: null,
       primaryRelation: null,
       primaryMobile: null,
@@ -663,7 +770,7 @@ export class AdmissionsService {
           application_no: no,
           source,
           ...this.columns(s),
-          ...this.idFields(institutionId, pub.id, s.idNumber ?? null),
+          ...this.identityColumns(institutionId, pub.id, s),
           created_by: by,
           created_at: at,
           updated_at: at,
@@ -706,9 +813,7 @@ export class AdmissionsService {
       .updateTable('admission_applications')
       .set({
         ...this.columns(s),
-        ...(s.idNumber !== undefined
-          ? this.idFields(institutionId, binToUuid(r.public_id), s.idNumber)
-          : {}),
+        ...this.identityColumns(institutionId, binToUuid(r.public_id), s),
         updated_at: this.now(),
         row_version: sql<number>`row_version + 1`,
       })
@@ -848,21 +953,17 @@ export class AdmissionsService {
    * Resume: the identity digits or the mobile; a code goes to the mobile on the application. The
    * answer looks the same whether or not anything matched (enumeration-safe).
    */
-  async resumeAsk(
-    linkToken: string,
-    input: { identityNumber?: string | undefined; mobile?: string | undefined },
-  ) {
+  async resumeAsk(linkToken: string, input: { mobile?: string | undefined }) {
     const c = await this.deps.links.context(linkToken);
-    if (!input.identityNumber && !input.mobile) throw new CustomAPIError(422, 'ADM.RESUME_NEEDS');
-    let q = this.deps.db
+    // By the primary contact's mobile only (client 2026-10-12).
+    if (!input.mobile) throw new CustomAPIError(422, 'ADM.RESUME_NEEDS');
+    const hit = await this.deps.db
       .selectFrom('admission_applications')
       .select(['primary_mobile'])
       .where('institution_id', '=', c.institutionId)
-      .where('primary_mobile', 'is not', null);
-    q = input.identityNumber
-      ? q.where('id_number_bidx', '=', this.idIndex(c.institutionId, input.identityNumber))
-      : q.where('primary_mobile', '=', input.mobile!);
-    const hit = await q.orderBy('id', 'desc').executeTakeFirst();
+      .where('primary_mobile', '=', input.mobile)
+      .orderBy('id', 'desc')
+      .executeTakeFirst();
     const mobile = hit?.primary_mobile ?? null;
     let challengeId: string = newPublicIdPair().id;
     let testCode: string | undefined;
@@ -881,16 +982,7 @@ export class AdmissionsService {
     // The token carries the matched mobile encrypted, at the same length whether or not anything
     // matched (a decoy number otherwise): it reveals neither the parent's mobile nor existence.
     const sealed = this.deps.cipher
-      .encrypt(
-        'adm_resume',
-        JSON.stringify({
-          m: mobile ?? RESUME_DECOY,
-          b: input.identityNumber
-            ? this.idIndex(c.institutionId, input.identityNumber).toString('hex')
-            : '',
-        }),
-        c.institutionPublicId,
-      )
+      .encrypt('adm_resume', JSON.stringify({ m: mobile ?? RESUME_DECOY }), c.institutionPublicId)
       .toString('base64url');
     const request = await this.deps.flows.issue(
       'admission-otp',
@@ -900,7 +992,7 @@ export class AdmissionsService {
     return {
       challengeId,
       requestToken: request.token,
-      sentTo: input.mobile ? maskMobile(input.mobile) : 'the mobile number on the application',
+      sentTo: maskMobile(input.mobile),
       ...(testCode ? { testCode } : {}),
     };
   }
@@ -921,7 +1013,7 @@ export class AdmissionsService {
     await this.deps.otp.verify(input.challengeId, input.otp, 'ADMISSION_RESUME', {
       contextHash: this.otpContext(c.institutionId),
     });
-    let sealed: { m: string; b: string };
+    let sealed: { m: string };
     try {
       sealed = JSON.parse(
         this.deps.cipher.decrypt(
@@ -929,18 +1021,18 @@ export class AdmissionsService {
           Buffer.from(claims['s'], 'base64url'),
           c.institutionPublicId,
         ),
-      ) as { m: string; b: string };
+      ) as { m: string };
     } catch {
       throw new BadRequestError('AUTH.OTP_INVALID');
     }
     if (!sealed.m || sealed.m === RESUME_DECOY) throw new BadRequestError('AUTH.OTP_INVALID');
-    let q = this.rows(this.deps.db)
+    // Every application of the primary contact's mobile, newest first.
+    const rows = await this.rows(this.deps.db)
       .where('a.institution_id', '=', c.institutionId)
-      .where('a.primary_mobile', '=', sealed.m);
-    if (sealed.b) {
-      q = q.where('a.id_number_bidx', '=', Buffer.from(sealed.b, 'hex'));
-    }
-    const rows = await q.orderBy('a.id', 'desc').limit(20).execute();
+      .where('a.primary_mobile', '=', sealed.m)
+      .orderBy('a.id', 'desc')
+      .limit(20)
+      .execute();
     const token = await this.resumeToken(
       c.institutionPublicId,
       rows.map((r) => binToUuid(r.public_id)),
@@ -1158,6 +1250,15 @@ export class AdmissionsService {
     need(data.addresses?.residential, 'addresses.residential');
     need(r.primary_name, 'parents.primary');
     need(r.primary_mobile, 'parents.primaryMobile', 'ADM.MOBILE_INVALID');
+    // The mother's details and the children question (client 2026-10-12) — also for a draft saved
+    // before they were asked.
+    need(data.parents?.mother?.name, 'parents.mother.name');
+    need(data.parents?.mother?.mobile, 'parents.mother.mobile');
+    need(data.parents?.children, 'parents.children');
+    // The student's Aadhaar, and the primary contact's Aadhaar and PAN (client 2026-10-12).
+    need(r.student_aadhaar_enc, 'student.aadhaar');
+    need(r.primary_aadhaar_enc, 'parents.primaryAadhaar');
+    need(r.primary_pan_enc, 'parents.primaryPan');
     const docs = await this.deps.db
       .selectFrom('admission_documents')
       .select('doc_type')
@@ -1230,6 +1331,62 @@ export class AdmissionsService {
       .executeTakeFirst();
   }
 
+  /**
+   * The fees an application owes — each configured above zero for its year, or already started — and
+   * where each stands: unpaid, paid and waiting for Accounts, or confirmed (client 2026-10-09).
+   */
+  private async feeStates(db: Db, r: { id: string; institution_id: string; year_id: string }) {
+    const [cfg, rows] = await Promise.all([
+      this.entryFees(db, String(r.institution_id), String(r.year_id)),
+      db
+        .selectFrom('admission_payments')
+        .select(['fee_type', 'status', 'confirmed_at'])
+        .where('application_id', '=', r.id)
+        .execute(),
+    ]);
+    return this.statesOf(cfg, rows);
+  }
+
+  private statesOf(
+    cfg: Awaited<ReturnType<AdmissionsService['entryFees']>>,
+    rows: readonly {
+      fee_type: AdmissionFeeType;
+      status: AdmissionPaymentStatus;
+      confirmed_at: Date | null;
+    }[],
+  ) {
+    return (['APPLICATION', 'ADMISSION'] as const).flatMap((type) => {
+      const row = rows.find((x) => x.fee_type === type);
+      const configured = Number(
+        (type === 'APPLICATION' ? cfg?.application_fee_paise : cfg?.admission_fee_paise) ?? 0,
+      );
+      if (!row && configured <= 0) return [];
+      const paid = row?.status === 'PAID';
+      return [{ type, configured, paid, confirmed: paid && !!row?.confirmed_at }];
+    });
+  }
+
+  private paymentState(fees: ReturnType<AdmissionsService['statesOf']>) {
+    if (fees.every((f) => f.confirmed)) return 'CONFIRMED' as const;
+    return fees.every((f) => f.paid) ? ('PAID' as const) : ('PENDING' as const);
+  }
+
+  /** Keeps the application's payment status in step with its fees (after a payment or a confirmation). */
+  private async refreshPaymentState(trx: Transaction<Database>, appRowId: string) {
+    const r = await trx
+      .selectFrom('admission_applications')
+      .select(['id', 'institution_id', 'year_id'])
+      .where('id', '=', appRowId)
+      .executeTakeFirstOrThrow();
+    const state = this.paymentState(await this.feeStates(trx, r));
+    await trx
+      .updateTable('admission_applications')
+      .set({ payment_status: state })
+      .where('id', '=', appRowId)
+      .execute();
+    return state;
+  }
+
   /** A fee row for the application, created when first needed (one per fee type). */
   private async feeRow(
     trx: Transaction<Database>,
@@ -1273,8 +1430,10 @@ export class AdmissionsService {
     const fees = await this.entryFees(this.deps.db, institutionId, String(r.year_id));
     if (!fees) throw new CustomAPIError(409, 'ADM.FEE_CONFIG_MISSING');
     const appFee = Number(fees.application_fee_paise);
-    const mandatory = !!Number(fees.application_mandatory) && appFee > 0;
-    if (mandatory && input.payLater) throw new CustomAPIError(409, 'ADM.FEE_REQUIRED');
+    // Both fees may be paid later (client 2026-10-12), whatever the year's former "mandatory"
+    // setting says: "pay later" submits at once and the accounts desk collects the fees in cash;
+    // "pay now" waits for the payment, as before. The admission number still waits for Accounts
+    // to confirm both fees.
     const at = this.now();
     const out = await this.deps.db.transaction().execute(async (trx) => {
       const cur = await trx
@@ -1289,12 +1448,14 @@ export class AdmissionsService {
         const f = await this.feeRow(trx, institutionId, r.id, 'APPLICATION', appFee);
         paid = f.status === 'PAID';
       }
-      const submitNow = !mandatory || paid;
+      const submitNow = !!input.payLater || appFee <= 0 || paid;
       await trx
         .updateTable('admission_applications')
         .set({
           declared_at: at,
           declared_by: input.declaredBy?.slice(0, 100) ?? null,
+          // A submission carries the family's consent (the schema requires it).
+          registration_consent_at: at,
           step: 7,
           ...(submitNow ? { status: 'SUBMITTED' as const, submitted_at: at } : {}),
           updated_at: at,
@@ -1314,7 +1475,7 @@ export class AdmissionsService {
       return {
         status: submitNow ? ('SUBMITTED' as const) : ('DRAFT' as const),
         applicationNo: r.application_no,
-        feeDue: !paid && appFee > 0 ? { ...toMoneyDto(appFee), mandatory } : null,
+        feeDue: !paid && appFee > 0 ? { ...toMoneyDto(appFee), mandatory: false } : null,
       };
     });
     if (out.status === 'SUBMITTED') await this.tellFamily(institutionId, id, 'SUBMITTED');
@@ -1413,13 +1574,10 @@ export class AdmissionsService {
     const now = this.now();
     await trx
       .updateTable('admission_applications')
-      .set({
-        payment_status: 'COMPLETED',
-        updated_at: now,
-        row_version: sql<number>`row_version + 1`,
-      })
+      .set({ updated_at: now, row_version: sql<number>`row_version + 1` })
       .where('id', '=', String(pay.application_id))
       .execute();
+    await this.refreshPaymentState(trx, String(pay.application_id));
     if (pay.fee_type === 'APPLICATION') {
       await trx
         .updateTable('admission_applications')
@@ -1441,12 +1599,20 @@ export class AdmissionsService {
 
   /** Which fee to pay and its amount; the application must be able to pay it. */
   private async payable(
-    r: { id: string; status: ApplicationStatus; year_id: string; institution_id: string },
+    r: {
+      id: string;
+      status: ApplicationStatus;
+      year_id: string;
+      institution_id: string;
+      declared_at: Date | string | null;
+    },
     feeType: AdmissionFeeType,
   ) {
     if (r.status === 'REJECTED') throw new CustomAPIError(409, 'ADM.REJECTED_NO_PAYMENT');
-    if (feeType === 'ADMISSION' && r.status !== 'APPROVED') {
-      throw new CustomAPIError(409, 'ADM.FEE_AFTER_APPROVAL');
+    // The admission fee may be paid with the submitted form or any time after (client 2026-10-09):
+    // it is confirmed by Accounts before the admission number is assigned.
+    if (feeType === 'ADMISSION' && r.status === 'DRAFT' && !r.declared_at) {
+      throw new CustomAPIError(409, 'ADM.ADMISSION_FEE_NOT_YET');
     }
     const fees = await this.entryFees(this.deps.db, String(r.institution_id), String(r.year_id));
     if (!fees) throw new CustomAPIError(409, 'ADM.FEE_CONFIG_MISSING');
@@ -1460,17 +1626,31 @@ export class AdmissionsService {
   async startPayment(
     id: string,
     token: string | undefined,
-    input: { feeType?: AdmissionFeeType | undefined },
+    input: { feeType?: AdmissionFeeType | undefined; withAdmission?: boolean | undefined },
   ) {
     const a = await this.access(id, token, 'pay');
+    // A draft still owes its application fee; once submitted, what is left is the admission fee.
     const feeType: AdmissionFeeType =
-      a.fee ?? input.feeType ?? (a.row.status === 'APPROVED' ? 'ADMISSION' : 'APPLICATION');
+      a.fee ?? input.feeType ?? (a.row.status === 'DRAFT' ? 'APPLICATION' : 'ADMISSION');
     const amount = await this.payable(a.row, feeType);
+    // The family chose on the form to pay the admission fee now (client 2026-10-09): it joins the
+    // application fee in one order, unless it is paid already or the year has none.
+    let admission = 0;
+    if (input.withAdmission && feeType === 'APPLICATION' && !a.fee) {
+      const paid = await this.deps.db
+        .selectFrom('admission_payments')
+        .select('id')
+        .where('application_id', '=', a.row.id)
+        .where('fee_type', '=', 'ADMISSION')
+        .where('status', '=', 'PAID')
+        .executeTakeFirst();
+      if (!paid) admission = await this.payable(a.row, 'ADMISSION').catch(() => 0);
+    }
     const chosen = await this.gatewayFor(String(a.inst.id));
     let order: GatewayOrder | null;
     try {
       order = await chosen.gateway.createOrder({
-        amountPaise: amount,
+        amountPaise: amount + admission,
         receipt: a.row.application_no,
         notes: { applicationNo: a.row.application_no, feeType },
       });
@@ -1480,28 +1660,35 @@ export class AdmissionsService {
     }
     if (!order) throw new CustomAPIError(503, 'ADM.GATEWAY_NOT_CONFIGURED');
     const pay = await this.deps.db.transaction().execute(async (trx) => {
-      const f = await this.feeRow(trx, a.inst.id, a.row.id, feeType, amount);
-      if (f.status === 'PAID') throw new CustomAPIError(409, 'ADM.FEE_ALREADY_PAID');
-      await trx
-        .updateTable('admission_payments')
-        .set({
-          status: 'PENDING',
-          mode: 'ONLINE',
-          amount_paise: amount,
-          gateway_order_id: order.orderId,
-          gateway_id: chosen.gatewayId,
-          attempts: sql<number>`attempts + 1`,
-          updated_at: this.now(),
-          row_version: sql<number>`row_version + 1`,
-        })
-        .where('id', '=', f.id)
-        .execute();
+      const onOrder = async (type: AdmissionFeeType, paise: number) => {
+        const f = await this.feeRow(trx, a.inst.id, a.row.id, type, paise);
+        if (f.status === 'PAID') throw new CustomAPIError(409, 'ADM.FEE_ALREADY_PAID');
+        await trx
+          .updateTable('admission_payments')
+          .set({
+            status: 'PENDING',
+            mode: 'ONLINE',
+            amount_paise: paise,
+            gateway_order_id: order.orderId,
+            gateway_id: chosen.gatewayId,
+            attempts: sql<number>`attempts + 1`,
+            updated_at: this.now(),
+            row_version: sql<number>`row_version + 1`,
+          })
+          .where('id', '=', f.id)
+          .execute();
+        return f;
+      };
+      const f = await onOrder(feeType, amount);
+      if (admission > 0) await onOrder('ADMISSION', admission);
       return f;
     });
     return {
       paymentId: binToUuid(pay.public_id),
       feeType,
-      amount: toMoneyDto(amount),
+      // What this order pays: the fee, and the admission fee with it when chosen.
+      includes: admission > 0 ? (['APPLICATION', 'ADMISSION'] as const) : [feeType],
+      amount: toMoneyDto(amount + admission),
       gatewayOrder: {
         orderId: order.orderId,
         amount: toMoneyDto(order.amountPaise),
@@ -1528,11 +1715,27 @@ export class AdmissionsService {
       .where('public_id', '=', uuidToBin(paymentId))
       .executeTakeFirst();
     if (!f) throw new NotFoundError();
+    // Every fee on this order: one, or the application and admission fees together.
+    const onOrder = (status: readonly AdmissionPaymentStatus[]) =>
+      f.gateway_order_id
+        ? this.deps.db
+            .selectFrom('admission_payments')
+            .selectAll()
+            .where('application_id', '=', a.row.id)
+            .where('gateway_order_id', '=', f.gateway_order_id)
+            .where('status', 'in', status)
+            .orderBy('fee_type') // the ENUM's order: the application fee first
+            .execute()
+        : Promise.resolve([f]);
+    const receiptsOf = (
+      rows: readonly { fee_type: AdmissionFeeType; receipt_no: string | null }[],
+    ) => rows.map((r) => ({ feeType: r.fee_type, receiptNo: r.receipt_no }));
     if (f.status === 'PAID') {
       if (f.gateway_payment_id === input.gatewayPaymentId) {
         return {
           status: 'PAID' as const,
           receiptNo: f.receipt_no,
+          receipts: receiptsOf(await onOrder(['PAID'])),
           applicationStatus: a.row.status,
         };
       }
@@ -1547,30 +1750,54 @@ export class AdmissionsService {
         signature: input.signature,
       });
     if (!ok) {
-      await this.failPayment(f.id, 'The gateway’s signature did not verify');
+      await this.failPayment(f, 'The gateway’s signature did not verify');
       throw new CustomAPIError(402, 'ADM.PAYMENT_NOT_VERIFIED');
     }
-    // Live: the payment as Razorpay holds it — this order, the fee's amount, captured.
-    const wrong = await this.gatewayProblem(gateway, f, input.gatewayPaymentId);
-    if (wrong) {
-      await this.failPayment(f.id, wrong);
-      throw new CustomAPIError(402, 'ADM.PAYMENT_NOT_VERIFIED');
-    }
-    const receipt = await this.deps.db.transaction().execute((trx) =>
-      this.markPaid(trx, f, {
-        mode: 'ONLINE',
-        paidAt: this.now(),
-        gatewayPaymentId: input.gatewayPaymentId,
-      }),
+    // Each fee on the order is paid, with its own receipt (the application fee first).
+    const due = await onOrder(['PENDING', 'FAILED']);
+    const fees = due.length ? due : [f];
+    // Live: the payment as Razorpay holds it — this order, the amount of every fee on it, captured.
+    const orderPaise = fees.reduce((s, r) => s + Number(r.amount_paise), 0);
+    const wrong = await this.gatewayProblem(
+      gateway,
+      { gateway_order_id: f.gateway_order_id, amount_paise: orderPaise },
+      input.gatewayPaymentId,
     );
+    if (wrong) {
+      await this.failPayment(f, wrong);
+      throw new CustomAPIError(402, 'ADM.PAYMENT_NOT_VERIFIED');
+    }
+    const receipts = await this.deps.db.transaction().execute(async (trx) => {
+      const out: { feeType: AdmissionFeeType; receiptNo: string }[] = [];
+      for (const row of fees) {
+        out.push({
+          feeType: row.fee_type,
+          receiptNo: await this.markPaid(trx, row, {
+            mode: 'ONLINE',
+            paidAt: this.now(),
+            gatewayPaymentId: input.gatewayPaymentId,
+          }),
+        });
+      }
+      return out;
+    });
     const after = await this.lockless(a.inst.id, id);
     if (a.row.status === 'DRAFT' && after.status === 'SUBMITTED') {
       await this.tellFamily(a.inst.id, id, 'SUBMITTED');
     }
-    return { status: 'PAID' as const, receiptNo: receipt, applicationStatus: after.status };
+    return {
+      status: 'PAID' as const,
+      receiptNo: receipts.find((r) => r.feeType === f.fee_type)?.receiptNo ?? null,
+      receipts,
+      applicationStatus: after.status,
+    };
   }
 
-  private async failPayment(id: string, reason: string) {
+  /** Every fee still pending on the payment's order fails: one, or the application and admission fees. */
+  private async failPayment(
+    f: { id: string; application_id: string; gateway_order_id: string | null },
+    reason: string,
+  ) {
     await this.deps.db
       .updateTable('admission_payments')
       .set({
@@ -1579,14 +1806,17 @@ export class AdmissionsService {
         updated_at: this.now(),
         row_version: sql<number>`row_version + 1`,
       })
-      .where('id', '=', id)
+      .where('application_id', '=', f.application_id)
+      .where((eb) =>
+        f.gateway_order_id ? eb('gateway_order_id', '=', f.gateway_order_id) : eb('id', '=', f.id),
+      )
       .where('status', '=', 'PENDING')
       .execute();
   }
 
   /**
    * Live gateway: what is wrong with the payment as the gateway holds it, or null when it is this
-   * order's, for the fee's amount, and captured (an authorised payment is captured first).
+   * order's, for the order's amount, and captured (an authorised payment is captured first).
    */
   /**
    * The gateway for a new payment: the test checkout in test mode; else the school's default
@@ -1703,16 +1933,21 @@ export class AdmissionsService {
     const orderId = typeof p?.['order_id'] === 'string' ? p['order_id'] : null;
     const paymentId = typeof p?.['id'] === 'string' ? p['id'] : null;
     if (!orderId || !paymentId) return 'IGNORED';
-    const f = await this.deps.db
+    // Every fee on the order: one, or the application and admission fees together.
+    const onOrder = await this.deps.db
       .selectFrom('admission_payments')
       .selectAll()
       .where('gateway_order_id', '=', orderId)
       // Only payments taken with this gateway: one school's keys never settle another's.
       .where('gateway_id', gatewayId === null ? 'is' : '=', gatewayId)
-      .executeTakeFirst();
+      .orderBy('fee_type') // the ENUM's order: the application fee first
+      .execute();
+    const f = onOrder[0];
     if (!f) return 'UNKNOWN_ORDER';
-    if (f.status === 'PAID') return 'ALREADY_PAID';
-    if (Number(p?.['amount']) !== Number(f.amount_paise)) return 'AMOUNT_MISMATCH';
+    const due = onOrder.filter((r) => r.status !== 'PAID');
+    if (!due.length) return 'ALREADY_PAID';
+    const orderPaise = onOrder.reduce((s, r) => s + Number(r.amount_paise), 0);
+    if (Number(p?.['amount']) !== orderPaise) return 'AMOUNT_MISMATCH';
     if (p?.['status'] !== 'captured') return 'NOT_CAPTURED';
     const app = await this.deps.db
       .selectFrom('admission_applications')
@@ -1720,13 +1955,15 @@ export class AdmissionsService {
       .where('id', '=', String(f.application_id))
       .executeTakeFirstOrThrow();
     try {
-      await this.deps.db.transaction().execute((trx) =>
-        this.markPaid(trx, f, {
-          mode: 'ONLINE',
-          paidAt: this.now(),
-          gatewayPaymentId: paymentId,
-        }),
-      );
+      await this.deps.db.transaction().execute(async (trx) => {
+        for (const row of due) {
+          await this.markPaid(trx, row, {
+            mode: 'ONLINE',
+            paidAt: this.now(),
+            gatewayPaymentId: paymentId,
+          });
+        }
+      });
     } catch (e) {
       if (e instanceof CustomAPIError && e.code === 'ADM.FEE_ALREADY_PAID') return 'ALREADY_PAID';
       throw e;
@@ -2072,6 +2309,11 @@ export class AdmissionsService {
     const r = await this.lockless(i0.id, id);
     this.decidable(r);
     if (r.row_version !== expected) throw new PreconditionFailedError();
+    // The admission number and section follow Accounts' confirmation of both fees, the application
+    // fee and the admission fee (client 2026-10-09). Confirmations only ever move forward.
+    if ((await this.feeStates(this.deps.db, r)).some((f) => !f.confirmed)) {
+      throw new CustomAPIError(409, 'ADM.FEES_NOT_CONFIRMED');
+    }
     if (Number(r.mid_term)) {
       const tcDoc = await this.deps.db
         .selectFrom('admission_documents')
@@ -2550,9 +2792,12 @@ export class AdmissionsService {
       receiptNo: string | null;
       paidAt: string | null;
       paidBy: string | null;
+      confirmedAt: string | null;
     }[] = [];
     let collectedPaise = 0;
     let pendingPaise = 0;
+    // The admission fee is due from submission on (client 2026-10-09), not only after approval.
+    const admissionDue = (s: ApplicationStatus) => s === 'SUBMITTED' || s === 'APPROVED';
     for (const a of apps) {
       for (const type of ['APPLICATION', 'ADMISSION'] as const) {
         if (f.feeType && f.feeType !== type) continue;
@@ -2561,7 +2806,7 @@ export class AdmissionsService {
         const configured = Number(
           (type === 'APPLICATION' ? cfg?.application_fee_paise : cfg?.admission_fee_paise) ?? 0,
         );
-        if (!row && (type === 'ADMISSION' ? a.status !== 'APPROVED' : true)) continue;
+        if (!row && (type === 'ADMISSION' ? !admissionDue(a.status) : true)) continue;
         if (!row && configured <= 0) continue;
         const status = row?.status ?? 'PENDING';
         if (f.status && f.status !== status) continue;
@@ -2584,6 +2829,7 @@ export class AdmissionsService {
           receiptNo: row?.receipt_no ?? null,
           paidAt: iso(row?.paid_at),
           paidBy: row?.paid_by ?? null,
+          confirmedAt: iso(row?.confirmed_at),
         });
       }
     }
@@ -2594,6 +2840,7 @@ export class AdmissionsService {
         pending: toMoneyDto(pendingPaise),
         paidCount: items.filter((x) => x.status === 'PAID').length,
         pendingCount: items.filter((x) => x.status !== 'PAID').length,
+        toConfirmCount: items.filter((x) => x.status === 'PAID' && !x.confirmedAt).length,
       },
     };
   }
@@ -2656,6 +2903,62 @@ export class AdmissionsService {
         throw new CustomAPIError(409, 'ADM.RECEIPT_TAKEN');
       throw e;
     }
+  }
+
+  /**
+   * Accounts confirms a fee was received (client 2026-10-09) — online or cash, once, and only once it
+   * is paid. Both fees confirmed open the admission number and section to the Co-ordinator.
+   */
+  async confirmFee(p: Principal, paymentId: string) {
+    const i = await this.consoleInst(p);
+    if (!isUuid(paymentId)) throw new NotFoundError();
+    const at = this.now();
+    const appId = await this.deps.db.transaction().execute(async (trx) => {
+      const f = await trx
+        .selectFrom('admission_payments as f')
+        .innerJoin('admission_applications as a', 'a.id', 'f.application_id')
+        .select([
+          'f.id',
+          'f.status',
+          'f.confirmed_at',
+          'f.fee_type',
+          'f.receipt_no',
+          'f.application_id',
+          'a.public_id as app_public_id',
+        ])
+        .where('f.institution_id', '=', i.id)
+        .where('f.public_id', '=', uuidToBin(paymentId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (!f) throw new NotFoundError();
+      if (f.status !== 'PAID') throw new CustomAPIError(409, 'ADM.FEE_NOT_PAID');
+      if (f.confirmed_at) throw new CustomAPIError(409, 'ADM.FEE_ALREADY_CONFIRMED');
+      await trx
+        .updateTable('admission_payments')
+        .set({
+          confirmed_at: at,
+          confirmed_by: this.by(p),
+          updated_at: at,
+          row_version: sql<number>`row_version + 1`,
+        })
+        .where('id', '=', f.id)
+        .execute();
+      await trx
+        .updateTable('admission_applications')
+        .set({ updated_at: at, row_version: sql<number>`row_version + 1` })
+        .where('id', '=', String(f.application_id))
+        .execute();
+      await this.refreshPaymentState(trx, String(f.application_id));
+      await recordAudit(trx, {
+        institutionId: i.id,
+        action: 'ADMISSION_FEE_CONFIRMED',
+        entityType: 'admission_payment',
+        entityRef: paymentId,
+        after: { feeType: f.fee_type, receipt: f.receipt_no },
+      });
+      return binToUuid(f.app_public_id);
+    });
+    return { paymentId, confirmedAt: at.toISOString(), application: await this.detail(p, appId) };
   }
 
   /** A payment link for the admission fee (19.8): the family pays online without signing in. */

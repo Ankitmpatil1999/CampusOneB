@@ -4,7 +4,17 @@
  * at submission (ADM-009). The identity number is only its last 6 digits (Q16 e).
  */
 import { z } from 'zod';
-import { PATTERNS } from '../utils/validators';
+import { PATTERNS, isAadhaar, pan } from '../utils/validators';
+
+/**
+ * An Aadhaar number (client 2026-10-12): twelve digits, not starting with 0 or 1 (the Verhoeff check
+ * digit is not enforced for now); spaces and hyphens between the groups are dropped. Write-only: the
+ * application shows it masked.
+ */
+const aadhaar = z
+  .string()
+  .transform((v) => v.replace(/[\s-]/g, ''))
+  .refine(isAadhaar, { message: 'ADM.ID_INVALID' });
 
 const id = z.string({ message: 'VALIDATION.REQUIRED' }).trim().max(40);
 const date = z
@@ -57,11 +67,12 @@ export const studentSectionSchema = z.strictObject({
   lastName: name(),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER'], { message: 'VALIDATION.FORMAT' }),
   dob: date,
-  idNumber: z
-    .string()
-    .regex(/^\d{6}$/, { message: 'ADM.ID_INVALID' })
-    .nullish()
-    .describe('The last 6 digits of the identity number (Q16 e); kept encrypted'),
+  // Omitted: what is stored stays (the numbers are never read back in full). Required to submit.
+  aadhaar: aadhaar
+    .optional()
+    .describe("The student's Aadhaar number; kept encrypted, shown masked"),
+  // Optional; null clears it.
+  pan: pan().nullish().describe("The student's PAN, if any; kept encrypted, shown masked"),
   category: z
     .enum(['GENERAL', 'OBC', 'SC', 'ST', 'OTHER'], { message: 'VALIDATION.FORMAT' })
     .nullish(),
@@ -90,9 +101,24 @@ export const previousSectionSchema = z.strictObject({
 });
 export const parentsSectionSchema = z.strictObject({
   father: person.nullish(),
-  mother: person.nullish(),
+  // The mother's name and mobile are required (client 2026-10-12); the father and a guardian are not.
+  mother: person.extend({ mobile }),
   guardian: person.extend({ relation: z.string().trim().min(1).max(40) }).nullish(),
   primary: z.enum(['FATHER', 'MOTHER', 'GUARDIAN'], { message: 'VALIDATION.REQUIRED' }),
+  children: z
+    .enum(['SINGLE', 'MORE'], { message: 'VALIDATION.REQUIRED' })
+    .describe('Whether the parents have a single child or more (client 2026-10-12)'),
+  // The primary contact's Aadhaar and PAN, both required to submit (client 2026-10-12). Omitted:
+  // what is stored stays — unless the primary contact changes, which clears them.
+  primaryAadhaar: aadhaar
+    .optional()
+    .describe("The primary contact's Aadhaar number; kept encrypted, shown masked"),
+  primaryPan: pan().optional().describe("The primary contact's PAN; kept encrypted, shown masked"),
+  // School transport (client 2026-10-12): opted for, and the pick-up stop preferred, if any.
+  transport: z.boolean().optional().describe('The family opts for school transport'),
+  transportStopId: id
+    .nullish()
+    .describe("The preferred pick-up stop: one of the landing's transportStops"),
   hostel: z.boolean().optional(),
   localGuardian: z
     .strictObject({
@@ -149,19 +175,18 @@ export const referenceInputSchema = z
 export const submissionSchema = z
   .strictObject({
     declarationAccepted: z.literal(true, { message: 'ADM.DECLARATION' }),
+    registrationConsent: z
+      .literal(true, { message: 'ADM.CONSENT_REQUIRED' })
+      .describe(
+        'The family agrees that what is collected registers their RingPe account (client 2026-10-12)',
+      ),
     payLater: z.boolean().optional(),
   })
   .meta({ id: 'AdmissionSubmission' });
 
-export const resumeAskSchema = z
-  .strictObject({
-    identityNumber: z
-      .string()
-      .regex(/^\d{6}$/, { message: 'ADM.ID_INVALID' })
-      .optional(),
-    mobile: mobile.optional(),
-  })
-  .meta({ id: 'AdmissionResumeAsk' });
+// The family finds its applications by the primary contact's mobile (client 2026-10-12): the
+// identity number is no longer asked for.
+export const resumeAskSchema = z.strictObject({ mobile }).meta({ id: 'AdmissionResumeAsk' });
 export const resumeVerifySchema = z
   .strictObject({
     challengeId: z.string().trim().max(40),
@@ -181,7 +206,15 @@ export const statusLookupSchema = z
   })
   .meta({ id: 'AdmissionStatusLookup' });
 export const feePaymentStartSchema = z
-  .strictObject({ feeType: z.enum(['APPLICATION', 'ADMISSION']).optional() })
+  .strictObject({
+    feeType: z.enum(['APPLICATION', 'ADMISSION']).optional(),
+    withAdmission: z
+      .boolean()
+      .optional()
+      .describe(
+        'With the application fee: the admission fee too, in the same order (the family chose to pay it now)',
+      ),
+  })
   .meta({ id: 'AdmissionPaymentStart' });
 export const feePaymentVerifySchema = z
   .strictObject({
@@ -192,7 +225,18 @@ export const feePaymentVerifySchema = z
 
 // --- console ------------------------------------------------------------------------------------------
 export const consoleApplicationSchema = applicationInputSchema
-  .extend({ submit: z.boolean().optional() })
+  .extend({
+    submit: z.boolean().optional(),
+    // Submitting at once carries the family's consent, as ADM-030 does (client 2026-10-12).
+    registrationConsent: z
+      .literal(true, { message: 'ADM.CONSENT_REQUIRED' })
+      .optional()
+      .describe('Required with submit: true'),
+  })
+  .refine((v) => !v.submit || v.registrationConsent === true, {
+    message: 'ADM.CONSENT_REQUIRED',
+    path: ['registrationConsent'],
+  })
   .meta({ id: 'CounsellorApplicationInput' });
 export const tcSchema = z
   .strictObject({

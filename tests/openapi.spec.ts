@@ -131,6 +131,7 @@ describe('OpenAPI 3.1 document', () => {
       'ADM-028',
       'ADM-029',
       'ADM-030',
+      'ADM-031',
       'ALW-001',
       'ALW-002',
       'ALW-003',
