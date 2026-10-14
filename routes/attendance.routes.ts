@@ -29,6 +29,21 @@ export const tapSchema = z
     tappedAt: z.string().max(40).optional(),
   })
   .meta({ id: 'ReaderTap' });
+/** ATT-028: a card on the teacher's own reader, for the daily register or a running period. */
+export const teacherTapSchema = z
+  .strictObject({
+    cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(32),
+    mode: z.enum(['DAILY', 'PERIOD'], { message: 'VALIDATION.FORMAT' }),
+    classSectionId: uuid
+      .optional()
+      .describe('DAILY: the class teacher’s section (default: the first)'),
+    slotId: z
+      .string()
+      .max(80)
+      .optional()
+      .describe('PERIOD: "<section id>.<period id>" from ATT-021'),
+  })
+  .meta({ id: 'TeacherCardTap' });
 export const dailySchema = z
   .strictObject({
     date,
@@ -277,6 +292,17 @@ doc({
   responses: { 200: { description: 'Saved' } },
 });
 doc({
+  id: 'ATT-028',
+  method: 'post',
+  path: '/api/v1/teacher/attendance/card-taps',
+  summary:
+    'A student taps their card on the teacher’s own USB reader (web console, RingPe Card Reader): today, any time; DAILY — a student who missed the gate, in a class the teacher teaches (class or subject teacher; default the class teacher’s section), recorded Present for the day (a recorded Absent becomes Present); PERIOD — a student of the teacher’s period running now, Present or Late; already recorded is answered ALREADY',
+  auth: 'member|teaching.attendance',
+  idempotent: 'required',
+  request: teacherTapSchema,
+  responses: { 200: { description: 'MARKED or ALREADY, with the student and status' } },
+});
+doc({
   id: 'ATT-023',
   method: 'get',
   path: '/api/v1/me/attendance',
@@ -463,6 +489,14 @@ export function attendanceRoutes(deps: {
         entries: b.entries,
       });
     }),
+  );
+  router.post(
+    '/teacher/attendance/card-taps',
+    teaching('attendance'),
+    once,
+    json((req) =>
+      deps.attendance.teacherTap(principal(req), teacherTapSchema.parse(req.body ?? {})),
+    ),
   );
   router.get(
     '/teacher/attendance/periods',

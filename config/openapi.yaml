@@ -18408,6 +18408,38 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /api/v1/teacher/attendance/card-taps:
+    post:
+      operationId: ATT-028
+      summary: "A student taps their card on the teacher’s own USB reader (web console, RingPe Card Reader): today, any time; DAILY — a student who missed the gate, in a class the teacher teaches (class or subject teacher; default the class teacher’s section), recorded Present for the day (a recorded Absent becomes Present); PERIOD — a student of the teacher’s period running now, Present or Late; already recorded is answered ALREADY"
+      tags:
+        - Attendance
+      x-ringpe-auth: member|teaching.attendance
+      responses:
+        "200":
+          description: MARKED or ALREADY, with the student and status
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeacherCardTap"
   /api/v1/teacher/attendance/periods:
     get:
       operationId: ATT-021
@@ -45574,6 +45606,29 @@ components:
           maxLength: 40
       required:
         - kind
+      additionalProperties: false
+    TeacherCardTap:
+      type: object
+      properties:
+        cardToken:
+          type: string
+          maxLength: 32
+        mode:
+          type: string
+          enum:
+            - DAILY
+            - PERIOD
+        classSectionId:
+          description: "DAILY: the class teacher’s section (default: the first)"
+          type: string
+          maxLength: 40
+        slotId:
+          description: 'PERIOD: "<section id>.<period id>" from ATT-021'
+          type: string
+          maxLength: 80
+      required:
+        - cardToken
+        - mode
       additionalProperties: false
     Terminal:
       type: object

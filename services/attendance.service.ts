@@ -247,15 +247,7 @@ export class AttendanceService {
   ) {
     const card = await this.deps.cards.activeCard(terminal.institutionId, input.cardToken);
     const at = this.now();
-    const gap = await this.limit(LIMITS.doubleTapSeconds);
-    const last = await this.deps.db
-      .selectFrom('cards')
-      .select('last_tap_at')
-      .where('id', '=', String(card.id))
-      .executeTakeFirst();
-    if (last?.last_tap_at && at.getTime() - new Date(last.last_tap_at).getTime() < gap * 1000) {
-      throw new CustomAPIError(429, 'ATT.DOUBLE_TAP');
-    }
+    await this.notTooSoon(String(card.id), at);
     const date = istBusinessDate(at);
     const out = await this.deps.db.transaction().execute(async (trx) => {
       await trx
@@ -269,6 +261,200 @@ export class AttendanceService {
         return this.periodTap(trx, terminal, m, date, at);
       if (terminal.purpose === 'LOCATION') return this.locationTap(trx, terminal, m, at);
       return this.gateTap(trx, terminal, m, date, at);
+    });
+    await this.deps.cards.touch(String(card.id));
+    return out;
+  }
+
+  /** A card tapped again within `att.doubleTapSeconds` is refused (27.4). */
+  private async notTooSoon(cardId: string, at: Date) {
+    const gap = await this.limit(LIMITS.doubleTapSeconds);
+    const last = await this.deps.db
+      .selectFrom('cards')
+      .select('last_tap_at')
+      .where('id', '=', cardId)
+      .executeTakeFirst();
+    if (last?.last_tap_at && at.getTime() - new Date(last.last_tap_at).getTime() < gap * 1000) {
+      throw new CustomAPIError(429, 'ATT.DOUBLE_TAP');
+    }
+  }
+
+  // --- ATT-028: the teacher's own card reader on the web (client 2026-10-13) --------------------------
+  /**
+   * A student taps their card on the teacher's USB reader (the web console's Attendance page with
+   * RingPe Card Reader): today only, for a student of the class — the class teacher's daily
+   * register — or of the teacher's period running now (from 10 minutes before it starts until it
+   * ends, as at a classroom reader). Recorded as a card tap (method NFC, no terminal, the teacher
+   * as the actor). A student already recorded is answered as such, not refused; a recorded Absent
+   * becomes Present — the card shows they are here — with old → new kept.
+   */
+  async teacherTap(
+    p: Principal,
+    input: {
+      cardToken: string;
+      mode: 'DAILY' | 'PERIOD';
+      classSectionId?: string | undefined;
+      slotId?: string | undefined;
+    },
+  ) {
+    const me = await teacherOf(this.deps.db, p);
+    const card = await this.deps.cards.activeCard(me.institutionId, input.cardToken);
+    const at = this.now();
+    await this.notTooSoon(String(card.id), at);
+    const date = istBusinessDate(at);
+    const by = this.by(p);
+    const profileRowId = String(card.profile_id);
+    const out = await this.deps.db.transaction().execute(async (trx) => {
+      await trx
+        .selectFrom('member_profiles')
+        .select('id')
+        .where('id', '=', profileRowId)
+        .forUpdate()
+        .execute();
+      const m = await this.who(trx, me.institutionId, profileRowId, date);
+      const student = { id: binToUuid(card.member_public_id), name: m.name };
+      const enrolledIn = async (yearId: string, sectionId: string) => {
+        const e = await trx
+          .selectFrom('enrolments')
+          .select('id')
+          .where('year_id', '=', yearId)
+          .where('section_id', '=', sectionId)
+          .where('student_profile_id', '=', profileRowId)
+          .executeTakeFirst();
+        if (!e) throw new CustomAPIError(403, 'ATT.NOT_IN_CLASS', { params: { name: m.name } });
+      };
+
+      if (input.mode === 'DAILY') {
+        // Any class the teacher teaches (client 2026-10-13: the first class of the day takes it
+        // for students who missed the gate); without one named, the class teacher's own section.
+        const { year, section } = input.classSectionId
+          ? await this.taughtSection(trx, me, input.classSectionId, date)
+          : await this.classTeacherSection(trx, p, undefined, date);
+        assertOpen(await yearFor(trx, me.institutionId, year.publicId));
+        await enrolledIn(year.id, String(section.id));
+        const day = await trx
+          .selectFrom('attendance_days')
+          .selectAll()
+          .where('profile_id', '=', profileRowId)
+          .where('att_date', '=', date)
+          .forUpdate()
+          .executeTakeFirst();
+        if (day && day.status !== 'ABSENT') {
+          return { result: 'ALREADY' as const, status: day.status, student, at: at.toISOString() };
+        }
+        let dayId: string;
+        if (!day) {
+          const ins = await trx
+            .insertInto('attendance_days')
+            .values({
+              institution_id: me.institutionId,
+              year_id: m.year?.id ?? null,
+              profile_id: profileRowId,
+              section_id: m.sectionId,
+              att_date: date,
+              checkin_status: 'PRESENT',
+              status: 'PRESENT',
+              method: 'NFC',
+              check_in_at: at,
+              updated_by: by,
+              created_at: at,
+              updated_at: at,
+            })
+            .executeTakeFirstOrThrow();
+          dayId = String(ins.insertId);
+        } else {
+          await trx
+            .updateTable('attendance_days')
+            .set({
+              status: 'PRESENT',
+              checkin_status: 'PRESENT',
+              method: 'NFC',
+              check_in_at: day.check_in_at ?? at,
+              updated_by: by,
+              updated_at: at,
+              row_version: sql<number>`row_version + 1`,
+            })
+            .where('id', '=', day.id)
+            .execute();
+          dayId = day.id;
+        }
+        await trx
+          .insertInto('attendance_events')
+          .values({
+            institution_id: me.institutionId,
+            day_id: dayId,
+            action: 'CHECK-IN',
+            old_status: day?.status ?? null,
+            new_status: 'PRESENT',
+            actor: by,
+            remark: "Card tapped on the teacher's reader",
+            at,
+          })
+          .execute();
+        await this.changed(trx, me.institutionId, date);
+        return { result: 'MARKED' as const, status: 'PRESENT', student, at: at.toISOString() };
+      }
+
+      if (!input.slotId) throw new NotFoundError();
+      const slot = await this.slotOf(trx, me.institutionId, input.slotId, date);
+      if (String(slot.teacher_profile_id) !== me.rowId) {
+        throw new CustomAPIError(403, 'ATT.NOT_YOUR_PERIOD');
+      }
+      const year = await trx
+        .selectFrom('academic_years')
+        .select('public_id')
+        .where('id', '=', String(slot.year_id))
+        .executeTakeFirstOrThrow();
+      assertOpen(await yearFor(trx, me.institutionId, binToUuid(year.public_id)));
+      await enrolledIn(String(slot.year_id), String(slot.section_id));
+      const pd = await trx
+        .selectFrom('periods')
+        .select(['name', 'starts_at', 'ends_at'])
+        .where('id', '=', String(slot.period_id))
+        .executeTakeFirstOrThrow();
+      const minutes = istMinutes(at);
+      const start = toMinutes(pd.starts_at);
+      const end = toMinutes(pd.ends_at);
+      if (!(start <= minutes + 10 && minutes < end)) {
+        throw new CustomAPIError(409, 'ATT.OUTSIDE_PERIOD', {
+          params: { start: clock(start), end: clock(end) },
+        });
+      }
+      const existing = await trx
+        .selectFrom('period_attendance')
+        .select(['status'])
+        .where('section_id', '=', String(slot.section_id))
+        .where('period_id', '=', String(slot.period_id))
+        .where('att_date', '=', date)
+        .where('profile_id', '=', profileRowId)
+        .executeTakeFirst();
+      if (existing) {
+        return {
+          result: 'ALREADY' as const,
+          status: existing.status,
+          student,
+          at: at.toISOString(),
+        };
+      }
+      const status = minutes <= start ? 'PRESENT' : 'LATE';
+      await trx
+        .insertInto('period_attendance')
+        .values({
+          institution_id: me.institutionId,
+          year_id: String(slot.year_id),
+          section_id: String(slot.section_id),
+          period_id: String(slot.period_id),
+          subject_id: String(slot.subject_id),
+          teacher_profile_id: String(slot.teacher_profile_id),
+          att_date: date,
+          profile_id: profileRowId,
+          status,
+          method: 'NFC',
+          marked_by: by,
+          at,
+        })
+        .execute();
+      return { result: 'MARKED' as const, status, student, at: at.toISOString() };
     });
     await this.deps.cards.touch(String(card.id));
     return out;
@@ -716,6 +902,32 @@ export class AttendanceService {
       : sections[0];
     if (!s) throw new CustomAPIError(403, 'ACA.CLASS_TEACHER_ONLY');
     return { me, year, section: s, sections };
+  }
+
+  /** A section the teacher teaches this year, as class or subject teacher (or 403). */
+  private async taughtSection(
+    db: Db,
+    me: { rowId: string; institutionId: string },
+    sectionId: string,
+    date: string,
+  ) {
+    const year = await this.yearAt(db, me.institutionId, date);
+    if (!year) throw new CustomAPIError(403, 'ATT.NO_CLASSES');
+    const section = isUuid(sectionId)
+      ? await db
+          .selectFrom('sections as s')
+          .innerJoin('teacher_assignments as ta', 'ta.section_id', 's.id')
+          .select(['s.id'])
+          .where('s.public_id', '=', uuidToBin(sectionId))
+          .where('s.institution_id', '=', me.institutionId)
+          .where('ta.teacher_profile_id', '=', me.rowId)
+          .where('ta.year_id', '=', year.id)
+          .where('ta.ended_at', 'is', null)
+          .where('ta.kind', 'in', ['CLASS_TEACHER', 'SUBJECT_TEACHER'])
+          .executeTakeFirst()
+      : undefined;
+    if (!section) throw new CustomAPIError(403, 'ACA.NOT_ASSIGNED');
+    return { year, section };
   }
 
   /** ATT-019: the daily register of a class (students, their status, approved leave, holiday). */
