@@ -291,6 +291,79 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     expect(found.body.members[0]).toMatchObject({ id, detail: 'Grade 6 B' });
   });
 
+  it('opens wallets and virtual accounts for the student only, and links a brother to the same parent (client 2026-10-13)', async () => {
+    const student = await userType(a.con, 'Student');
+    await userType(a.con, 'Parent');
+    const father = mobile();
+    const child = (firstName: string, admissionNo: string) =>
+      onboard(a.con, {
+        userTypeId: student.id,
+        firstName,
+        lastName: 'Kini',
+        admissionNo,
+        sectionId: grade6.sections[0]!.id,
+        guardians: [{ firstName: 'Ramesh', lastName: 'Kini', mobile: father, relation: 'FATHER' }],
+      });
+    const diya = await child('Diya', 'SPS/2026/0901');
+    expect(diya.status, JSON.stringify(diya.body)).toBe(201);
+    expect(diya.body.guardians).toHaveLength(1);
+    // Her brother: the same father, linked to his existing profile — not a second one.
+    const dev = await child('Dev', 'SPS/2026/0902');
+    expect(dev.status, JSON.stringify(dev.body)).toBe(201);
+    expect(dev.body.guardians).toEqual([]);
+
+    const parents = await t.db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select('m.id')
+      .where('m.contact_mobile', '=', father)
+      .where('ut.category', '=', 'PARENT')
+      .execute();
+    expect(parents).toHaveLength(1);
+    const wards = await t.db
+      .selectFrom('guardianships')
+      .select('ward_profile_id')
+      .where('guardian_profile_id', '=', parents[0]!.id)
+      .execute();
+    expect(wards).toHaveLength(2);
+
+    // Each child: a campus wallet with its virtual account, and an allowance wallet. The father: none.
+    const inst = await t.db
+      .selectFrom('institutions')
+      .select('corporate_code')
+      .where('id', '=', a.rowId)
+      .executeTakeFirstOrThrow();
+    expect(inst.corporate_code).not.toBeNull();
+    const wallets = await t.db
+      .selectFrom('wallets as w')
+      .innerJoin('member_profiles as m', 'm.id', 'w.owner_profile_id')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .leftJoin('virtual_accounts as v', 'v.wallet_id', 'w.id')
+      .select(['ut.category', 'w.kind', 'v.va_number'])
+      .where('m.contact_mobile', '=', father)
+      .execute();
+    expect(wallets.filter((w) => w.category === 'PARENT')).toEqual([]);
+    expect(wallets.filter((w) => w.kind === 'CAMPUS' && w.va_number)).toHaveLength(2);
+    expect(wallets.filter((w) => w.kind === 'ALLOWANCE')).toHaveLength(2);
+
+    // A teacher keeps a campus wallet with an active virtual account (client 2026-10-14).
+    const teacher = await onboard(a.con, {
+      userTypeId: (await userType(a.con, 'Teacher')).id,
+      firstName: 'Lakshmi',
+      lastName: 'Rao',
+      mobile: mobile(),
+    });
+    expect(teacher.status, JSON.stringify(teacher.body)).toBe(201);
+    const va = await t.db
+      .selectFrom('virtual_accounts as v')
+      .innerJoin('wallets as w', 'w.id', 'v.wallet_id')
+      .innerJoin('member_profiles as m', 'm.id', 'w.owner_profile_id')
+      .select(['w.kind', 'v.status'])
+      .where('m.public_id', '=', uuidToBin(teacher.body.id))
+      .execute();
+    expect(va).toEqual([{ kind: 'CAMPUS', status: 'ACTIVE' }]);
+  });
+
   it('checks institution fields and edits with If-Match', async () => {
     const f = await request(app)
       .post('/api/v1/console/custom-fields')

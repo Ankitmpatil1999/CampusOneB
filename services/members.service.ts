@@ -19,7 +19,7 @@
  * - Wallets, cards and payment permission arrive with their modules (Phases 3 and 4).
  */
 import { randomBytes } from 'node:crypto';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { LIMITS, MEMBER_PROFILE } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { MessageSender } from '../integrations/sms.provider';
@@ -663,6 +663,21 @@ export class MembersService {
     return account ? String(account.id) : null;
   }
 
+  /** The institution's Parent profile on this mobile, if any (the active one first). */
+  private async parentOf(trx: Kysely<Database>, institutionId: string, mobile: string) {
+    const p = await trx
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select('m.id')
+      .where('m.institution_id', '=', institutionId)
+      .where('ut.category', '=', 'PARENT')
+      .where('m.contact_mobile', '=', mobile)
+      .orderBy(sql`m.status = 'ACTIVE'`, 'desc')
+      .orderBy('m.id')
+      .executeTakeFirst();
+    return p ? String(p.id) : null;
+  }
+
   private async userType(trx: Kysely<Database>, institutionId: string, userTypeId: string) {
     const ut = (await userTypesRepository.list(trx, institutionId)).find(
       (x) => isUuid(userTypeId) && binToUuid(x.public_id) === userTypeId.toLowerCase(),
@@ -793,9 +808,16 @@ export class MembersService {
       const parentType = (await userTypesRepository.list(trx, inst.id)).find(
         (x) => x.category === 'PARENT' && x.status === 'ACTIVE',
       );
+      const linked = new Set<string>();
       for (const [i, g] of (input.guardians ?? []).entries()) {
         let guardianId: string;
-        if (g.memberId) {
+        const sibling =
+          !g.memberId && g.mobile ? await this.parentOf(trx, inst.id, g.mobile) : null;
+        if (sibling) {
+          // A brother's or sister's parent is a member here already (the same mobile): the child is
+          // linked to that profile, not to a second one (client 2026-10-13).
+          guardianId = sibling;
+        } else if (g.memberId) {
           const gp = await repo.lock(trx, inst.id, this.id(g.memberId, `guardians.${i}.memberId`));
           if (!gp)
             throw new ValidationError([
@@ -841,6 +863,9 @@ export class MembersService {
             after: { userType: parentType.name, ward: pub.id },
           });
         }
+        // One link per parent and child, even when two entries name the same person.
+        if (linked.has(guardianId)) continue;
+        linked.add(guardianId);
         await repo.addGuardian(trx, {
           institutionId: inst.id,
           guardianId,
