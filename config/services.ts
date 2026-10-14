@@ -256,7 +256,7 @@ export function buildApiServices(args: {
   const classroom = new ClassroomService({ db, ...(now ? { now } : {}) });
   const homework = new HomeworkService({ db, files, ...(now ? { now } : {}) });
   const leave = new LeaveService({ db, settings, ...(now ? { now } : {}) });
-  const principal = new PrincipalService({ db, exams, ...(now ? { now } : {}) });
+  const principal = new PrincipalService({ db, exams, leave, ...(now ? { now } : {}) });
   const plans = new PlansService({ db });
   const fees = new FeesService({ db, members, settings, ...(now ? { now } : {}) });
   const academics = new AcademicsService({ db, settings });

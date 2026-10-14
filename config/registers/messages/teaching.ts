@@ -107,6 +107,13 @@ export const TEACHING_MESSAGES = [
     ['section', 'year', 'name'],
   ),
   n(
+    'ACA.CLASS_TEACHER_ONE_CLASS',
+    409,
+    '{name} is already the class teacher of {section} for {year}. A teacher can be the class teacher of one class only.',
+    ['BR-52', 'client 2026-10-14'],
+    ['name', 'section', 'year'],
+  ),
+  n(
     'ACA.ASSIGNMENT_EXISTS',
     409,
     '{name} already teaches {subject} to {section}.',

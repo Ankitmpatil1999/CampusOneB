@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { schoolFixture, type Payer } from './school';
+import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import type { Principal } from '../../utils/principal';
 
 describe.skipIf(!adminUrl)('academic structure on real MySQL', () => {
@@ -264,6 +265,15 @@ describe.skipIf(!adminUrl)('academic structure on real MySQL', () => {
       replaced.body.classTeachers.find((c: { section: { id: string } }) => c.section.id === g7a!.id)
         .assignment.teacher.name,
     ).toBe('Ravi');
+    // One class per class teacher (client 2026-10-14): Ravi leads 7 A, so not 7 B too.
+    const second = await send('post', '/teacher-assignments', {
+      kind: 'CLASS_TEACHER',
+      teacherId: ravi.id,
+      sectionIds: [g7b!.id],
+    });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe('ACA.CLASS_TEACHER_ONE_CLASS');
+    expect(second.body.detail).toContain('already the class teacher of Grade 7 A');
     const notMapped = await send('post', '/teacher-assignments', {
       kind: 'SUBJECT_TEACHER',
       teacherId: meena.id,
@@ -338,6 +348,58 @@ describe.skipIf(!adminUrl)('academic structure on real MySQL', () => {
       clashes: [],
       teacherWeek: [expect.objectContaining({ day: 1 })],
     });
+  });
+
+  // 2026-10-13: the Academic Coordinator's teacher lists said "No active teachers yet": they were
+  // read from the member directory, which the role doesn't see.
+  it('lists the teachers to assign for the Academic Coordinator, without the member directory', async () => {
+    const a = await f.account('RAMU');
+    const type = await f.t.db
+      .selectFrom('user_types')
+      .select('id')
+      .where('public_id', '=', uuidToBin(f.teacherTypeId))
+      .executeTakeFirstOrThrow();
+    const prof = await f.t.db
+      .insertInto('member_profiles')
+      .values({
+        public_id: newPublicIdPair().bin,
+        institution_id: f.school.rowId,
+        account_id: a.id,
+        user_type_id: String(type.id),
+        first_name: 'RAMU',
+        last_name: 'NAIK',
+        employee_no: 'EMP-9001',
+        admission_no: null,
+      })
+      .executeTakeFirstOrThrow();
+    const role = await f.t.db
+      .selectFrom('roles')
+      .select('id')
+      .where('code', '=', 'ACADEMIC_COORDINATOR')
+      .executeTakeFirstOrThrow();
+    await f.t.db
+      .insertInto('profile_roles')
+      .values({
+        institution_id: f.school.rowId,
+        profile_id: String(prof.insertId),
+        role_id: String(role.id),
+      })
+      .execute();
+    const coordinator = await f.signedIn('console', a.email);
+    expect(
+      (await request(f.app).get('/api/v1/console/members?kind=STAFF').set(coordinator)).status,
+    ).toBe(403);
+    const r = await request(f.app).get('/api/v1/console/teachers').set(coordinator);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const items = r.body.items as { id: string; name: string; employeeNo: string | null }[];
+    // The school's teachers (and the coordinator, a teacher too), never a student.
+    expect(items.map((t) => t.id)).toEqual(expect.arrayContaining([meena.id, ravi.id]));
+    expect(items.map((t) => t.id)).not.toContain(diya);
+    expect(items.find((t) => t.name === 'RAMU NAIK')).toMatchObject({ employeeNo: 'EMP-9001' });
+    expect(Object.keys(items[0]!).sort()).toEqual(['employeeNo', 'id', 'name', 'userType']);
+    // The same list for the administrator.
+    const admin = await request(f.app).get('/api/v1/console/teachers').set(con);
+    expect(admin.body.items).toEqual(items);
   });
 
   it('transfers within the class, refuses a closed year and corrects it only through a checker', async () => {

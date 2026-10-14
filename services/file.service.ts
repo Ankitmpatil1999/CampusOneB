@@ -229,6 +229,22 @@ export class FileService {
     };
   }
 
+  /**
+   * The bytes of a file the calling service has already checked (the pictures in the admission
+   * form PDF, client 2026-10-14), or null when it is gone, not clean or over `maxBytes`. Never
+   * exposed with a caller-chosen id.
+   */
+  async contents(
+    fileId: string,
+    maxBytes: number,
+  ): Promise<{ data: Buffer; mimeType: string } | null> {
+    const f = await fileRepository.findByPublicId(this.deps.db, uuidToBin(fileId));
+    if (!f || f.scan_status !== 'CLEAN' || Number(f.size_bytes) > maxBytes) return null;
+    const chunks: Buffer[] = [];
+    for await (const c of this.deps.storage.read(f.object_key)) chunks.push(c as Buffer);
+    return { data: Buffer.concat(chunks), mimeType: f.mime_type };
+  }
+
   /** Opens a file behind a signed link; an expired or altered link answers 404. */
   async open(
     fileId: string,

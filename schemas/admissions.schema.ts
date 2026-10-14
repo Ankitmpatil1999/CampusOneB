@@ -163,11 +163,26 @@ export const previousSectionSchema = z.strictObject({
     })
     .optional(),
 });
+/**
+ * A parent's annual income in whole rupees, if given (client 2026-10-14). A union, so a value of
+ * the wrong type is reported as an invalid income, not as a missing field.
+ */
+const incomeInvalid = { message: 'ADM.INCOME_INVALID' };
+const annualIncome = z
+  .union(
+    [z.int(incomeInvalid).min(0, incomeInvalid).max(9_999_999_999, incomeInvalid), z.null()],
+    incomeInvalid,
+  )
+  .optional()
+  .describe("The parent's annual income in rupees (client 2026-10-14)");
+
 export const parentsSectionSchema = z.strictObject({
   // The father's and the mother's name and mobile are required (client 2026-10-12, 2026-10-13); a
   // guardian is not. The primary contact's e-mail is required too (checked with the section).
-  father: person.extend({ mobile }),
-  mother: person.extend({ mobile }),
+  // Their mobiles, Aadhaar numbers and PANs are each their own (client 2026-10-14, checked with
+  // the section).
+  father: person.extend({ mobile, annualIncome }),
+  mother: person.extend({ mobile, annualIncome }),
   guardian: person.extend({ relation: z.string().trim().min(1).max(40) }).nullish(),
   primary: z.enum(['FATHER', 'MOTHER', 'GUARDIAN'], { message: 'VALIDATION.REQUIRED' }),
   children: z

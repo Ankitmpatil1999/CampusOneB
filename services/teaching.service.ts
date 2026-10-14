@@ -110,6 +110,40 @@ export class TeachingService {
     return { id: String(s.id), name: s.name };
   }
 
+  // --- ACA-078 --------------------------------------------------------------------------------------------
+  /**
+   * The active teachers and principals, the people a class, a subject or a coordination can be
+   * given to. With the academics grant, not the members one: the Academic Coordinator assigns
+   * teachers without seeing the member directory (client 2026-10-13: their teacher lists were empty).
+   */
+  async teachers(p: Principal) {
+    const inst = await institutionOf(this.deps.db, p);
+    const rows = await this.deps.db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select([
+        'm.public_id',
+        'm.first_name',
+        'm.last_name',
+        'm.employee_no',
+        'ut.name as user_type',
+      ])
+      .where('m.institution_id', '=', inst.id)
+      .where('m.status', '=', 'ACTIVE')
+      .where('ut.category', 'in', [...TEACHING_CATEGORIES])
+      .orderBy('m.first_name')
+      .orderBy('m.last_name')
+      .execute();
+    return {
+      items: rows.map((r) => ({
+        id: binToUuid(r.public_id),
+        name: nameOf(r.first_name, r.last_name),
+        employeeNo: r.employee_no,
+        userType: r.user_type,
+      })),
+    };
+  }
+
   // --- ACA-021 --------------------------------------------------------------------------------------------
   async assignments(
     p: Principal,
@@ -284,6 +318,29 @@ export class TeachingService {
             },
           });
         }
+        // One class per class teacher in a year (client 2026-10-14): one already leading another
+        // class-section is refused, also when replacing someone.
+        const theirs = await trx
+          .selectFrom('teacher_assignments as ta')
+          .innerJoin('sections as s', 's.id', 'ta.section_id')
+          .innerJoin('classes as c', 'c.id', 's.class_id')
+          .select(['ta.id', 'c.name as class_name', 's.name as section_name'])
+          .where('ta.year_id', '=', year.id)
+          .where('ta.kind', '=', 'CLASS_TEACHER')
+          .where('ta.teacher_profile_id', '=', t.id)
+          .where('ta.section_id', '<>', s!.id)
+          .where('ta.ended_at', 'is', null)
+          .forUpdate()
+          .executeTakeFirst();
+        if (theirs) {
+          throw new CustomAPIError(409, 'ACA.CLASS_TEACHER_ONE_CLASS', {
+            params: {
+              name: t.name,
+              section: `${theirs.class_name} ${theirs.section_name}`,
+              year: year.label,
+            },
+          });
+        }
         if (cur) {
           await trx
             .updateTable('teacher_assignments')
@@ -378,14 +435,37 @@ export class TeachingService {
     at: Date,
   ) {
     const from = await yearFor(trx, institutionId, fromYearId);
-    const rows = await trx
+    let rows = await trx
       .selectFrom('teacher_assignments')
       .select(['teacher_profile_id', 'class_id', 'section_id', 'subject_id'])
       .where('institution_id', '=', institutionId)
       .where('year_id', '=', from.id)
       .where('kind', '=', kind)
       .where('ended_at', 'is', null)
+      .orderBy('id')
       .execute();
+    if (kind === 'CLASS_TEACHER') {
+      // One class per class teacher (client 2026-10-14): a teacher who already leads a class this
+      // year, or a second class of the same teacher in the earlier year, is not copied.
+      const now = await trx
+        .selectFrom('teacher_assignments')
+        .select(['teacher_profile_id', 'section_id'])
+        .where('institution_id', '=', institutionId)
+        .where('year_id', '=', year.id)
+        .where('kind', '=', 'CLASS_TEACHER')
+        .where('ended_at', 'is', null)
+        .forUpdate()
+        .execute();
+      const teachers = new Set(now.map((r) => String(r.teacher_profile_id)));
+      const sections = new Set(now.map((r) => String(r.section_id)));
+      rows = rows.filter((r) => {
+        const t = String(r.teacher_profile_id);
+        if (teachers.has(t) || sections.has(String(r.section_id))) return false;
+        teachers.add(t);
+        sections.add(String(r.section_id));
+        return true;
+      });
+    }
     if (!rows.length) return 0;
     const res = await trx
       .insertInto('teacher_assignments')

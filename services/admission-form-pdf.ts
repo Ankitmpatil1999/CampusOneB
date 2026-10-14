@@ -1,11 +1,13 @@
 /**
  * The submitted admission application as a PDF for the family (client 2026-10-13): every section
  * of the form as it was submitted — admission, student, addresses, previous schooling, parents and
- * guardians, the institution's own fields, references, documents, fees and the declaration. Built
- * from the family's own view of the application, so the Aadhaar numbers and PANs appear masked.
+ * guardians, the institution's own fields, references, documents (the pictures shown, any other file
+ * by its name), fees and the declaration. Built from the family's own view of the application, so
+ * the Aadhaar numbers and PANs appear masked.
  */
 import { formatDate, formatDateTime, formatInr } from '../utils/format';
 import { PdfDocument, type Rgb } from '../utils/pdf';
+import type { PdfImage } from '../utils/pdf-image';
 import type { CfField } from './custom-values.service';
 
 interface Person {
@@ -13,6 +15,8 @@ interface Person {
   readonly mobile?: string | null | undefined;
   readonly email?: string | null | undefined;
   readonly occupation?: string | null | undefined;
+  /** The father's and the mother's, in rupees (client 2026-10-14). */
+  readonly annualIncome?: number | null | undefined;
   readonly relation?: string | null | undefined;
 }
 
@@ -107,6 +111,8 @@ const LEFT = 48;
 const VALUE_X = 210;
 const RIGHT = 547;
 const BOTTOM = 790;
+/** The tallest an attached picture is drawn, in points. */
+const PICTURE_HEIGHT = 230;
 
 const title = (s: string | null | undefined) =>
   (s ?? '')
@@ -227,6 +233,17 @@ class FormWriter {
     this.y += lines.length * 14 + 4;
   }
 
+  /** A picture under its row, as large as fits the value column (never enlarged). */
+  picture(img: PdfImage) {
+    const scale = Math.min((RIGHT - VALUE_X) / img.width, PICTURE_HEIGHT / img.height, 1);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    this.room(h + 12);
+    this.doc.image(img, VALUE_X, this.y - 6, w, h);
+    this.doc.rect(VALUE_X, this.y - 6, w, h, { stroke: RULE });
+    this.y += h + 12;
+  }
+
   note(text: string) {
     const lines = this.doc.wrap(text, RIGHT - LEFT, 9);
     this.room(lines.length * 12 + 4);
@@ -252,6 +269,8 @@ export function admissionFormPdf(
   v: FormView,
   fields: readonly CfField[],
   now: Date,
+  /** The attached pictures by document type, drawn under their rows (client 2026-10-14). */
+  pictures: ReadonlyMap<string, PdfImage> = new Map(),
 ): Buffer {
   const w = new FormWriter(
     `Application ${v.applicationNo}`,
@@ -321,7 +340,19 @@ export function admissionFormPdf(
 
   const p = v.parents;
   const person = (x: Person | null | undefined) =>
-    x?.name ? join(title(x.name), x.relation, x.mobile, x.email, x.occupation) : '';
+    x?.name
+      ? join(
+          title(x.name),
+          x.relation,
+          x.mobile,
+          x.email,
+          x.occupation,
+          // The annual income (client 2026-10-14).
+          x.annualIncome != null
+            ? `${rupees(String(x.annualIncome)).replace(/\.00$/, '')} a year`
+            : '',
+        )
+      : '';
   // Each person's Aadhaar and PAN, masked (client 2026-10-13).
   const ids = (who: string) => {
     const x = v.identityNumbers?.[who];
@@ -367,9 +398,14 @@ export function admissionFormPdf(
     for (const [i, r] of v.references.entries()) w.row(`Reference ${i + 1}`, person(r));
   }
 
+  // Each attachment by its name; a picture is shown too (client 2026-10-14).
   w.section('Documents');
   if (!v.documents.length) w.row('Documents', 'None attached');
-  for (const x of v.documents) w.row(label(x.type, DOCUMENT), x.name);
+  for (const x of v.documents) {
+    w.row(label(x.type, DOCUMENT), x.name);
+    const img = pictures.get(x.type);
+    if (img) w.picture(img);
+  }
 
   if (v.fees.length) {
     w.section('Fees');

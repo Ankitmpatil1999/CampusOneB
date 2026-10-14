@@ -183,6 +183,42 @@ doc({
   responses: { 200: { description: 'People' } },
 });
 doc({
+  id: 'ACA-079',
+  method: 'get',
+  path: '/api/v1/principal/student-overview',
+  summary:
+    'Student Overview (SRS 20.32): every student — name, member number, class and section of the year, admission number, department, status and primary contact — for the screen to search and filter; read-only',
+  auth: 'member|principal.view',
+  responses: { 200: { description: 'Students' } },
+});
+doc({
+  id: 'ACA-082',
+  method: 'get',
+  path: '/api/v1/principal/student-overview/{studentId}',
+  summary:
+    'One student in full (SRS 20.32 detail; client 2026-10-14): personal details, family and addresses, the admission, transport and the hostel, the year’s fees and their status, the campus wallet, attendance and leave; read-only',
+  auth: 'member|principal.view',
+  responses: { 200: { description: 'Student' } },
+});
+doc({
+  id: 'ACA-080',
+  method: 'get',
+  path: '/api/v1/principal/teacher-overview',
+  summary:
+    'Teacher Overview (SRS 20.33): the teachers of the year’s class-teacher and subject-teacher mapping, each once — first assignment’s class-section, roles, number of assignments — and the classes for the filter',
+  auth: 'member|principal.view',
+  responses: { 200: { description: 'Teachers' } },
+});
+doc({
+  id: 'ACA-081',
+  method: 'get',
+  path: '/api/v1/principal/teacher-overview/{teacherId}',
+  summary:
+    'One teacher (SRS 20.33): e-mail, mobile, the number of classes, sections and subjects, and the year’s academic assignments — with personal details, console roles, classes led or coordinated, the week’s timetable, attendance, leave and balances, homework, exams and marks entry, transport and the wallet (client 2026-10-14)',
+  auth: 'member|principal.view',
+  responses: { 200: { description: 'Teacher' } },
+});
+doc({
   id: 'ACA-072',
   method: 'get',
   path: '/api/v1/me/leaves',
@@ -370,6 +406,28 @@ export function leaveRoutes(deps: {
         cursor: q.cursor,
       });
     }),
+  );
+
+  // Student Overview and Teacher Overview (SRS 20.32, 20.33; client 2026-10-14)
+  router.get(
+    '/principal/student-overview',
+    either('principal.view'),
+    json((req) => deps.principal.studentOverview(principal(req))),
+  );
+  router.get(
+    '/principal/student-overview/:studentId',
+    either('principal.view'),
+    json((req) => deps.principal.studentDetail(principal(req), param(req, 'studentId'))),
+  );
+  router.get(
+    '/principal/teacher-overview',
+    either('principal.view'),
+    json((req) => deps.principal.teacherOverview(principal(req))),
+  );
+  router.get(
+    '/principal/teacher-overview/:teacherId',
+    either('principal.view'),
+    json((req) => deps.principal.teacherDetail(principal(req), param(req, 'teacherId'))),
   );
 
   // the student and family

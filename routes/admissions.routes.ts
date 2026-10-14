@@ -189,7 +189,7 @@ doc({
   id: 'ADM-032',
   method: 'get',
   path: '/api/v1/public/admissions/applications/{applicationId}/form.pdf',
-  summary: `The submitted application form as a PDF for the family (${tokenHeader}; not a payment link): every section as submitted, identity numbers masked (client 2026-10-13)`,
+  summary: `The submitted application form as a PDF for the family (${tokenHeader}; not a payment link): every section as submitted, identity numbers masked, the attached pictures shown and other files by name (client 2026-10-13, 2026-10-14)`,
   auth: 'public (admission token)',
   responses: { 200: { description: 'PDF', contentType: 'application/pdf' } },
 });

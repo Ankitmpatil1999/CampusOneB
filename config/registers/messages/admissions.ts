@@ -169,6 +169,31 @@ export const ADMISSION_MESSAGES = [
     '19.2',
     'client 2026-10-13',
   ]),
+  n(
+    'ADM.SAME_MOBILE',
+    422,
+    'This is the {person}’s mobile number. The father, the mother and the guardian each need their own.',
+    ['19.2', 'client 2026-10-14'],
+    ['person'],
+  ),
+  n(
+    'ADM.SAME_AADHAAR',
+    422,
+    'This is the {person}’s Aadhaar number. The father, the mother and the guardian each have their own.',
+    ['19.2', 'client 2026-10-14'],
+    ['person'],
+  ),
+  n(
+    'ADM.SAME_PAN',
+    422,
+    'This is the {person}’s PAN. The father, the mother and the guardian each have their own.',
+    ['19.2', 'client 2026-10-14'],
+    ['person'],
+  ),
+  n('ADM.INCOME_INVALID', 422, 'Enter the annual income in rupees, in digits only.', [
+    '19.2',
+    'client 2026-10-14',
+  ]),
   n('ADM.FORM_NOT_SUBMITTED', 409, 'The application form can be downloaded once it is submitted.', [
     '19.2',
     'client 2026-10-13',

@@ -10,6 +10,7 @@
  * - the admission fee by payment link, the receipt, and the existing-students import.
  */
 import { createHmac, randomUUID } from 'node:crypto';
+import { sql } from 'kysely';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { buildHttpApp, codeOf } from './http-app';
@@ -18,6 +19,7 @@ import type { SchoolGatewayFactory } from '../../services/payment-gateways.servi
 import { aadhaar, inr, schoolFixture, type Auth } from './school';
 import { PERSON_CARDS } from '../../schemas/admissions.schema';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
+import { pngOf } from '../png';
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const TOKEN = 'X-Admission-Token';
@@ -1135,6 +1137,26 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       mobile: '9845009977',
     });
     expect(ref.status, JSON.stringify(ref.body)).toBe(201);
+    // A picture attached is drawn in the PDF; any other file is listed by its name (2026-10-14).
+    const photo = await request(f.app)
+      .post(`${base}/documents`)
+      .set(TOKEN, token)
+      .set('Idempotency-Key', randomUUID())
+      .field('documentType', 'PHOTO')
+      .attach(
+        'file',
+        pngOf({
+          width: 2,
+          height: 2,
+          type: 2,
+          rows: [
+            [9, 9, 9, 200, 200, 200],
+            [1, 2, 3, 4, 5, 6],
+          ],
+        }),
+        { filename: 'photo.png', contentType: 'image/png' },
+      );
+    expect(photo.status, JSON.stringify(photo.body)).toBe(201);
     // "Pay later" is no longer honoured for the family: the application fee is paid online to
     // submit (client 2026-10-13).
     const sub = await pub('post', `${base}/submission`, token, {
@@ -1172,9 +1194,14 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       'Undertaking',
       'Sunita Rao',
       'Declaration',
+      'photo.png',
+      'birth.pdf',
     ]) {
       expect(text, words).toContain(words);
     }
+    // The photo drawn (2 × 2 pixels, never enlarged); the PDFs by their names only.
+    expect(text.match(/\/Subtype \/Image/g)).toHaveLength(1);
+    expect(text).toMatch(/q 2 0 0 2 210 [\d.]+ cm \/Im0 Do Q/);
     // Without the family's token, nothing.
     expect((await request(f.app).get(`${base}/form.pdf`)).status).toBe(404);
   });
@@ -1782,5 +1809,130 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const after = (await detail()).body;
     expect(after).toMatchObject({ status: 'SUBMITTED', paymentStatus: 'PAID' });
     expect(after.fees.map((x: { mode: string }) => x.mode)).toEqual(['CASH', 'CASH']);
+  });
+
+  // 2026-10-14: "Mobile Number, Aadhar Number, PAN should never be same for Father, Mother and
+  // Guardian. Exclude Local Guardian." — "Add Occupation and Annual Income Field for Father and
+  // Mother."
+  it('keeps the father’s, the mother’s and the guardian’s mobile, Aadhaar and PAN their own, and takes the parents’ annual income (client 2026-10-14)', async () => {
+    const created = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Nila',
+          lastName: 'Rao',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-05-09`,
+          aadhaar: aadhaar(),
+        },
+      },
+      {},
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const app = created.body.application;
+    const token = created.body.resumeToken as string;
+    await completeDraft(app.id, token, '9876505551');
+    const parents = (data: object) =>
+      pub('patch', `/api/v1/public/admissions/applications/${app.id}`, token, {
+        section: 'parents',
+        data: { primary: 'FATHER', children: 'SINGLE', ...data },
+      });
+    const father = { name: 'Vinay Rao', mobile: '9876505551', email: 'vinay@example.in' };
+    const mother = { name: 'Kavya Rao', mobile: '9876505552' };
+    const refused = async (data: object) => {
+      const r = await parents(data);
+      expect(r.status, JSON.stringify(r.body)).toBe(422);
+      return r.body.errors as { field: string; code: string; params?: object }[];
+    };
+    // The mother's mobile is the father's — written with +91 and spaces, it is the same number.
+    expect(await refused({ father, mother: { ...mother, mobile: '+91 98765 05551' } })).toEqual([
+      expect.objectContaining({
+        field: 'parents.mother.mobile',
+        code: 'ADM.SAME_MOBILE',
+        params: { person: 'father' },
+      }),
+    ]);
+    // A guardian's too.
+    const guardian = { name: 'Mohan Rao', relation: 'Uncle', mobile: mother.mobile };
+    expect(await refused({ father, mother, guardian })).toEqual([
+      expect.objectContaining({
+        field: 'parents.guardian.mobile',
+        code: 'ADM.SAME_MOBILE',
+        params: { person: 'mother' },
+      }),
+    ]);
+    // The same Aadhaar number and PAN sent for both parents.
+    const shared = { aadhaar: aadhaar(), pan: 'ABCPR1111A' };
+    expect(
+      await refused({ father: { ...father, ...shared }, mother: { ...mother, ...shared } }),
+    ).toEqual([
+      expect.objectContaining({ field: 'parents.mother.aadhaar', code: 'ADM.SAME_AADHAAR' }),
+      expect.objectContaining({ field: 'parents.mother.pan', code: 'ADM.SAME_PAN' }),
+    ]);
+    // Stored for the father, then sent for the mother: the stored number counts.
+    const saved = await parents({ father: { ...father, ...shared }, mother });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(await refused({ father, mother: { ...mother, aadhaar: shared.aadhaar } })).toEqual([
+      expect.objectContaining({
+        field: 'parents.mother.aadhaar',
+        code: 'ADM.SAME_AADHAAR',
+        params: { person: 'father' },
+      }),
+    ]);
+    // The local guardian may share a parent's mobile, Aadhaar and PAN.
+    const lg = await parents({
+      father,
+      mother,
+      hostel: true,
+      localGuardian: {
+        name: 'Mohan Rao',
+        relation: 'Uncle',
+        mobile: father.mobile,
+        address: 'Vinoba Nagar, Shivamogga',
+        ...shared,
+      },
+    });
+    expect(lg.status, JSON.stringify(lg.body)).toBe(200);
+    // The annual income: whole rupees, as a number (relative to the section, as schema errors are).
+    for (const bad of [-1, 12.5, '600000']) {
+      expect(await refused({ father: { ...father, annualIncome: bad }, mother })).toEqual([
+        expect.objectContaining({
+          field: 'father.annualIncome',
+          code: 'ADM.INCOME_INVALID',
+        }),
+      ]);
+    }
+    const income = await parents({
+      father: { ...father, occupation: 'Engineer', annualIncome: 850000 },
+      mother: { ...mother, occupation: 'Teacher', annualIncome: 0 },
+    });
+    expect(income.status, JSON.stringify(income.body)).toBe(200);
+    expect(income.body.parents.father).toMatchObject({
+      occupation: 'Engineer',
+      annualIncome: 850000,
+    });
+    expect(income.body.parents.mother).toMatchObject({ occupation: 'Teacher', annualIncome: 0 });
+    // A draft saved before the rule, with the parents sharing a mobile, can't be submitted.
+    await f.t.db
+      .updateTable('admission_applications')
+      .set({
+        data: sql`JSON_SET(data, '$.parents.mother.mobile', ${father.mobile})`,
+      })
+      .where('public_id', '=', uuidToBin(app.id))
+      .execute();
+    const sub = await pub(
+      'post',
+      `/api/v1/public/admissions/applications/${app.id}/submission`,
+      token,
+      {
+        declarationAccepted: true,
+        registrationConsent: true,
+      },
+    );
+    expect(sub.status, JSON.stringify(sub.body)).toBe(422);
+    expect(sub.body.errors).toContainEqual(
+      expect.objectContaining({ field: 'parents.mother.mobile', code: 'ADM.SAME_MOBILE' }),
+    );
   });
 });

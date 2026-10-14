@@ -262,6 +262,15 @@ doc({
 });
 // --- teacher assignments and timetables -------------------------------------------------------------------
 doc({
+  id: 'ACA-078',
+  method: 'get',
+  path: '/api/v1/console/teachers',
+  summary:
+    'The active teachers and principals to assign (name, employee number, user type) — for the academics screens, without the member directory',
+  auth: 'academics.view',
+  responses: { 200: { description: 'Teachers' } },
+});
+doc({
   id: 'ACA-021',
   method: 'get',
   path: '/api/v1/console/teacher-assignments',
@@ -599,6 +608,14 @@ export function structureRoutes(deps: {
   );
 
   // teacher assignments and timetables
+  router.get(
+    '/console/teachers',
+    ...console,
+    view,
+    wrap(async (req, res) => {
+      res.json(await deps.teaching.teachers(principal(req)));
+    }),
+  );
   router.get(
     '/console/teacher-assignments',
     ...console,

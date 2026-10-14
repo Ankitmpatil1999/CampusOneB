@@ -17,6 +17,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ACA.CAL_TYPE': 'Choose a type.',
   'ACA.CLASSWORK_DUE': 'Classwork can’t be due in the past.',
   'ACA.CLASS_NAME_TAKEN': 'Another class already has this name.',
+  'ACA.CLASS_TEACHER_ONE_CLASS':
+    '{name} is already the class teacher of {section} for {year}. A teacher can be the class teacher of one class only.',
   'ACA.CLASS_TEACHER_ONLY': 'Only the class teacher can decide this.',
   'ACA.CLASS_TEACHER_TAKEN': '{section} already has a class teacher for {year} ({name}).',
   'ACA.COORDINATOR_REVIEW_REQUIRED':
@@ -136,6 +138,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.GATEWAY_NOT_CONFIGURED':
     'Online payment isn’t available yet. Please pay at the school’s accounts desk.',
   'ADM.ID_INVALID': 'Enter a valid 12-digit Aadhaar number.',
+  'ADM.INCOME_INVALID': 'Enter the annual income in rupees, in digits only.',
   'ADM.JOINING_DATE': 'For this academic year, choose a joining date from today to {to}.',
   'ADM.LINK_EXPIRED':
     'This admission link has expired. Ask the school for its current link or QR code.',
@@ -157,6 +160,12 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'A mid-term application needs at least one reference, so this one can’t be removed.',
   'ADM.REJECTED_NO_PAYMENT': 'Rejected application cannot make payment',
   'ADM.RESUME_NEEDS': "Enter the primary contact's mobile number from the application.",
+  'ADM.SAME_AADHAAR':
+    'This is the {person}’s Aadhaar number. The father, the mother and the guardian each have their own.',
+  'ADM.SAME_MOBILE':
+    'This is the {person}’s mobile number. The father, the mother and the guardian each need their own.',
+  'ADM.SAME_PAN':
+    'This is the {person}’s PAN. The father, the mother and the guardian each have their own.',
   'ADM.SECTION_NOT_IN_CLASS': 'Choose a section of {class}, the class applied for.',
   'ADM.STATUS_NOT_FOUND':
     'No application matches these details. Check the application number on your confirmation SMS or e-mail.',

@@ -62,6 +62,7 @@ import { formatDate, formatDateTime, formatInr, istBusinessDate } from '../utils
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { toMoneyDto } from '../utils/money';
 import { PdfDocument, rupeesInWords } from '../utils/pdf';
+import { pdfImage, type PdfImage } from '../utils/pdf-image';
 import type { Principal } from '../utils/principal';
 import type { FieldError } from '../utils/validators';
 import { PATTERNS } from '../utils/validators';
@@ -109,6 +110,40 @@ const ID_COLUMNS = {
   ],
 } as const;
 const RELATION_HOLDER = { FATHER: 'father', MOTHER: 'mother', GUARDIAN: 'guardian' } as const;
+
+/** The people whose mobile, Aadhaar number and PAN are each their own (client 2026-10-14). */
+const DISTINCT_PEOPLE = ['father', 'mother', 'guardian'] as const;
+type DistinctPerson = (typeof DISTINCT_PEOPLE)[number];
+
+/**
+ * The father, the mother and the guardian never share a mobile, an Aadhaar number or a PAN (client
+ * 2026-10-14); the local guardian may share anyone's. A repeat is reported on the later person's
+ * field, naming the earlier person.
+ */
+export function sameNumbers(
+  mobileOf: (p: DistinctPerson) => string | null | undefined,
+  idOf: (p: DistinctPerson, kind: 'aadhaar' | 'pan') => string | null | undefined,
+): FieldError[] {
+  const errors: FieldError[] = [];
+  const check = (
+    what: 'mobile' | 'aadhaar' | 'pan',
+    code: MessageKey,
+    valueOf: (p: DistinctPerson) => string | null | undefined,
+  ) => {
+    const seen = new Map<string, DistinctPerson>();
+    for (const p of DISTINCT_PEOPLE) {
+      const v = valueOf(p)?.trim().toUpperCase();
+      if (!v) continue;
+      const first = seen.get(v);
+      if (first) errors.push({ field: `parents.${p}.${what}`, code, params: { person: first } });
+      else seen.set(v, p);
+    }
+  };
+  check('mobile', 'ADM.SAME_MOBILE', mobileOf);
+  check('aadhaar', 'ADM.SAME_AADHAAR', (p) => idOf(p, 'aadhaar'));
+  check('pan', 'ADM.SAME_PAN', (p) => idOf(p, 'pan'));
+  return errors;
+}
 /**
  * Whose Aadhaar, PAN and cards a submission needs (client 2026-10-13): the father's and the
  * mother's always, a guardian's who is the primary contact, the local guardian's of a hostel student.
@@ -184,6 +219,8 @@ interface State {
 
 /** An undertaking's certificate is due at the latest this many days after joining (OI-ADM-27). */
 const TC_DUE_DAYS = 60;
+/** An attachment larger than this is listed by name in the form PDF, not drawn (2026-10-14). */
+const PICTURE_MAX_BYTES = 10 * 1024 * 1024;
 
 const ADMISSION_HEADER = 'X-Admission-Token';
 /** Stands in for the mobile in a resume token when nothing matched (never a valid mobile). */
@@ -739,6 +776,47 @@ export class AdmissionsService {
   }
 
   /**
+   * Refuses a mobile, Aadhaar number or PAN repeated across the father, the mother and the guardian
+   * (client 2026-10-14): what this save sends, else what is stored.
+   */
+  private distinct(s: State, r?: Awaited<ReturnType<AdmissionsService['lockless']>>) {
+    const p = s.data.parents;
+    if (!p) return;
+    const errors = sameNumbers(
+      (h) => p[h]?.mobile,
+      (h, kind) => {
+        const sent = s.ids?.[h]?.[kind];
+        if (sent !== undefined) return sent;
+        return r ? this.storedId(r, h, kind) : null;
+      },
+    );
+    if (errors.length) throw new ValidationError(errors);
+  }
+
+  /**
+   * A person's stored Aadhaar number or PAN in full, or null. One moved from the primary contact's
+   * columns by migration 0072 was encrypted with "primary" as the person.
+   */
+  private storedId(
+    r: Awaited<ReturnType<AdmissionsService['lockless']>>,
+    h: DistinctPerson,
+    kind: 'aadhaar' | 'pan',
+  ): string | null {
+    const [aadhaarEnc, , panEnc] = ID_COLUMNS[h];
+    const blob = r[kind === 'aadhaar' ? aadhaarEnc : panEnc];
+    if (!blob) return null;
+    const app = binToUuid(r.public_id);
+    for (const who of [h, 'primary']) {
+      try {
+        return this.deps.cipher.decrypt(`adm_${kind}`, blob, `${app}:${who}`);
+      } catch {
+        // Not this person's context: the next one.
+      }
+    }
+    return null;
+  }
+
+  /**
    * Mid-term (client 2026-10-13): the family says they have the transfer certificate, or give an
    * undertaking to hand it in by a date — from today, at most TC_DUE_DAYS after joining.
    */
@@ -878,6 +956,7 @@ export class AdmissionsService {
     for (const k of ['addresses', 'previous', 'parents', 'customFields'] as const) {
       if (input[k] !== undefined) await this.apply(db, institutionId, s, k, input[k]);
     }
+    if (input.parents !== undefined) this.distinct(s);
     await this.duplicate(db, institutionId, s);
     const pub = newPublicIdPair();
     const at = this.now();
@@ -942,6 +1021,7 @@ export class AdmissionsService {
     if (expected !== null && r.row_version !== expected) throw new PreconditionFailedError();
     const s = this.stateOf(r);
     await this.apply(this.deps.db, institutionId, s, input.section, input.data);
+    if (input.section === 'parents') this.distinct(s, r);
     if (input.step !== undefined) s.step = Math.max(s.step, input.step);
     // A guardian or local guardian taken off the form: their cards go with their numbers.
     const dropped = (s.dropCards ?? []).flatMap((h) => PERSON_CARDS[h]);
@@ -1222,14 +1302,46 @@ export class AdmissionsService {
     const a = await this.access(id, token, 'read');
     if (a.scope !== 'resume') throw new CustomAPIError(404, 'ADM.NOT_FOUND');
     if (a.row.status === 'DRAFT') throw new CustomAPIError(409, 'ADM.FORM_NOT_SUBMITTED');
-    const [v, fields] = await Promise.all([
+    const [v, fields, pictures] = await Promise.all([
       this.view(a.row, { console: false }),
       activeFields(this.deps.db, String(a.inst.id), 'ADMISSION_APPLICATION'),
+      this.pictures(a.row.id),
     ]);
     return {
       fileName: `Application-${v.applicationNo.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
-      pdf: admissionFormPdf({ name: a.inst.name, city: a.inst.city }, v, fields, this.now()),
+      pdf: admissionFormPdf(
+        { name: a.inst.name, city: a.inst.city },
+        v,
+        fields,
+        this.now(),
+        pictures,
+      ),
     };
+  }
+
+  /**
+   * The application's attached pictures (JPEG, PNG) by document type, for the form PDF (client
+   * 2026-10-14). One that can't be read is left out: the PDF shows its name only.
+   */
+  private async pictures(applicationRowId: string) {
+    const rows = await this.deps.db
+      .selectFrom('admission_documents as d')
+      .innerJoin('files as f', 'f.id', 'd.file_id')
+      .select(['d.doc_type', 'f.public_id'])
+      .where('d.application_id', '=', applicationRowId)
+      .where('f.mime_type', 'in', ['image/jpeg', 'image/png'])
+      .execute();
+    const out = new Map<string, PdfImage>();
+    for (const r of rows) {
+      try {
+        const f = await this.deps.files.contents(binToUuid(r.public_id), PICTURE_MAX_BYTES);
+        const img = f ? pdfImage(f.data, f.mimeType) : null;
+        if (img) out.set(r.doc_type, img);
+      } catch {
+        // Left out: its name is still listed.
+      }
+    }
+    return out;
   }
 
   async publicRead(id: string, token: string | undefined) {
@@ -1432,6 +1544,16 @@ export class AdmissionsService {
     // The primary contact's e-mail (client 2026-10-13).
     if (r.primary_relation) {
       need(r.primary_email, `parents.${r.primary_relation.toLowerCase()}.email`);
+    }
+    // Each their own mobile, Aadhaar and PAN (client 2026-10-14) — also for a draft saved before.
+    const parents = data.parents;
+    if (parents) {
+      errors.push(
+        ...sameNumbers(
+          (h) => parents[h]?.mobile,
+          (h, kind) => this.storedId(r, h, kind),
+        ),
+      );
     }
     const docs = await this.deps.db
       .selectFrom('admission_documents')

@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { inr, mobile, schoolFixture, type Auth } from './school';
+import { newPublicIdPair } from '../../utils/idGenerator';
 
 describe.skipIf(!adminUrl)('the principal, merchants and vendor merchants on the web', () => {
   let f: Awaited<ReturnType<typeof schoolFixture>>;
@@ -142,6 +143,212 @@ describe.skipIf(!adminUrl)('the principal, merchants and vendor merchants on the
     expect((await get('/console/members', principalWeb)).status).toBe(403);
     expect((await get('/merchant/home', principalWeb)).status).toBe(403);
     expect((await get('/teacher/today', principalWeb)).status).toBe(403);
+  });
+
+  // SRS 20.32, 20.33 (client 2026-10-14).
+  it('shows the principal the Student Overview and the Teacher Overview, read-only', async () => {
+    const guardianMobile = mobile();
+    const diya = await f.ward('Diya', guardianMobile);
+    const meena = await f.payer('Meena', 0);
+    const classes = (await get('/console/classes')).body.items as {
+      id: string;
+      name: string;
+      sections: { id: string; name: string }[];
+    }[];
+    const g6 = classes.find((c) => c.name === 'Grade 6')!;
+    const sectionA = g6.sections[0]!;
+    const assigned = await post(
+      '/console/teacher-assignments',
+      { kind: 'CLASS_TEACHER', teacherId: meena.id, sectionIds: [sectionA.id] },
+      con,
+    );
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(201);
+
+    // 20.32: every student, with the class and section, admission number and primary contact.
+    const students = await get('/principal/student-overview', principalWeb);
+    expect(students.status, JSON.stringify(students.body)).toBe(200);
+    const s = students.body.items.find((x: { id: string }) => x.id === diya);
+    expect(s).toMatchObject({
+      class: 'Grade 6',
+      section: sectionA.name,
+      status: 'ACTIVE',
+      contact: { relation: 'FATHER', mobile: guardianMobile },
+    });
+    expect(s.name.toLowerCase()).toBe('diya rao');
+    expect(s.contact.name.toLowerCase()).toBe('guardian rao');
+    expect(s.admissionNo).toMatch(/^ADM\//);
+    expect(s.memberNo).toMatch(/-\d{5}$/);
+
+    // The student in full (client 2026-10-14): personal details, transport, fees and status.
+    const diyaRow = await f.profileRow(diya);
+    const yr = await f.t.db
+      .selectFrom('academic_years')
+      .select('id')
+      .where('institution_id', '=', f.school.rowId)
+      .where('is_current', '=', 1)
+      .executeTakeFirstOrThrow();
+    const at = new Date();
+    for (const [seq, label, amount, paid, status] of [
+      [1, 'Term 1', 10_000, 10_000, 'PAID'],
+      [2, 'Term 2', 15_000, 0, 'DUE'],
+    ] as const) {
+      await f.t.db
+        .insertInto('fee_records')
+        .values({
+          public_id: newPublicIdPair().bin,
+          institution_id: f.school.rowId,
+          year_id: String(yr.id),
+          student_profile_id: String(diyaRow.id),
+          source: 'MANUAL',
+          instalment_seq: seq,
+          label,
+          due_date: '2099-0' + seq + '-10',
+          amount_paise: amount,
+          paid_paise: paid,
+          status,
+          created_at: at,
+          updated_at: at,
+        })
+        .execute();
+    }
+    const stop = await f.t.db
+      .insertInto('transport_stops')
+      .values({
+        public_id: newPublicIdPair().bin,
+        institution_id: f.school.rowId,
+        name: 'Gopala Circle',
+        landmark: 'Near the bus shelter',
+        created_at: at,
+        updated_at: at,
+      })
+      .executeTakeFirstOrThrow();
+    const route = await f.t.db
+      .insertInto('transport_routes')
+      .values({
+        public_id: newPublicIdPair().bin,
+        institution_id: f.school.rowId,
+        code: 'R-07',
+        name: 'Gopala – School',
+        created_at: at,
+        updated_at: at,
+      })
+      .executeTakeFirstOrThrow();
+    await f.t.db
+      .insertInto('transport_route_stops')
+      .values({
+        route_id: String(route.insertId),
+        seq: 1,
+        stop_id: String(stop.insertId),
+        arrival: '07:40:00',
+        departure: '16:10:00',
+        distance_km: '4.2',
+      })
+      .execute();
+    await f.t.db
+      .insertInto('transport_allocations')
+      .values({
+        public_id: newPublicIdPair().bin,
+        institution_id: f.school.rowId,
+        year_id: String(yr.id),
+        profile_id: String(diyaRow.id),
+        route_id: String(route.insertId),
+        stop_id: String(stop.insertId),
+        effective_from: '2026-06-01',
+        effective_to: '2099-03-31',
+        active: 1,
+        created_at: at,
+      })
+      .execute();
+    const full = await get(`/principal/student-overview/${diya}`, principalWeb);
+    expect(full.status, JSON.stringify(full.body)).toBe(200);
+    expect(full.body.student).toMatchObject({
+      gender: 'MALE',
+      dateOfBirth: '2015-06-01',
+      class: 'Grade 6',
+      section: sectionA.name,
+      classTeacher: expect.stringMatching(/meena/i),
+    });
+    expect(full.body.family.guardians).toEqual([
+      expect.objectContaining({ relation: 'FATHER', mobile: guardianMobile, primary: true }),
+    ]);
+    expect(full.body.transport.allocation).toMatchObject({
+      route: { code: 'R-07' },
+      stop: { name: 'Gopala Circle', landmark: 'Near the bus shelter' },
+      pickUp: '07:40',
+      drop: '16:10',
+    });
+    expect(full.body.fees.summary).toMatchObject({
+      annual: { amount: '250.00' },
+      paid: { amount: '100.00' },
+      outstanding: { amount: '150.00' },
+      paidPercent: 40,
+    });
+    expect(full.body.fees.next).toMatchObject({ label: 'Term 2', status: 'DUE' });
+    expect(full.body.fees.records.map((r: { status: string }) => r.status)).toEqual([
+      'PAID',
+      'DUE',
+    ]);
+    expect(full.body.attendance).toMatchObject({ days: 0, percentage: null });
+    expect((await get(`/principal/student-overview/${meena.id}`, principalWeb)).status).toBe(404);
+    expect((await get(`/principal/student-overview/${diya}`, canteenWeb)).status).toBe(403);
+
+    // 20.33: each teacher of the mapping once, with the first assignment's class and the roles.
+    const teachers = await get('/principal/teacher-overview', principalWeb);
+    expect(teachers.status, JSON.stringify(teachers.body)).toBe(200);
+    expect(teachers.body.classes.map((c: { name: string }) => c.name)).toContain('Grade 6');
+    expect(teachers.body.items.find((x: { id: string }) => x.id === meena.id)).toMatchObject({
+      primaryClass: { class: 'Grade 6', section: sectionA.name },
+      roles: ['CLASS_TEACHER'],
+      assignments: 1,
+      classIds: [g6.id],
+    });
+    const d = await get(`/principal/teacher-overview/${meena.id}`, principalWeb);
+    expect(d.status, JSON.stringify(d.body)).toBe(200);
+    expect(d.body).toMatchObject({
+      mobile: meena.mobile,
+      counts: { classes: 1, sections: 1, subjects: 0 },
+      assignments: [
+        { kind: 'CLASS_TEACHER', class: 'Grade 6', section: sectionA.name, subject: null },
+      ],
+    });
+    // With the rest (client 2026-10-14): personal details, the class they lead, timetable,
+    // attendance, leave balances, homework, exams, transport and the wallet.
+    expect(d.body).toMatchObject({
+      memberNo: expect.stringMatching(/-\d{5}$/),
+      status: 'ACTIVE',
+      ringPeAccount: true,
+      consoleRoles: [],
+      coordinatorOf: [],
+      timetable: { periodsAWeek: 0, lessons: [] },
+      today: { status: null, onLeave: false },
+      attendance: { days: 0, percentage: null },
+      homework: { set: 0, open: 0, toReview: 0 },
+      exams: { total: 0, marksEntered: 0, marksDue: 0, upcoming: [] },
+      transport: null,
+    });
+    expect(d.body.classTeacherOf).toEqual([
+      { class: 'Grade 6', section: sectionA.name, students: expect.any(Number) },
+    ]);
+    expect(d.body.classTeacherOf[0].students).toBeGreaterThanOrEqual(1);
+    expect(d.body.leave.balances.map((b: { type: string }) => b.type)).toEqual([
+      'CASUAL',
+      'MEDICAL',
+      'EARNED',
+    ]);
+    expect(d.body.leave.balances[0]).toMatchObject({
+      used: 0,
+      left: d.body.leave.balances[0].total,
+    });
+    // Someone with no assignment: an empty list, not an error; another school's id: not found.
+    expect(
+      (await get(`/principal/teacher-overview/${principalId}`, principalWeb)).body,
+    ).toMatchObject({ assignments: [], counts: { classes: 0, sections: 0, subjects: 0 } });
+    expect((await get(`/principal/teacher-overview/${randomUUID()}`, principalWeb)).status).toBe(
+      404,
+    );
+    // Without the principal's grant, shut.
+    expect((await get('/principal/student-overview', canteenWeb)).status).toBe(403);
+    expect((await get('/principal/teacher-overview', canteenWeb)).status).toBe(403);
   });
 
   it('opens a merchant’s counter on the web: home, a dynamic QR request, collections, settlements and the wallet', async () => {

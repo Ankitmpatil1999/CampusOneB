@@ -1,10 +1,12 @@
 /**
  * A small PDF writer for server-rendered documents (GST invoices; later receipts and statements):
- * A4 pages, text in the standard Helvetica and Helvetica-Bold fonts (WinAnsi encoding), lines and
- * filled rectangles. Coordinates are in points from the top-left corner. Characters outside
- * Windows-1252 are written as "?" (the rupee sign as "Rs."), so callers keep text to plain Latin —
- * institution names and addresses already are (PATTERNS.institutionName).
+ * A4 pages, text in the standard Helvetica and Helvetica-Bold fonts (WinAnsi encoding), lines,
+ * filled rectangles and pictures (utils/pdf-image). Coordinates are in points from the top-left
+ * corner. Characters outside Windows-1252 are written as "?" (the rupee sign as "Rs."), so callers
+ * keep text to plain Latin — institution names and addresses already are
+ * (PATTERNS.institutionName).
  */
+import type { PdfImage } from './pdf-image';
 
 export type Rgb = readonly [number, number, number];
 
@@ -76,6 +78,9 @@ export class PdfDocument {
   readonly width = 595.28;
   readonly height = 841.89;
   private readonly pages: string[][] = [[]];
+  private readonly images: PdfImage[] = [];
+  /** The pictures each page draws (indexes into `images`). */
+  private readonly pageImages: Set<number>[] = [new Set()];
 
   constructor(private readonly title = 'Document') {}
 
@@ -85,6 +90,27 @@ export class PdfDocument {
 
   addPage() {
     this.pages.push([]);
+    this.pageImages.push(new Set());
+  }
+
+  /**
+   * Draws a picture in the box w × h at (x, y) from the top, turned upright. The caller keeps its
+   * proportions (`img.width` : `img.height`).
+   */
+  image(img: PdfImage, x: number, y: number, w: number, h: number) {
+    let k = this.images.indexOf(img);
+    if (k < 0) k = this.images.push(img) - 1;
+    this.pageImages[this.pageImages.length - 1]!.add(k);
+    const b = this.height - y - h;
+    const m =
+      img.rotate === 90
+        ? [0, -h, w, 0, x, b + h]
+        : img.rotate === 270
+          ? [0, h, -w, 0, x + w, b]
+          : img.rotate === 180
+            ? [-w, 0, 0, -h, x + w, b + h]
+            : [w, 0, 0, h, x, b];
+    this.ops.push(`q ${m.map(num).join(' ')} cm /Im${k} Do Q`);
   }
 
   /** Width of `text` in points. */
@@ -144,9 +170,22 @@ export class PdfDocument {
 
   /** The finished file. */
   toBuffer(): Buffer {
-    const objects: string[] = [];
-    const add = (body: string) => objects.push(body);
+    const objects: (string | Buffer)[] = [];
+    const add = (body: string | Buffer) => objects.push(body);
+    /** A stream object with binary data (a picture). */
+    const binary = (dict: string, data: Buffer) =>
+      Buffer.concat([
+        Buffer.from(`${dict.replace(/ >>$/, '')} /Length ${data.length} >>\nstream\n`, 'latin1'),
+        data,
+        Buffer.from('\nendstream', 'latin1'),
+      ]);
     const pageIds = this.pages.map((_, i) => 5 + i * 2);
+    let nextId = 5 + this.pages.length * 2;
+    const imageIds = this.images.map((img) => {
+      const id = nextId;
+      nextId += img.smask ? 2 : 1;
+      return id;
+    });
     add('<< /Type /Catalog /Pages 2 0 R >>');
     add(
       `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${this.pages.length} >>`,
@@ -155,26 +194,55 @@ export class PdfDocument {
     add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
     for (const [i, ops] of this.pages.entries()) {
       const contentId = pageIds[i]! + 1;
+      const pictures = [...this.pageImages[i]!].map((k) => `/Im${k} ${imageIds[k]} 0 R`);
+      const xObjects = pictures.length ? ` /XObject << ${pictures.join(' ')} >>` : '';
       add(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(this.width)} ${num(this.height)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(this.width)} ${num(this.height)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xObjects} >> /Contents ${contentId} 0 R >>`,
       );
       const stream = ops.join('\n');
       add(`<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`);
     }
+    for (const [k, img] of this.images.entries()) {
+      const size = `/Width ${img.pixelsWide} /Height ${img.pixelsHigh} /BitsPerComponent 8`;
+      add(
+        binary(
+          `<< /Type /XObject /Subtype /Image ${size} /ColorSpace /${img.colorSpace} /Filter /${img.filter}${
+            img.decode ? ` /Decode [${img.decode}]` : ''
+          }${img.smask ? ` /SMask ${imageIds[k]! + 1} 0 R` : ''} >>`,
+          img.data,
+        ),
+      );
+      if (img.smask) {
+        add(
+          binary(
+            `<< /Type /XObject /Subtype /Image ${size} /ColorSpace /DeviceGray /Filter /FlateDecode >>`,
+            img.smask,
+          ),
+        );
+      }
+    }
     const info = objects.length + 1;
     add(`<< /Title (${this.title.replace(/[()\\]/g, '')}) /Producer (RingPe) >>`);
 
-    let out = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n';
+    const parts: Buffer[] = [Buffer.from('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n', 'latin1')];
+    let length = parts[0]!.length;
+    const push = (b: Buffer) => {
+      parts.push(b);
+      length += b.length;
+    };
     const offsets: number[] = [];
     for (const [i, body] of objects.entries()) {
-      offsets.push(Buffer.byteLength(out, 'latin1'));
-      out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+      offsets.push(length);
+      push(Buffer.from(`${i + 1} 0 obj\n`, 'latin1'));
+      push(typeof body === 'string' ? Buffer.from(body, 'latin1') : body);
+      push(Buffer.from('\nendobj\n', 'latin1'));
     }
-    const xref = Buffer.byteLength(out, 'latin1');
-    out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-    for (const o of offsets) out += `${String(o).padStart(10, '0')} 00000 n \n`;
-    out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${info} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-    return Buffer.from(out, 'latin1');
+    const xref = length;
+    let tail = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (const o of offsets) tail += `${String(o).padStart(10, '0')} 00000 n \n`;
+    tail += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${info} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    push(Buffer.from(tail, 'latin1'));
+    return Buffer.concat(parts);
   }
 }
 

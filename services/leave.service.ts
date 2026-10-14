@@ -747,6 +747,11 @@ export class LeaveService {
     };
   }
 
+  /** A staff member's balances for the year (the principal's Teacher Overview, 2026-10-14). */
+  balancesOf(institutionId: string, profileRowId: string, yearId: string) {
+    return this.balances(this.deps.db, institutionId, profileRowId, yearId);
+  }
+
   private async balances(db: Db, institutionId: string, profileRowId: string, yearId: string) {
     const totals = await this.totals();
     const rows = await db
