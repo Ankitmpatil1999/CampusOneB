@@ -225,5 +225,17 @@ describe('pictures in generated PDFs (client 2026-10-14)', () => {
     expect(pdf.match(/\/Subtype \/Image/g)).toHaveLength(1);
     // Never enlarged: 3 × 4 pixels drawn 3 × 4 points.
     expect(pdf).toMatch(/q 3 0 0 4 210 [\d.]+ cm \/Im0 Do Q/);
+
+    // The school's logo heads the form, fitted in 44 points beside its name (client 2026-10-15).
+    const headed = admissionFormPdf(
+      { name: 'Sri Ram Global School', logo: photo },
+      view,
+      [],
+      new Date('2026-10-14T06:00:00Z'),
+    ).toString('latin1');
+    expect(headed).toMatch(/q 33 0 0 44 48 [\d.]+ cm \/Im0 Do Q/);
+    expect(headed).toMatch(
+      /BT [\d. ]+ rg \/F2 16 Tf 104 [\d.]+ Td \(Sri Ram Global School\) Tj ET/,
+    );
   });
 });

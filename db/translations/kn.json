@@ -2917,7 +2917,7 @@
   "ui.signup.gender": "ಲಿಂಗ",
   "ui.signup.idDoc": "ಗುರುತಿನ ದಾಖಲೆ",
   "ui.signup.idNumber": "ದಾಖಲೆ ಸಂಖ್ಯೆ",
-  "ui.signup.idNumber.aadhaar": "ಕೊನೆಯ 6 ಅಂಕಿಗಳು",
+  "ui.signup.idNumber.aadhaar": "12 ಅಂಕಿಯ ಆಧಾರ್ ಸಂಖ್ಯೆ",
   "ui.signup.idNumber.placeholder": "ಮುದ್ರಿಸಿರುವಂತೆ",
   "ui.signup.lastName": "ಕೊನೆಯ ಹೆಸರು",
   "ui.signup.middleName": "ಮಧ್ಯದ ಹೆಸರು",

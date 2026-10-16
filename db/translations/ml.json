@@ -2917,7 +2917,7 @@
   "ui.signup.gender": "ലിംഗഭേദം",
   "ui.signup.idDoc": "തിരിച്ചറിയൽ രേഖ",
   "ui.signup.idNumber": "രേഖയുടെ നമ്പർ",
-  "ui.signup.idNumber.aadhaar": "അവസാന 6 അക്കങ്ങൾ",
+  "ui.signup.idNumber.aadhaar": "12 അക്ക ആധാർ നമ്പർ",
   "ui.signup.idNumber.placeholder": "അച്ചടിച്ചിരിക്കുന്നതുപോലെ",
   "ui.signup.lastName": "അവസാന പേര്",
   "ui.signup.middleName": "മധ്യ പേര്",

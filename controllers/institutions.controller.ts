@@ -125,5 +125,14 @@ export function institutionsController(service: InstitutionsService) {
       res.setHeader('Cache-Control', 'public, max-age=300');
       res.json(await service.branding(String(req.params['slug'])));
     }),
+    // The address changes when the logo does (?v=), so a day's caching is safe (client 2026-10-15).
+    publicLogo: wrap(async (req, res) => {
+      const f = await service.logo(String(req.params['institutionId']));
+      res.setHeader('Content-Type', f.mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', 'inline');
+      res.send(f.data);
+    }),
   };
 }

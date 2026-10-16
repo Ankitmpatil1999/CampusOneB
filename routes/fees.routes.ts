@@ -472,6 +472,31 @@ fee({
   },
 });
 fee({
+  id: 'FEE-043',
+  method: 'get',
+  path: '/api/v1/console/fee-records/students',
+  summary:
+    'Active students to bill (?q name or admission number, ?yearId; the current year unless given): name, admission number and class — fee staff pick a student without the member directory (client 2026-10-15)',
+  auth: 'fees.edit',
+  responses: {
+    200: {
+      description: 'Students',
+      schema: z
+        .object({
+          items: z.array(
+            z.object({
+              id: z.uuid(),
+              name: z.string(),
+              admissionNo: z.string().nullable(),
+              grade: z.object({ class: z.string(), section: z.string().nullable() }).nullable(),
+            }),
+          ),
+        })
+        .meta({ id: 'FeeStudents' }),
+    },
+  },
+});
+fee({
   id: 'FEE-011',
   method: 'get',
   path: '/api/v1/console/fee-records/{recordId}',
@@ -831,6 +856,19 @@ export function feesRoutes(deps: {
           studentId: q(req, 'studentId'),
           status: recordStatus.optional().parse(q(req, 'status')),
           cursor: q(req, 'cursor'),
+        }),
+      );
+    }),
+  );
+  router.get(
+    '/console/fee-records/students',
+    ...console,
+    authorize('fees.edit', L),
+    wrap(async (req, res) => {
+      res.json(
+        await deps.records.students(principal(req), {
+          q: q(req, 'q'),
+          yearId: q(req, 'yearId'),
         }),
       );
     }),

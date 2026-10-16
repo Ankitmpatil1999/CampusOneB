@@ -67,10 +67,15 @@ describe.skipIf(!adminUrl)('events and entry passes on real MySQL', () => {
   it('creates an event with checked dates and heads, and pays it once (FEE-028…033, PAY-002)', async () => {
     expect((await event({ startDate: addDays(today, -1) })).body.errors[0]).toMatchObject({
       field: 'startDate',
-      code: 'VALIDATION.DATE',
+      code: 'FEE.EVENT_OPENS_PAST',
     });
+    // Neither date may be in the past, and the event closes on or after it opens (client 2026-10-15).
     expect(
-      (await event({ endDate: addDays(today, -1), startDate: today })).body.errors[0].code,
+      (await event({ endDate: addDays(today, -1), startDate: today })).body.errors[0],
+    ).toMatchObject({ field: 'endDate', code: 'FEE.EVENT_CLOSES_PAST' });
+    expect(
+      (await event({ startDate: addDays(today, 5), endDate: addDays(today, 2) })).body.errors[0]
+        .code,
     ).toBe('FEE.EVENT_DATES_INVALID');
     const e = await event();
     expect(e.status, JSON.stringify(e.body)).toBe(201);

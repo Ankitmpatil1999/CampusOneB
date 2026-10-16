@@ -182,6 +182,33 @@ export const memberDetailSchema = z
         value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]),
       }),
     ),
+    transport: z
+      .object({
+        allocation: z
+          .object({
+            route: z.object({ code: z.string(), name: z.string(), type: z.string() }),
+            stop: z.object({ name: z.string(), landmark: z.string().nullable() }),
+            pickUp: z.string().nullable(),
+            drop: z.string().nullable(),
+            from: z.string().nullable(),
+            to: z.string().nullable(),
+          })
+          .nullable(),
+        trips: z.array(
+          z.object({
+            session: z.string(),
+            direction: z.string(),
+            startTime: z.string(),
+            vehicle: z.object({ name: z.string(), registration: z.string() }),
+            driver: z.object({ name: z.string(), mobile: z.string().nullable() }),
+            attendant: z.string().nullable(),
+          }),
+        ),
+      })
+      .nullable()
+      .describe(
+        "A student's school transport: the allocation in force and today's trips on its route (client 2026-10-15); null for others",
+      ),
     onboardedAt: z.iso.datetime(),
     lastChangedAt: z.iso.datetime().nullable(),
     version: z.number().int().describe('Send as If-Match "v<n>" to edit'),

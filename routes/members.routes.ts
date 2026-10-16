@@ -68,7 +68,7 @@ doc({
   method: 'get',
   path: '/api/v1/console/members/{memberId}',
   summary:
-    'A member: identity (read-only), contact, grade and section, guardians or children, console roles, status, pending requests, institution fields',
+    'A member: identity (read-only), contact, grade and section, guardians or children, console roles, status, pending requests, institution fields, and a student’s school transport',
   tags,
   auth: 'members.view',
   responses: { 200: { description: 'Member', schema: memberDetailSchema } },

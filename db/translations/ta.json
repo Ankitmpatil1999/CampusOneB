@@ -2917,7 +2917,7 @@
   "ui.signup.gender": "பாலினம்",
   "ui.signup.idDoc": "அடையாள ஆவணம்",
   "ui.signup.idNumber": "ஆவண எண்",
-  "ui.signup.idNumber.aadhaar": "கடைசி 6 இலக்கங்கள்",
+  "ui.signup.idNumber.aadhaar": "12 இலக்க ஆதார் எண்",
   "ui.signup.idNumber.placeholder": "அச்சிடப்பட்டுள்ளபடி",
   "ui.signup.lastName": "கடைசிப் பெயர்",
   "ui.signup.middleName": "நடுப் பெயர்",

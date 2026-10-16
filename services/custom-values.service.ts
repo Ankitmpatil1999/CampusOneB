@@ -9,7 +9,7 @@ import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import type { CfEntityCode, Database } from '../models/ringpe_models';
 import { CustomAPIError } from '../utils/CustomAPIError';
-import type { FieldError } from '../utils/validators';
+import { PATTERNS, type FieldError } from '../utils/validators';
 import { binToUuid } from '../utils/idGenerator';
 
 type Db = Kysely<Database>;
@@ -29,7 +29,6 @@ export interface CfField {
 export type CfValue = string | number | boolean | readonly string[] | null;
 
 const bool = (v: unknown) => v === true || v === 1 || v === '1';
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE = /^[6-9]\d{9}$/;
 
 /** The active fields of an entity, in their order, with the options of choice fields. */
@@ -229,8 +228,10 @@ export function parseValues(
         break;
       }
       case 'EMAIL':
-        if (!EMAIL.test(text)) errors.push({ field, code: 'VALIDATION.EMAIL' });
-        else
+        // The platform's one e-mail rule (client 2026-10-15).
+        if (!PATTERNS.email.test(text.trim().toLowerCase())) {
+          errors.push({ field, code: 'VALIDATION.EMAIL' });
+        } else
           parsed.push({
             ...base,
             text: text.toLowerCase(),

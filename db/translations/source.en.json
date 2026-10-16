@@ -2917,7 +2917,7 @@
   "ui.signup.gender": "Gender",
   "ui.signup.idDoc": "ID document",
   "ui.signup.idNumber": "Document number",
-  "ui.signup.idNumber.aadhaar": "Last 6 digits",
+  "ui.signup.idNumber.aadhaar": "12-digit Aadhaar number",
   "ui.signup.idNumber.placeholder": "As printed",
   "ui.signup.lastName": "Last name",
   "ui.signup.middleName": "Middle name",

@@ -2917,7 +2917,7 @@
   "ui.signup.gender": "లింగం",
   "ui.signup.idDoc": "గుర్తింపు పత్రం",
   "ui.signup.idNumber": "పత్రం నంబర్",
-  "ui.signup.idNumber.aadhaar": "చివరి 6 అంకెలు",
+  "ui.signup.idNumber.aadhaar": "12 అంకెల ఆధార్ నంబర్",
   "ui.signup.idNumber.placeholder": "ముద్రించిన విధంగా",
   "ui.signup.lastName": "ఇంటి పేరు",
   "ui.signup.middleName": "మధ్య పేరు",

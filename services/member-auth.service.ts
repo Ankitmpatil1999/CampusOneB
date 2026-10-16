@@ -11,7 +11,7 @@
  */
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import { GENDERS, LIMITS } from '../config/registers';
+import { GENDERS, LIMITS, idNumberPattern } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { Database } from '../models/ringpe_models';
 import { accountRepository, referenceRepository } from '../repositories/account.repository';
@@ -275,7 +275,7 @@ export class MemberAuthService {
         code: 'IDN.ID_DOC_TYPE_INVALID',
         params: { types: docTypes.map((d) => d.code).join(', ') },
       });
-    } else if (!new RegExp(docType.number_regex).test(docNumber)) {
+    } else if (!idNumberPattern(docType.code, docType.number_regex).test(docNumber)) {
       errors.push({ field: 'idDocNumber', code: 'IDN.ID_DOC_NUMBER_INVALID' });
     }
     const email = input.email.trim().toLowerCase();

@@ -31,15 +31,15 @@ export interface IdDocumentType extends ReferenceItem {
  * Identity documents accepted at sign-up (OI-IDN-02: served from the master; the UI's and the
  * server's lists in the legacy system disagreed). Numbers are stored encrypted (ADR-0012).
  *
- * Aadhaar: only the last 6 digits are asked for and kept, never the full number (client Q16(e),
- * 2026-10-02; CMP-05 data minimisation).
+ * Aadhaar: the full twelve digits, never starting with 0 or 1 (client 2026-10-15; it was the last
+ * 6 digits under Q16(e)). Kept encrypted, with a blind index and the last 4 for display.
  */
 export const ID_DOCUMENT_TYPES: readonly IdDocumentType[] = [
   {
     code: 'AADHAAR',
     labelKey: 'iddoc.aadhaar',
     en: 'Aadhaar',
-    pattern: '^[0-9]{6}$',
+    pattern: '^[2-9][0-9]{11}$',
   },
   { code: 'PASSPORT', labelKey: 'iddoc.passport', en: 'Passport', pattern: '^[A-Z][0-9]{7}$' },
   {
@@ -55,6 +55,14 @@ export const ID_DOCUMENT_TYPES: readonly IdDocumentType[] = [
     pattern: '^[A-Z]{2}[0-9]{2}[0-9]{4}[0-9]{7}$',
   },
 ];
+
+/**
+ * The number format of an identity document: the register's, which wins over the copy stored in
+ * ref_id_document_types until the reference seed runs again.
+ */
+export function idNumberPattern(code: string, stored: string): RegExp {
+  return new RegExp(ID_DOCUMENT_TYPES.find((d) => d.code === code)?.pattern ?? stored);
+}
 
 /** Gender options (OI-IDN-02: the legacy UI sent a fixed value; client 2026-10-02: Male or Female). */
 export const GENDERS: readonly ReferenceItem[] = [

@@ -17,6 +17,7 @@ import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomA
 import { detectDelimiter, toCsv, parseCsv } from '../utils/csv';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
+import { PATTERNS } from '../utils/validators';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { recordAudit } from './audit.service';
 import { activeFields, parseValues, type CfField } from './custom-values.service';
@@ -70,7 +71,6 @@ const RELATIONS: Readonly<Record<string, 'FATHER' | 'MOTHER' | 'GUARDIAN'>> = {
   guardian: 'GUARDIAN',
 };
 const MOBILE = /^[6-9]\d{9}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** "2010-06-15", "15/06/2010" or "15-06-2010" as YYYY-MM-DD. */
 function toDate(v: string): string | null {
@@ -277,7 +277,10 @@ export class MemberUploadsService {
         seenMobile.set(mobile, i + 2);
       }
       const email = cell('E-mail');
-      if (email && !EMAIL.test(email)) err('E-mail', 'VALIDATION.EMAIL');
+      // The platform's one e-mail rule (client 2026-10-15).
+      if (email && !PATTERNS.email.test(email.trim().toLowerCase())) {
+        err('E-mail', 'VALIDATION.EMAIL');
+      }
       const joinedText = cell('Joining date');
       const joined = joinedText ? toDate(joinedText) : null;
       if (joinedText && !joined) err('Joining date', 'VALIDATION.DATE');

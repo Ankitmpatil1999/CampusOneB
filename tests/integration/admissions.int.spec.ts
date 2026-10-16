@@ -64,7 +64,8 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(v.status, JSON.stringify(v.body)).toBe(200);
     return v.body as { applicationStatus: string };
   };
-  const completeDraft = async (id: string, token: string, mobile: string) => {
+  /** `tc`: the transfer certificate, which a regular admission above LKG needs (2026-10-15). */
+  const completeDraft = async (id: string, token: string, mobile: string, tc = true) => {
     const base = `/api/v1/public/admissions/applications/${id}`;
     for (const [section, data] of [
       [
@@ -113,6 +114,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       'BIRTH',
       'ADDRESS',
       'REPORT',
+      ...(tc ? ['TC'] : []),
       ...PERSON_CARDS.father,
       ...PERSON_CARDS.mother,
     ]) {
@@ -243,7 +245,13 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(land.body.classes).toEqual(
       expect.arrayContaining([{ id: grade6.id, name: 'Grade 6', ageBand: { min: 11, max: 15 } }]),
     );
-    expect(Object.keys(land.body.institution).sort()).toEqual(['city', 'name', 'shortName']);
+    // Only what a family needs, and the school's logo (client 2026-10-15).
+    expect(Object.keys(land.body.institution).sort()).toEqual([
+      'city',
+      'logoUrl',
+      'name',
+      'shortName',
+    ]);
   });
 
   it('takes a public application to submission, payment and status (ADM-004…012)', async () => {
@@ -1080,7 +1088,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(c.body.application.midTerm).toBe(true);
     const id = c.body.application.id as string;
     const token = c.body.resumeToken as string;
-    await completeDraft(id, token, '9876501901');
+    await completeDraft(id, token, '9876501901', false);
     const base = `/api/v1/public/admissions/applications/${id}`;
     const submit = () =>
       pub('post', `${base}/submission`, token, {
@@ -1340,6 +1348,32 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         (await attach(`/api/v1/console/applications/${id}/documents`, null, t, con)).status,
       ).toBe(201);
     }
+    // The counsellor's form is the public one (client 2026-10-15): its lists and rules (ADM-035),
+    // and an attachment removed from the draft and attached again (ADM-036).
+    const form = await request(f.app).get('/api/v1/console/applications/form').set(con);
+    expect(form.status, JSON.stringify(form.body)).toBe(200);
+    expect(form.body).toMatchObject({
+      preselectedYearId: null,
+      years: expect.arrayContaining([expect.objectContaining({ id: currentYear.id })]),
+      classes: expect.arrayContaining([expect.objectContaining({ id: grade6.id })]),
+      rules: { references: { midTermMin: 1 } },
+    });
+    expect(form.body.transportStops).toEqual(expect.any(Array));
+    const docUrl = `/api/v1/console/applications/${id}/documents/BIRTH`;
+    const removed = await request(f.app).delete(docUrl).set(con);
+    expect(removed.status, JSON.stringify(removed.body)).toBe(200);
+    expect(removed.body.documents.map((d: { type: string }) => d.type)).not.toContain('BIRTH');
+    expect((await request(f.app).delete(docUrl).set(con)).status).toBe(404);
+    expect(
+      (
+        await request(f.app)
+          .delete(`${docUrl.slice(0, -5)}NOPE`)
+          .set(con)
+      ).status,
+    ).toBe(422);
+    expect(
+      (await attach(`/api/v1/console/applications/${id}/documents`, null, 'BIRTH', con)).status,
+    ).toBe(201);
     const submit = () =>
       post(`/api/v1/console/applications/${id}/submission`, {
         declarationAccepted: true,
@@ -1934,5 +1968,94 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(sub.body.errors).toContainEqual(
       expect.objectContaining({ field: 'parents.mother.mobile', code: 'ADM.SAME_MOBILE' }),
     );
+  });
+
+  // 2026-10-15: "I have uploaded the logo for Sri Ram Global School, but it is not reflecting any
+  // where."
+  it('shows the school’s logo from a stable address: the console session, the admission pages, the branding (INS-043)', async () => {
+    const session = () => request(f.app).get('/api/v1/console/session').set(con);
+    const landing = () => request(f.app).get(`/api/v1/public/admissions/${link.token}`);
+    expect((await session()).body.institution.logoUrl).toBeNull();
+    expect((await landing()).body.institution.logoUrl).toBeNull();
+    const png = pngOf({
+      width: 2,
+      height: 2,
+      type: 2,
+      rows: [
+        [1, 2, 3, 4, 5, 6],
+        [7, 8, 9, 10, 11, 12],
+      ],
+    });
+    const up = await request(f.app)
+      .post('/api/v1/files')
+      .set(con)
+      .set('X-RingPe-Surface', 'console')
+      .field('purpose', 'logo')
+      .attach('file', png, { filename: 'logo.png', contentType: 'image/png' });
+    expect(up.status, JSON.stringify(up.body)).toBe(201);
+    const set = await request(f.app)
+      .put('/api/v1/console/institution/logo')
+      .set(con)
+      .set('Idempotency-Key', randomUUID())
+      .send({ fileId: up.body.fileId });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    // The same address everywhere; it changes only with the logo.
+    const url = (await session()).body.institution.logoUrl as string;
+    expect(url).toMatch(/^\/api\/v1\/public\/institutions\/[0-9a-f-]{36}\/logo\?v=[0-9a-f]{12}$/);
+    expect((await landing()).body.institution.logoUrl).toBe(url);
+    // Public, cached, the picture itself.
+    const img = await request(f.app)
+      .get(url)
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      });
+    expect(img.status).toBe(200);
+    expect(img.headers['content-type']).toBe('image/png');
+    expect(img.headers['cache-control']).toBe('public, max-age=86400');
+    expect((img.body as Buffer).equals(png)).toBe(true);
+    expect((await request(f.app).get(url.replace(/[0-9a-f]{8}-/, '00000000-'))).status).toBe(404);
+    expect((await request(f.app).get('/api/v1/public/institutions/not-a-uuid/logo')).status).toBe(
+      404,
+    );
+  });
+
+  // 2026-10-15: "Transfer certificate upload is mandatory for regular admission."
+  it('asks a regular admission above LKG for the transfer certificate before it is submitted', async () => {
+    const created = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Tara',
+          lastName: 'Rao',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-04-12`,
+          aadhaar: aadhaar(),
+        },
+      },
+      {},
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.application.id as string;
+    const token = created.body.resumeToken as string;
+    await completeDraft(id, token, '9876506661', false);
+    const submit = () =>
+      pub('post', `/api/v1/public/admissions/applications/${id}/submission`, token, {
+        declarationAccepted: true,
+        registrationConsent: true,
+      });
+    const refused = await submit();
+    expect(refused.status, JSON.stringify(refused.body)).toBe(422);
+    expect(refused.body.errors).toContainEqual(
+      expect.objectContaining({ field: 'documents.TC', code: 'VALIDATION.REQUIRED' }),
+    );
+    expect(
+      (await attach(`/api/v1/public/admissions/applications/${id}/documents`, token, 'TC')).status,
+    ).toBe(201);
+    const sub = await submit();
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
   });
 });

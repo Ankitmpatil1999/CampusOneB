@@ -30,6 +30,7 @@ import { PATTERNS, isValidPassword } from '../utils/validators';
 import type { IssuedChallenge, OtpService } from './otp.service';
 import type { ClientContext, SessionService, SessionTokens } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { logoFileOf, logoPath } from './institution-logo';
 
 export type StaffSurface = 'console' | 'ops' | 'portal';
 
@@ -419,14 +420,18 @@ export class StaffAuthService {
     if (!prof) throw this.refused();
     const account = await accountRepository.findByPublicId(this.deps.db, uuidToBin(p.subject));
     const roles = await accessRepository.profileRoles(this.deps.db, prof.profile_id);
+    const institutionId = binToUuid(prof.institution_public_id);
+    const logo = await logoFileOf(this.deps.db, { publicId: institutionId });
     return {
       name: account ? fullName(account) : fullName(prof),
       email: account?.email ?? null,
       institution: {
-        id: binToUuid(prof.institution_public_id),
+        id: institutionId,
         name: prof.institution_name,
         shortName: prof.short_name,
         city: prof.city,
+        // The school's logo for the console's menu (client 2026-10-15).
+        logoUrl: logo ? logoPath(logo.institutionId, logo.fileId) : null,
       },
       roles: roles.map((r) => ({ code: r.code, name: r.name, readOnly: r.read_only === 1 })),
       subTasks: [...p.subTasks],

@@ -186,6 +186,16 @@ defineRoute({
   auth: 'public',
   responses: { 200: { description: 'Branding', schema: brandingSchema } },
 });
+defineRoute({
+  id: 'INS-043',
+  method: 'get',
+  path: '/api/v1/public/institutions/{institutionId}/logo',
+  summary:
+    "The institution's logo (PNG or JPEG) at a stable address for the console's menu, the admission pages and the apps; `?v=` changes when the logo is replaced (client 2026-10-15)",
+  tags,
+  auth: 'public',
+  responses: { 200: { description: 'The logo image' } },
+});
 
 /** Mounted under /api/v1. */
 export function institutionsRoutes(deps: {
@@ -229,5 +239,6 @@ export function institutionsRoutes(deps: {
   router.put('/console/institution/fee-account', ...con, can('config.edit'), c.feeAccount);
 
   router.get('/public/institutions/:slug/branding', c.branding);
+  router.get('/public/institutions/:institutionId/logo', c.publicLogo);
   return router;
 }

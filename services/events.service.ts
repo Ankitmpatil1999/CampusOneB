@@ -13,6 +13,7 @@
  */
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
+import type { MessageKey } from '../config/registers';
 import type { Database } from '../models/ringpe_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import type { JobContext } from '../schedulers';
@@ -86,12 +87,15 @@ export class EventsService {
     return rows.map((r) => binToUuid(r.public_id));
   }
 
+  /** Neither date given may be in the past, and the event closes on or after it opens. */
   private checkInput(input: Partial<EventInput>, today: string) {
-    const errors: { field: string; code: 'VALIDATION.DATE' | 'FEE.EVENT_DATES_INVALID' }[] = [];
+    const errors: { field: string; code: MessageKey }[] = [];
     if (input.startDate !== undefined && input.startDate < today) {
-      errors.push({ field: 'startDate', code: 'VALIDATION.DATE' });
+      errors.push({ field: 'startDate', code: 'FEE.EVENT_OPENS_PAST' });
     }
-    if (input.startDate && input.endDate && input.endDate < input.startDate) {
+    if (input.endDate !== undefined && input.endDate < today) {
+      errors.push({ field: 'endDate', code: 'FEE.EVENT_CLOSES_PAST' });
+    } else if (input.startDate && input.endDate && input.endDate < input.startDate) {
       errors.push({ field: 'endDate', code: 'FEE.EVENT_DATES_INVALID' });
     }
     if (errors.length) throw new ValidationError(errors);
@@ -291,8 +295,11 @@ export class EventsService {
       throw new CustomAPIError(409, 'FEE.EVENT_ENDED');
     }
     if (patch.startDate !== undefined || patch.endDate !== undefined) {
-      // A past start is refused only when it changes (an event under way keeps its start).
-      this.checkInput({ startDate: patch.startDate, endDate: end }, istBusinessDate(this.now()));
+      // A past date is refused only when it changes (an event under way keeps its start).
+      this.checkInput(
+        { startDate: patch.startDate, endDate: patch.endDate },
+        istBusinessDate(this.now()),
+      );
       if (end < start)
         throw new ValidationError([{ field: 'endDate', code: 'FEE.EVENT_DATES_INVALID' }]);
     }

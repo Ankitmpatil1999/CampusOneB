@@ -59,6 +59,7 @@ import {
   type CfField,
 } from './custom-values.service';
 import { memberOf } from './member-roles';
+import { studentTransport } from './student-transport';
 import type { SessionService } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
 
@@ -411,6 +412,15 @@ export class MembersService {
     ]);
     const rec = values.get(Buffer.from(r.public_id).toString('hex')) ?? {};
     const kind = kindOf(r.category);
+    // A student's school transport on their profile (client 2026-10-15).
+    const transport =
+      kind === 'STUDENTS' && yearId
+        ? await studentTransport(db, {
+            profileRowId: String(r.id),
+            yearId,
+            today: istBusinessDate(this.now()),
+          })
+        : null;
     return {
       id: memberId,
       memberNo: `${inst.short_name}-${String(r.member_seq).padStart(5, '0')}`,
@@ -501,6 +511,7 @@ export class MembersService {
         options: f.options.map((o) => o.label),
         value: rec[f.id] ?? null,
       })),
+      transport,
       onboardedAt: new Date(r.created_at).toISOString(),
       lastChangedAt: history[0] ? new Date(history[0].occurred_at).toISOString() : null,
       version: r.row_version,

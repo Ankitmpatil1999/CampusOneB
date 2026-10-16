@@ -50,6 +50,7 @@ import { hashSecret } from '../utils/password';
 import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
 import type { FileService } from './file.service';
+import { logoFileOf, logoUrlOf } from './institution-logo';
 import { planDto } from './plans.service';
 import { addDays, cycleOf, dateOnly, type BillingService } from './billing.service';
 import { istBusinessDate } from '../utils/format';
@@ -116,6 +117,8 @@ export interface ConsoleDetailsInput extends DetailsInput {
 
 type Row = NonNullable<Awaited<ReturnType<typeof repo.byId>>>;
 
+/** A logo larger than this isn't served (an upload takes up to 2 MB). */
+const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 const STATUS_LABEL = Object.fromEntries(INSTITUTION.values.map((v) => [v.code, v.label]));
 
 /** Normalised name/address for the uniqueness key (case, spacing and punctuation ignored). */
@@ -1463,16 +1466,25 @@ export class InstitutionsService {
       throw new NotFoundError();
     }
     const settings = await repo.settings(this.deps.db, row.id);
-    let logoUrl: string | null = null;
-    if (settings?.logo_public_id && settings.logo_scan === 'CLEAN' && this.deps.files) {
-      logoUrl = this.deps.files.linkFor(binToUuid(settings.logo_public_id)).url;
-    }
     return {
       name: row.name,
       shortName: row.short_name,
       city: row.city,
-      logoUrl,
+      // The stable address (INS-043), not a signed link that expires (client 2026-10-15).
+      logoUrl: await logoUrlOf(this.deps.db, String(row.id)),
       colors: { brand: settings?.brand_color ?? null },
     };
+  }
+
+  /**
+   * INS-043: the institution's logo itself, public like its branding (sign-in, the admission pages,
+   * the console's menu, the apps). Only a picture scanned clean; anything else answers 404.
+   */
+  async logo(institutionId: string) {
+    if (!isUuid(institutionId) || !this.deps.files) throw new NotFoundError();
+    const f = await logoFileOf(this.deps.db, { publicId: institutionId });
+    const file = f ? await this.deps.files.contents(f.fileId, LOGO_MAX_BYTES) : null;
+    if (!file || !/^image\/(png|jpeg)$/.test(file.mimeType)) throw new NotFoundError();
+    return file;
   }
 }

@@ -81,6 +81,14 @@ export const EVENT_MESSAGES = [
     'The end date can’t be before the start date.',
     ['13.7', 'OI-FEE-13'],
   ),
+  n('FEE.EVENT_OPENS_PAST', 422, 'The opening date can’t be in the past.', [
+    '13.7',
+    'client 2026-10-15',
+  ]),
+  n('FEE.EVENT_CLOSES_PAST', 422, 'The closing date can’t be in the past.', [
+    '13.7',
+    'client 2026-10-15',
+  ]),
   n(
     'FEE.NO_FEE_ACCOUNT',
     409,

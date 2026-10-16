@@ -14,6 +14,7 @@ import { recordAudit } from './audit.service';
 import type { IssuedChallenge, OtpService } from './otp.service';
 import type { SessionService } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { logoFileOf, logoPath } from './institution-logo';
 import { AuthenticationError, CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { maskIdNumber, maskPan } from '../utils/fieldEncryption';
 import { binToUuid, uuidToBin } from '../utils/idGenerator';
@@ -138,6 +139,12 @@ export class MeService {
       )
       .orderBy('m.id')
       .execute();
+    // Each school's logo, once per school (client 2026-10-15).
+    const logos = new Map<string, string | null>();
+    for (const id of new Set(rows.map((r) => binToUuid(r.institution_public_id)))) {
+      const f = await logoFileOf(this.deps.db, { publicId: id });
+      logos.set(id, f ? logoPath(f.institutionId, f.fileId) : null);
+    }
     return rows.map((r) => ({
       id: binToUuid(r.public_id),
       memberNo: `${r.short_name}-${String(r.member_seq).padStart(5, '0')}`,
@@ -146,6 +153,7 @@ export class MeService {
         id: binToUuid(r.institution_public_id),
         name: r.institution_name,
         shortName: r.short_name,
+        logoUrl: logos.get(binToUuid(r.institution_public_id)) ?? null,
       },
       userType: r.user_type,
       kind: kindOf(r.category),

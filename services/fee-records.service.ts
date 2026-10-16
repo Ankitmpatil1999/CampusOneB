@@ -17,6 +17,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import type { Database, FeeRecordStatus } from '../models/ringpe_models';
+import { academicsRepository } from '../repositories/academics.repository';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { idCursor } from '../utils/cursor';
@@ -261,6 +262,64 @@ export class FeeRecordsService {
     return {
       items: page.map((r) => this.view(r)),
       nextCursor: rows.length > 100 ? idCursor.encode(String(page.at(-1)!.id)) : null,
+    };
+  }
+
+  // --- FEE-043 --------------------------------------------------------------------------------------
+  /**
+   * The active students a fee can be billed to, by name or admission number, with their class in the
+   * year (the current one unless given): what the fee forms need to pick a student, without the
+   * member directory's contact details, so fee staff need no members.view (client 2026-10-15).
+   */
+  async students(p: Principal, f: { q?: string | undefined; yearId?: string | undefined }) {
+    const i = await this.inst(p);
+    const instId = String(i.id);
+    let yearRowId: string | null = null;
+    if (f.yearId) {
+      if (!isUuid(f.yearId)) return { items: [] };
+      const y = await academicsRepository.yearByPublicId(this.deps.db, instId, uuidToBin(f.yearId));
+      yearRowId = y ? String(y.id) : null;
+    } else {
+      const y = await academicsRepository.currentYear(this.deps.db, instId);
+      yearRowId = y ? String(y.id) : null;
+    }
+    let q = this.deps.db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .leftJoin('enrolments as e', (j) =>
+        j.onRef('e.student_profile_id', '=', 'm.id').on('e.year_id', '=', yearRowId ?? '0'),
+      )
+      .leftJoin('sections as sec', 'sec.id', 'e.section_id')
+      .leftJoin('classes as c', 'c.id', 'sec.class_id')
+      .select([
+        'm.public_id',
+        'm.first_name',
+        'm.last_name',
+        'm.admission_no',
+        'c.name as class_name',
+        'sec.name as section_name',
+      ])
+      .where('m.institution_id', '=', instId)
+      .where('ut.category', '=', 'STUDENT')
+      .where('m.status', '=', 'ACTIVE');
+    const term = f.q?.trim();
+    if (term) {
+      const like = `%${term.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+      q = q.where((eb) =>
+        eb.or([
+          eb(sql<string>`CONCAT_WS(' ', m.first_name, m.last_name)`, 'like', like),
+          eb('m.admission_no', 'like', like),
+        ]),
+      );
+    }
+    const rows = await q.orderBy('m.first_name').orderBy('m.last_name').limit(50).execute();
+    return {
+      items: rows.map((r) => ({
+        id: binToUuid(r.public_id),
+        name: nameOf(r.first_name, r.last_name),
+        admissionNo: r.admission_no,
+        grade: r.class_name ? { class: r.class_name, section: r.section_name ?? null } : null,
+      })),
     };
   }
 

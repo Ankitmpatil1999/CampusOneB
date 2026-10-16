@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { inr, schoolFixture, type Auth, type Payer } from './school';
-import { uuidToBin } from '../../utils/idGenerator';
+import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import type { Principal } from '../../utils/principal';
 
 describe.skipIf(!adminUrl)('fee records and collection on real MySQL', () => {
@@ -515,5 +515,66 @@ describe.skipIf(!adminUrl)('fee records and collection on real MySQL', () => {
       'VALIDATED',
       'COMMITTED',
     ]);
+  });
+
+  it('lets the accountant find a student and raise a record without the member directory (FEE-043)', async () => {
+    // A staff member with the Accountant role only (client 2026-10-15).
+    const a = await f.account('LATHA');
+    const type = await f.t.db
+      .selectFrom('user_types')
+      .select('id')
+      .where('public_id', '=', uuidToBin(f.teacherTypeId))
+      .executeTakeFirstOrThrow();
+    const prof = await f.t.db
+      .insertInto('member_profiles')
+      .values({
+        public_id: newPublicIdPair().bin,
+        institution_id: f.school.rowId,
+        account_id: a.id,
+        user_type_id: String(type.id),
+        first_name: 'LATHA',
+        last_name: null,
+        employee_no: null,
+        admission_no: null,
+      })
+      .executeTakeFirstOrThrow();
+    const role = await f.t.db
+      .selectFrom('roles')
+      .select('id')
+      .where('code', '=', 'ACCOUNTANT')
+      .executeTakeFirstOrThrow();
+    await f.t.db
+      .insertInto('profile_roles')
+      .values({
+        institution_id: f.school.rowId,
+        profile_id: String(prof.insertId),
+        role_id: String(role.id),
+      })
+      .execute();
+    const acc = await f.signedIn('console', a.email);
+
+    expect((await request(f.app).get('/api/v1/console/members').set(acc)).status).toBe(403);
+    const found = await request(f.app).get('/api/v1/console/fee-records/students?q=ravi').set(acc);
+    expect(found.status, JSON.stringify(found.body)).toBe(200);
+    expect(found.body.items).toEqual([
+      { id: ravi.id, name: 'Ravi Rao', admissionNo: expect.any(String), grade: expect.anything() },
+    ]);
+    expect(Object.keys(found.body.items[0]).sort()).toEqual(['admissionNo', 'grade', 'id', 'name']);
+    const all = await request(f.app).get('/api/v1/console/fee-records/students').set(acc);
+    expect(all.body.items.map((s: { id: string }) => s.id)).toEqual(
+      expect.arrayContaining([asha.id, ravi.id, meera.id]),
+    );
+    const made = await request(f.app)
+      .post('/api/v1/console/fee-records')
+      .set(acc)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        studentId: ravi.id,
+        yearId: year.id,
+        label: 'Accounts term',
+        dueDate: today,
+        amount: inr('10.00'),
+      });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
   });
 });

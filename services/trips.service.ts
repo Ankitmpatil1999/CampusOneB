@@ -35,6 +35,8 @@ type Db = Kysely<Database> | Transaction<Database>;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const WEEKDAY = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
+/** How often reading today's trips looks for any still to make (per institution). */
+const ENSURE_EVERY_MS = 60_000;
 const nameOf = (first: string | null | undefined, last: string | null | undefined) =>
   [first, last].filter(Boolean).join(' ');
 const ymd = (d: Date | string) => (typeof d === 'string' ? d.slice(0, 10) : istBusinessDate(d));
@@ -73,6 +75,53 @@ export class TripsService {
 
   private now() {
     return this.deps.now?.() ?? new Date();
+  }
+
+  /** When each institution's trips of the day were last checked on reading (id → date and time). */
+  private readonly checked = new Map<string, { date: string; at: number }>();
+
+  /**
+   * Today's trips, made when they are read (client 2026-10-15: "Active trips are not displaying in
+   * Live today"). The daily job makes them at 00:10; a route assigned later in the day, or a day
+   * the job didn't run, had none until the next run. Generation is re-runnable, so the trips still
+   * missing are made here — looked for at most once a minute per institution. A failure leaves the
+   * reading as it was; the job and the next look try again.
+   */
+  private async ensureToday(institutionId: string, date: string) {
+    if (date !== istBusinessDate(this.now())) return;
+    const at = this.now().getTime();
+    const last = this.checked.get(institutionId);
+    if (last && last.date === date && at - last.at < ENSURE_EVERY_MS) return;
+    this.checked.set(institutionId, { date, at });
+    try {
+      if (await this.missingToday(institutionId, date)) await this.generate(institutionId, date);
+    } catch {
+      this.checked.delete(institutionId);
+    }
+  }
+
+  /** Whether an assignment that runs on the date has no trip yet (the job's own selection). */
+  private async missingToday(institutionId: string, date: string) {
+    const weekday = WEEKDAY[new Date(`${date}T00:00:00Z`).getUTCDay()]!;
+    const rows = await this.deps.db
+      .selectFrom('transport_assignments as a')
+      .innerJoin('transport_sessions as s', 's.id', 'a.session_id')
+      .innerJoin('transport_routes as r', 'r.id', 'a.route_id')
+      .innerJoin('transport_vehicles as v', 'v.id', 'a.vehicle_id')
+      .leftJoin('transport_trips as t', (j) =>
+        j.onRef('t.assignment_id', '=', 'a.id').on('t.trip_date', '=', date),
+      )
+      .select('s.days')
+      .where('a.institution_id', '=', institutionId)
+      .where('a.active', '=', 1)
+      .where('a.effective_from', '<=', date)
+      .where('a.effective_to', '>=', date)
+      .where('s.active', '=', 1)
+      .where('r.active', '=', 1)
+      .where('v.active', '=', 1)
+      .where('t.id', 'is', null)
+      .execute();
+    return rows.some((r) => r.days.split(',').includes(weekday));
   }
 
   private by(p: Principal) {
@@ -542,6 +591,7 @@ export class TripsService {
   ) {
     const inst = await institutionOf(this.deps.db, p);
     const date = f.date && DAY.test(f.date) ? f.date : istBusinessDate(this.now());
+    await this.ensureToday(String(inst.id), date);
     let q = this.tripRows(this.deps.db)
       .where('t.institution_id', '=', inst.id)
       .where('t.trip_date', '=', date);
@@ -838,6 +888,7 @@ export class TripsService {
   async crewTrips(p: Principal, f: { date?: string | undefined }) {
     const crew = await this.crewOf(p);
     const date = f.date && DAY.test(f.date) ? f.date : istBusinessDate(this.now());
+    await this.ensureToday(crew.institutionId, date);
     const rows = await this.tripRows(this.deps.db)
       .where('t.institution_id', '=', crew.institutionId)
       .where('t.trip_date', '=', date)
@@ -1150,6 +1201,7 @@ export class TripsService {
       .where('al.effective_to', '>=', date)
       .executeTakeFirst();
     if (!al) return { member: { name: me.name }, allocation: null, trips: [] };
+    await this.ensureToday(me.institutionId, date);
     const trips = await this.tripRows(db)
       .where('t.institution_id', '=', me.institutionId)
       .where('t.route_id', '=', String(al.route_id))

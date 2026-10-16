@@ -299,6 +299,15 @@ describe.skipIf(!adminUrl)('transport on real MySQL', () => {
         .set(f.ops)
         .set('Idempotency-Key', randomUUID())
         .send({ reason: 'Integration test of trips' });
+    // Read before the day's job has run: today's trips are made on reading (client 2026-10-15:
+    // "Active trips are not displaying in Live today").
+    const early = await get('/crew/trips', raju.auth);
+    expect(early.status, JSON.stringify(early.body)).toBe(200);
+    expect(early.body.items.map((x: { status: string }) => x.status)).toEqual([
+      'SCHEDULED',
+      'SCHEDULED',
+    ]);
+    // The job after them makes none twice.
     expect([200, 201, 202]).toContain((await run()).status);
     await run();
     const trips = await get('/console/trips');

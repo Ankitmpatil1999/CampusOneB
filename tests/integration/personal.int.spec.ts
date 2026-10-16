@@ -53,7 +53,7 @@ describe.skipIf(!adminUrl)('personal details on real MySQL', () => {
         gender: 'FEMALE',
         dob: '1990-04-12',
         idDocType: 'AADHAAR',
-        idDocNumber: String(randomInt(0, 1_000_000)).padStart(6, '0'),
+        idDocNumber: `${randomInt(2, 10)}${String(randomInt(0, 1e11)).padStart(11, '0')}`,
         email: `asha.${randomInt(0, 1e9)}@example.in`,
         password: PASSWORD,
         securityQuestion: 'FIRST_SCHOOL',

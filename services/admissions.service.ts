@@ -71,6 +71,7 @@ import { classOrder } from './admission-links.service';
 import { recordAudit } from './audit.service';
 import { admissionFormPdf } from './admission-form-pdf';
 import { activeFields, parseValues } from './custom-values.service';
+import { logoFileOf } from './institution-logo';
 import type { FileService } from './file.service';
 import type { MembersService, OnboardInput } from './members.service';
 import type { OtpService } from './otp.service';
@@ -1302,21 +1303,33 @@ export class AdmissionsService {
     const a = await this.access(id, token, 'read');
     if (a.scope !== 'resume') throw new CustomAPIError(404, 'ADM.NOT_FOUND');
     if (a.row.status === 'DRAFT') throw new CustomAPIError(409, 'ADM.FORM_NOT_SUBMITTED');
-    const [v, fields, pictures] = await Promise.all([
+    const [v, fields, pictures, logo] = await Promise.all([
       this.view(a.row, { console: false }),
       activeFields(this.deps.db, String(a.inst.id), 'ADMISSION_APPLICATION'),
       this.pictures(a.row.id),
+      this.schoolLogo(String(a.inst.id)),
     ]);
     return {
       fileName: `Application-${v.applicationNo.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
       pdf: admissionFormPdf(
-        { name: a.inst.name, city: a.inst.city },
+        { name: a.inst.name, city: a.inst.city, logo },
         v,
         fields,
         this.now(),
         pictures,
       ),
     };
+  }
+
+  /** The school's logo for the head of the form PDF (client 2026-10-15), or null. */
+  private async schoolLogo(institutionRowId: string) {
+    try {
+      const f = await logoFileOf(this.deps.db, { rowId: institutionRowId });
+      const file = f ? await this.deps.files.contents(f.fileId, PICTURE_MAX_BYTES) : null;
+      return file ? pdfImage(file.data, file.mimeType) : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -1575,6 +1588,9 @@ export class AdmissionsService {
     const order = r.class_name ? classOrder(r.class_name) : null;
     // Grade 1 and above bring the last report card (prototype p.form).
     if (order !== null && order >= 3) need(has('REPORT'), 'documents.REPORT');
+    // A regular admission above LKG brings the previous school's transfer certificate (client
+    // 2026-10-15); mid-term has its own rule — the certificate or an undertaking.
+    if (!Number(r.mid_term) && order !== null && order > 1) need(has('TC'), 'documents.TC');
     const fields = await activeFields(
       this.deps.db,
       String(r.institution_id),
@@ -2608,6 +2624,24 @@ export class AdmissionsService {
     if (!['DRAFT', 'SUBMITTED'].includes(r.status))
       throw new CustomAPIError(409, 'ADM.NOT_EDITABLE');
     await this.addDocument(i.id, binToUuid(i.public_id), r, input, p);
+    return this.detail(p, id);
+  }
+
+  /**
+   * ADM-036: an attachment removed while the counsellor completes a draft (client 2026-10-15: the
+   * public form's "Remove", ADM-033, in the counsellor's form).
+   */
+  async consoleRemoveDocument(p: Principal, id: string, docType: AdmissionDocType) {
+    const i = await this.consoleInst(p);
+    const r = await this.lockless(i.id, id);
+    if (r.status !== 'DRAFT') throw new CustomAPIError(409, 'ADM.NOT_DRAFT');
+    const out = await this.deps.db
+      .deleteFrom('admission_documents')
+      .where('application_id', '=', r.id)
+      .where('doc_type', '=', docType)
+      .executeTakeFirst();
+    if (Number(out.numDeletedRows) !== 1) throw new NotFoundError();
+    await this.touch(r.id);
     return this.detail(p, id);
   }
 

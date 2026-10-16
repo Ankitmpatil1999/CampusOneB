@@ -22,6 +22,7 @@ import type { Principal } from '../utils/principal';
 import { qrSvg } from '../utils/qr';
 import { recordAudit } from './audit.service';
 import { activeFields } from './custom-values.service';
+import { logoUrlOf } from './institution-logo';
 import { defaultValues, type SettingValues } from './settings.service';
 
 const day = (d: Date | string) => istBusinessDate(new Date(d));
@@ -298,6 +299,29 @@ export class AdmissionLinksService {
   // --- ADM-001 --------------------------------------------------------------------------------------
   async landing(token: string) {
     const c = await this.context(token);
+    return this.formSetup(c.institutionId, c, c.yearRowId);
+  }
+
+  /**
+   * ADM-035: what the counsellor's application form needs (client 2026-10-15: the same steps,
+   * fields and rules as the public form) — the landing's years, classes, institution fields, stops
+   * and rules for the signed-in institution, with no link.
+   */
+  async consoleForm(p: Principal) {
+    const i = await this.inst(p);
+    return this.formSetup(
+      String(i.id),
+      { name: i.name, shortName: i.short_name, city: i.city },
+      null,
+    );
+  }
+
+  private async formSetup(
+    institutionId: string,
+    inst: { name: string; shortName: string | null; city: string | null },
+    yearRowId: string | null,
+  ) {
+    const c = { institutionId, ...inst, yearRowId };
     const years = await this.openYears(c.institutionId);
     const classes = await this.deps.db
       .selectFrom('classes')
@@ -318,7 +342,13 @@ export class AdmissionLinksService {
     const refs = await this.limit(LIMITS.admReferencesMax);
     const docMax = await this.limit(LIMITS.fileMaxBytes);
     return {
-      institution: { name: c.name, shortName: c.shortName, city: c.city },
+      institution: {
+        name: c.name,
+        shortName: c.shortName,
+        city: c.city,
+        // The school's logo for the admission pages (client 2026-10-15).
+        logoUrl: await logoUrlOf(this.deps.db, c.institutionId),
+      },
       preselectedYearId: years.find((y) => y.rowId === c.yearRowId)?.id ?? null,
       years: years.map(({ rowId: _r, ...y }) => y),
       classes: await Promise.all(

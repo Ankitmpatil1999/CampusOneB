@@ -313,12 +313,14 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'FEE.EVENTS_OFF': 'Events are turned off for this institution.',
   'FEE.EVENT_ALREADY_PAID': 'You have already paid for this event. Payment is not allowed again.',
   'FEE.EVENT_CLOSED': 'This event is closed for payment.',
+  'FEE.EVENT_CLOSES_PAST': 'The closing date can’t be in the past.',
   'FEE.EVENT_DATES_INVALID': 'The end date can’t be before the start date.',
   'FEE.EVENT_ENDED':
     'This event has ended, so it can’t be switched on again. Create a new event instead.',
   'FEE.EVENT_HAS_PAYMENTS':
     'Members have paid for this event, so its heads and start date can’t change. Create a new event instead.',
   'FEE.EVENT_NOT_FOR_YOU': 'This event isn’t open to your class.',
+  'FEE.EVENT_OPENS_PAST': 'The opening date can’t be in the past.',
   'FEE.FINANCED': 'This fee is paid through the financing partner, not from the wallet.',
   'FEE.FINANCING_BY_SCHOOL':
     'Your school registers students for fee financing. Please ask the accounts office.',

@@ -394,6 +394,24 @@ doc({
   responses: { 200: { description: 'Application', schema: application } },
 });
 doc({
+  id: 'ADM-035',
+  method: 'get',
+  path: '/api/v1/console/applications/form',
+  summary:
+    'What the counsellor’s application form needs, as the public landing gives it: the years open, classes with age bands, the institution’s fields, the transport pick-up stops, document and reference rules (client 2026-10-15)',
+  auth: 'admissions.edit',
+  responses: { 200: { description: 'The form’s lists and rules' } },
+});
+doc({
+  id: 'ADM-036',
+  method: 'delete',
+  path: '/api/v1/console/applications/{applicationId}/documents/{docType}',
+  summary:
+    'Remove an attachment from a counsellor’s draft (client 2026-10-15; ADM-033 for the counsellor); a required one must be attached again before submitting',
+  auth: 'admissions.edit',
+  responses: { 200: { description: 'Application', schema: application } },
+});
+doc({
   id: 'ADM-015',
   method: 'post',
   path: '/api/v1/console/applications',
@@ -890,6 +908,16 @@ export function admissionsRoutes(deps: {
       );
     }),
   );
+  // Before /console/applications/:applicationId.
+  router.get(
+    '/console/applications/form',
+    ...console,
+    authorize('admissions.edit', L),
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await deps.links.consoleForm(principal(req)));
+    }),
+  );
   router.get(
     '/console/applications/:applicationId',
     ...console,
@@ -970,6 +998,16 @@ export function admissionsRoutes(deps: {
       res
         .status(201)
         .json(await A.consoleDocument(principal(req), param(req, 'applicationId'), fileOf(req)));
+    }),
+  );
+  router.delete(
+    '/console/applications/:applicationId/documents/:docType',
+    ...console,
+    authorize('admissions.edit', L),
+    wrap(async (req, res) => {
+      const t = docType.safeParse(param(req, 'docType'));
+      if (!t.success) throw new ValidationError([{ field: 'docType', code: 'VALIDATION.FORMAT' }]);
+      res.json(await A.consoleRemoveDocument(principal(req), param(req, 'applicationId'), t.data));
     }),
   );
   router.post(

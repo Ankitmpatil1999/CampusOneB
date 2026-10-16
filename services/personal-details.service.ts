@@ -19,7 +19,12 @@
  * Not yet here, by phase: the transaction-PIN gate of RNG-IDN-112 arrives with the PIN (Phase 3).
  */
 import type { Kysely } from 'kysely';
-import { BANK_CHANGE_REASONS, GENDERS, type MessageKey } from '../config/registers';
+import {
+  BANK_CHANGE_REASONS,
+  GENDERS,
+  idNumberPattern,
+  type MessageKey,
+} from '../config/registers';
 import type { BankVerifier } from '../integrations/bank-verify.provider';
 import type { AccountPiiField, Database } from '../models/ringpe_models';
 import { accountRepository, referenceRepository } from '../repositories/account.repository';
@@ -440,7 +445,7 @@ export class PersonalDetailsService {
     else if (field === 'ID_NUMBER') {
       const types = await referenceRepository.idDocumentTypes(this.deps.db);
       const type = types.find((t) => t.code === a.id_doc_type);
-      if (!type || !new RegExp(type.number_regex).test(normaliseForIndex(value))) {
+      if (!type || !idNumberPattern(type.code, type.number_regex).test(normaliseForIndex(value))) {
         invalid('IDN.ID_DOC_NUMBER_INVALID');
       }
     }

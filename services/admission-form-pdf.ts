@@ -265,7 +265,12 @@ function customValue(f: CfField | undefined, v: unknown): string {
 }
 
 export function admissionFormPdf(
-  institution: { readonly name: string; readonly city?: string | null },
+  institution: {
+    readonly name: string;
+    readonly city?: string | null;
+    /** The school's logo, at the head of the form (client 2026-10-15). */
+    readonly logo?: PdfImage | null;
+  },
   v: FormView,
   fields: readonly CfField[],
   now: Date,
@@ -277,8 +282,19 @@ export function admissionFormPdf(
     `${v.applicationNo} · a copy of the application as submitted, made by RingPe on ${formatDateTime(now)}`,
   );
   const d = w.doc;
-  d.text(LEFT, 64, institution.name, { size: 16, bold: true, color: BRAND });
-  d.text(LEFT, 84, join('Application for admission', institution.city), { size: 11, color: MUTED });
+  // The school's logo, fitted in a 44-point square beside its name.
+  let nameX = LEFT;
+  if (institution.logo) {
+    const l = institution.logo;
+    const scale = Math.min(44 / l.width, 44 / l.height);
+    d.image(l, LEFT, 48 + (44 - l.height * scale) / 2, l.width * scale, l.height * scale);
+    nameX = LEFT + 56;
+  }
+  d.text(nameX, 64, institution.name, { size: 16, bold: true, color: BRAND });
+  d.text(nameX, 84, join('Application for admission', institution.city), {
+    size: 11,
+    color: MUTED,
+  });
   d.text(RIGHT, 64, v.applicationNo, { size: 12, bold: true, align: 'right' });
   d.text(RIGHT, 84, v.submittedAt ? `Submitted ${formatDateTime(v.submittedAt)}` : '', {
     size: 9,

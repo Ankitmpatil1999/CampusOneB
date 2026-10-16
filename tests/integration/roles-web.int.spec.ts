@@ -277,6 +277,20 @@ describe.skipIf(!adminUrl)('the principal, merchants and vendor merchants on the
       pickUp: '07:40',
       drop: '16:10',
     });
+    // The same on the student's profile in the console (IDN-045; client 2026-10-15); not for staff.
+    const member = await get(`/console/members/${diya}`);
+    expect(member.status, JSON.stringify(member.body)).toBe(200);
+    expect(member.body.transport).toEqual({
+      allocation: {
+        route: { code: 'R-07', name: 'Gopala – School', type: expect.any(String) },
+        stop: { name: 'Gopala Circle', landmark: 'Near the bus shelter' },
+        pickUp: '07:40',
+        drop: '16:10',
+        from: '2026-06-01',
+        to: '2099-03-31',
+      },
+      trips: [],
+    });
     expect(full.body.fees.summary).toMatchObject({
       annual: { amount: '250.00' },
       paid: { amount: '100.00' },

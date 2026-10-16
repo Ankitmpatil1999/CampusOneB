@@ -2917,7 +2917,7 @@
   "ui.signup.gender": "लिंग",
   "ui.signup.idDoc": "पहचान दस्तावेज़",
   "ui.signup.idNumber": "दस्तावेज़ नंबर",
-  "ui.signup.idNumber.aadhaar": "आखिरी 6 अंक",
+  "ui.signup.idNumber.aadhaar": "12 अंकों का आधार नंबर",
   "ui.signup.idNumber.placeholder": "जैसा छपा है",
   "ui.signup.lastName": "अंतिम नाम",
   "ui.signup.middleName": "मध्य नाम",

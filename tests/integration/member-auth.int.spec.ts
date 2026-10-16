@@ -17,8 +17,8 @@ type Harness = Awaited<ReturnType<typeof buildHttpApp>>;
 
 const newMobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 const newPan = () => `ABCDE${String(randomInt(0, 10_000)).padStart(4, '0')}F`;
-/** Aadhaar: only the last 6 digits are asked for and kept (client Q16(e)). */
-const newAadhaar = () => String(randomInt(0, 1_000_000)).padStart(6, '0');
+/** Aadhaar: the full twelve digits, not starting with 0 or 1 (client 2026-10-15). */
+const newAadhaar = () => `${randomInt(2, 10)}${String(randomInt(0, 1e11)).padStart(11, '0')}`;
 const device = (installId = randomUUID(), model = 'Pixel 8') => ({
   installId,
   model,
@@ -194,7 +194,8 @@ describe.skipIf(!adminUrl)('member sign-up, sign-in and recovery on real MySQL',
         pan: 'ABC123',
         firstName: 'Asha1',
         dob: '2015-01-01',
-        idDocNumber: '1234',
+        // The last 6 digits alone no longer do: the full Aadhaar number (client 2026-10-15).
+        idDocNumber: '234123',
         email: 'not-an-email',
         password: 'weakpass',
         securityQuestion: 'NO_SUCH',

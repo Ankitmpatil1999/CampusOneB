@@ -15,8 +15,13 @@ export const PATTERNS = {
   mobile: /^[6-9]\d{9}$/,
   /** 27.4 §5 Temporary member mobile for bulk onboarding — '2' + nine digits (system-generated). */
   temporaryMobile: /^2\d{9}$/,
-  /** 27.4 §5 E-mail (server) — lower case, TLD of at least two letters. */
-  email: /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/,
+  /**
+   * 27.4 §5 E-mail (server) — lower case, TLD of at least two letters. After the @, a name and one
+   * or two endings ("mail.com", "mail.co.in"), never more (client 2026-10-15: "mail.com.com.com" was
+   * taken); each part starts and ends with a letter or digit.
+   */
+  email:
+    /^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$/,
   /** 27.4 §5 Amount — whole number or one or two decimals; no sign, no exponent. */
   amount: /^\d+(\.\d{1,2})?$/,
   /** 27.4 §5 Tax identification number (PAN) — anchored (the server rule is not, a recorded defect). */

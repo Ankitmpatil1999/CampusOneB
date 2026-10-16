@@ -18,6 +18,7 @@ import { yearFor, yearView } from './academic-year';
 import type { ExamsService } from './exams.service';
 import type { LeaveService } from './leave.service';
 import { principalOf } from './member-roles';
+import { studentTransport } from './student-transport';
 
 const nameOf = (first: string | null | undefined, last: string | null | undefined) =>
   [first, last].filter(Boolean).join(' ');
@@ -417,7 +418,7 @@ export class PrincipalService {
       app,
       classTeacher,
       fields,
-      allocation,
+      transport,
       records,
       consent,
       financing,
@@ -475,31 +476,7 @@ export class PrincipalService {
             .executeTakeFirst()
         : Promise.resolve(undefined),
       activeFields(db, me.institutionId, 'MEMBER'),
-      db
-        .selectFrom('transport_allocations as al')
-        .innerJoin('transport_routes as r', 'r.id', 'al.route_id')
-        .innerJoin('transport_stops as st', 'st.id', 'al.stop_id')
-        .leftJoin('transport_route_stops as rs', (j) =>
-          j.onRef('rs.route_id', '=', 'al.route_id').onRef('rs.stop_id', '=', 'al.stop_id'),
-        )
-        .select([
-          'al.route_id',
-          'al.effective_from',
-          'al.effective_to',
-          'r.code as route_code',
-          'r.name as route_name',
-          'r.route_type',
-          'st.name as stop_name',
-          'st.landmark',
-          'rs.arrival',
-          'rs.departure',
-        ])
-        .where('al.profile_id', '=', rowId)
-        .where('al.year_id', '=', year.id)
-        .where('al.active', '=', 1)
-        .where('al.effective_to', '>=', today)
-        .orderBy('al.effective_from')
-        .executeTakeFirst(),
+      studentTransport(db, { profileRowId: rowId, yearId: String(year.id), today }),
       db
         .selectFrom('fee_records as r')
         .leftJoin('fee_structure_versions as v', 'v.id', 'r.version_id')
@@ -572,39 +549,8 @@ export class PrincipalService {
         .executeTakeFirst(),
     ]);
 
-    const [custom, trips, appFees, heads, receipts] = await Promise.all([
+    const [custom, appFees, heads, receipts] = await Promise.all([
       readValues(db, me.institutionId, fields, [s.public_id]),
-      allocation
-        ? db
-            .selectFrom('transport_assignments as ta')
-            .innerJoin('transport_sessions as ss', 'ss.id', 'ta.session_id')
-            .innerJoin('transport_vehicles as v', 'v.id', 'ta.vehicle_id')
-            .innerJoin('transport_crew as dc', 'dc.id', 'ta.driver_crew_id')
-            .innerJoin('member_profiles as dp', 'dp.id', 'dc.profile_id')
-            .leftJoin('platform_accounts as da', 'da.id', 'dp.account_id')
-            .leftJoin('transport_crew as ac', 'ac.id', 'ta.attendant_crew_id')
-            .leftJoin('member_profiles as ap', 'ap.id', 'ac.profile_id')
-            .select([
-              'ss.name as session',
-              'ss.direction',
-              'ss.start_time',
-              'v.name as vehicle',
-              'v.registration',
-              'dp.first_name as driver_first',
-              'dp.last_name as driver_last',
-              'dp.contact_mobile as driver_contact',
-              'da.mobile as driver_mobile',
-              'ap.first_name as attendant_first',
-              'ap.last_name as attendant_last',
-            ])
-            .where('ta.route_id', '=', String(allocation.route_id))
-            .where('ta.year_id', '=', year.id)
-            .where('ta.active', '=', 1)
-            .where('ta.effective_from', '<=', today)
-            .where('ta.effective_to', '>=', today)
-            .orderBy('ss.start_time')
-            .execute()
-        : Promise.resolve([]),
       app
         ? db
             .selectFrom('admission_payments')
@@ -772,31 +718,8 @@ export class PrincipalService {
           typeof data.parents?.transport === 'boolean'
             ? { opted: data.parents.transport, stop: data.parents.transportStop?.name ?? null }
             : null,
-        allocation: allocation
-          ? {
-              route: {
-                code: allocation.route_code,
-                name: allocation.route_name,
-                type: allocation.route_type,
-              },
-              stop: { name: allocation.stop_name, landmark: allocation.landmark },
-              pickUp: allocation.arrival ? String(allocation.arrival).slice(0, 5) : null,
-              drop: allocation.departure ? String(allocation.departure).slice(0, 5) : null,
-              from: ymd(allocation.effective_from),
-              to: ymd(allocation.effective_to),
-            }
-          : null,
-        trips: trips.map((t) => ({
-          session: t.session,
-          direction: t.direction,
-          startTime: String(t.start_time).slice(0, 5),
-          vehicle: { name: t.vehicle, registration: t.registration },
-          driver: {
-            name: nameOf(t.driver_first, t.driver_last),
-            mobile: t.driver_mobile ?? t.driver_contact,
-          },
-          attendant: t.attendant_first ? nameOf(t.attendant_first, t.attendant_last) : null,
-        })),
+        allocation: transport.allocation,
+        trips: transport.trips,
       },
       hostel: {
         opted: !!data.parents?.hostel,

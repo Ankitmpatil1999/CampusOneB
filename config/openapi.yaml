@@ -1690,6 +1690,40 @@ paths:
               required:
                 - documentType
                 - file
+  /api/v1/console/applications/{applicationId}/documents/{docType}:
+    delete:
+      operationId: ADM-036
+      summary: Remove an attachment from a counsellor’s draft (client 2026-10-15; ADM-033 for the counsellor); a required one must be attached again before submitting
+      tags:
+        - Admissions
+      x-ringpe-auth: admissions.edit
+      responses:
+        "200":
+          description: Application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdmissionApplication"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: docType
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/console/applications/{applicationId}/references:
     post:
       operationId: ADM-026
@@ -1878,6 +1912,25 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AdmissionTransferCertificate"
+  /api/v1/console/applications/form:
+    get:
+      operationId: ADM-035
+      summary: "What the counsellor’s application form needs, as the public landing gives it: the years open, classes with age bands, the institution’s fields, the transport pick-up stops, document and reference rules (client 2026-10-15)"
+      tags:
+        - Admissions
+      x-ringpe-auth: admissions.edit
+      responses:
+        "200":
+          description: The form’s lists and rules
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
   /api/v1/console/applications/imports:
     post:
       operationId: ADM-020
@@ -4436,6 +4489,40 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/console/fee-records/students:
+    get:
+      operationId: FEE-043
+      summary: "Active students to bill (?q name or admission number, ?yearId; the current year unless given): name, admission number and class — fee staff pick a student without the member directory (client 2026-10-15)"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.edit
+      responses:
+        "200":
+          description: Students
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeStudents"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: yearId
+          in: query
+          required: false
+          schema:
+            type: string
   /api/v1/console/fee-records/uploads:
     get:
       operationId: FEE-040
@@ -5244,7 +5331,7 @@ paths:
   /api/v1/console/members/{memberId}:
     get:
       operationId: IDN-045
-      summary: "A member: identity (read-only), contact, grade and section, guardians or children, console roles, status, pending requests, institution fields"
+      summary: "A member: identity (read-only), contact, grade and section, guardians or children, console roles, status, pending requests, institution fields, and a student’s school transport"
       tags:
         - Members
       x-ringpe-auth: members.view
@@ -18360,6 +18447,33 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AdmissionStatusLookup"
+  /api/v1/public/institutions/{institutionId}/logo:
+    get:
+      operationId: INS-043
+      summary: The institution's logo (PNG or JPEG) at a stable address for the console's menu, the admission pages and the apps; `?v=` changes when the logo is replaced (client 2026-10-15)
+      tags:
+        - Institutions
+      x-ringpe-auth: public
+      responses:
+        "200":
+          description: The logo image
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      parameters:
+        - name: institutionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: v
+          in: query
+          required: false
+          schema:
+            type: string
   /api/v1/public/institutions/{slug}/branding:
     get:
       operationId: INS-035
@@ -20960,7 +21074,7 @@ components:
                   anyOf:
                     - type: string
                       maxLength: 254
-                      pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                      pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                     - type: "null"
                 occupation:
                   anyOf:
@@ -21002,7 +21116,7 @@ components:
                   anyOf:
                     - type: string
                       maxLength: 254
-                      pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                      pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                     - type: "null"
                 occupation:
                   anyOf:
@@ -21047,7 +21161,7 @@ components:
                       anyOf:
                         - type: string
                           maxLength: 254
-                          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                          pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                         - type: "null"
                     occupation:
                       anyOf:
@@ -21276,7 +21390,7 @@ components:
           items:
             type: string
             maxLength: 254
-            pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+            pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
       required:
         - emails
       additionalProperties: false
@@ -21457,7 +21571,7 @@ components:
           anyOf:
             - type: string
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             - type: "null"
       required:
         - name
@@ -25096,7 +25210,7 @@ components:
           type: string
           minLength: 1
           maxLength: 254
-          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+          pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
         primaryContact:
           type: object
           properties:
@@ -25109,7 +25223,7 @@ components:
               type: string
               minLength: 1
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             mobile:
               type: string
               minLength: 1
@@ -25132,7 +25246,7 @@ components:
                   type: string
                   minLength: 1
                   maxLength: 254
-                  pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                  pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                 mobile:
                   type: string
                   minLength: 1
@@ -25910,7 +26024,7 @@ components:
                   anyOf:
                     - type: string
                       maxLength: 254
-                      pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                      pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                     - type: "null"
                 occupation:
                   anyOf:
@@ -25952,7 +26066,7 @@ components:
                   anyOf:
                     - type: string
                       maxLength: 254
-                      pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                      pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                     - type: "null"
                 occupation:
                   anyOf:
@@ -25997,7 +26111,7 @@ components:
                       anyOf:
                         - type: string
                           maxLength: 254
-                          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                          pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                         - type: "null"
                     occupation:
                       anyOf:
@@ -30270,6 +30384,48 @@ components:
         - activatedAt
         - version
       additionalProperties: false
+    FeeStudents:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              name:
+                type: string
+              admissionNo:
+                type:
+                  - string
+                  - "null"
+              grade:
+                anyOf:
+                  - type: object
+                    properties:
+                      class:
+                        type: string
+                      section:
+                        type:
+                          - string
+                          - "null"
+                    required:
+                      - class
+                      - section
+                    additionalProperties: false
+                  - type: "null"
+            required:
+              - id
+              - name
+              - admissionNo
+              - grade
+            additionalProperties: false
+      required:
+        - items
+      additionalProperties: false
     FeeUpload:
       type: object
       properties:
@@ -31702,7 +31858,7 @@ components:
           type: string
           minLength: 1
           maxLength: 254
-          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+          pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
         primaryContact:
           type: object
           properties:
@@ -31715,7 +31871,7 @@ components:
               type: string
               minLength: 1
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             mobile:
               type: string
               minLength: 1
@@ -31738,7 +31894,7 @@ components:
                   type: string
                   minLength: 1
                   maxLength: 254
-                  pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                  pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                 mobile:
                   type: string
                   minLength: 1
@@ -32048,7 +32204,7 @@ components:
               type: string
               minLength: 1
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             mobile:
               type: string
               minLength: 1
@@ -32070,7 +32226,7 @@ components:
               type: string
               minLength: 1
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             mobile:
               type: string
               minLength: 1
@@ -32084,7 +32240,7 @@ components:
           type: string
           minLength: 1
           maxLength: 254
-          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+          pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
           description: "The administrator: an existing RingPe account in no institution, or a new e-mail (client 2026-10-06/07)"
         adminName:
           description: For a new e-mail; the primary contact's name when it is the same e-mail
@@ -33550,6 +33706,119 @@ components:
               - options
               - value
             additionalProperties: false
+        transport:
+          anyOf:
+            - type: object
+              properties:
+                allocation:
+                  anyOf:
+                    - type: object
+                      properties:
+                        route:
+                          type: object
+                          properties:
+                            code:
+                              type: string
+                            name:
+                              type: string
+                            type:
+                              type: string
+                          required:
+                            - code
+                            - name
+                            - type
+                          additionalProperties: false
+                        stop:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            landmark:
+                              type:
+                                - string
+                                - "null"
+                          required:
+                            - name
+                            - landmark
+                          additionalProperties: false
+                        pickUp:
+                          type:
+                            - string
+                            - "null"
+                        drop:
+                          type:
+                            - string
+                            - "null"
+                        from:
+                          type:
+                            - string
+                            - "null"
+                        to:
+                          type:
+                            - string
+                            - "null"
+                      required:
+                        - route
+                        - stop
+                        - pickUp
+                        - drop
+                        - from
+                        - to
+                      additionalProperties: false
+                    - type: "null"
+                trips:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      session:
+                        type: string
+                      direction:
+                        type: string
+                      startTime:
+                        type: string
+                      vehicle:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          registration:
+                            type: string
+                        required:
+                          - name
+                          - registration
+                        additionalProperties: false
+                      driver:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          mobile:
+                            type:
+                              - string
+                              - "null"
+                        required:
+                          - name
+                          - mobile
+                        additionalProperties: false
+                      attendant:
+                        type:
+                          - string
+                          - "null"
+                    required:
+                      - session
+                      - direction
+                      - startTime
+                      - vehicle
+                      - driver
+                      - attendant
+                    additionalProperties: false
+              required:
+                - allocation
+                - trips
+              additionalProperties: false
+            - type: "null"
+          description: "A student's school transport: the allocation in force and today's trips on its route (client 2026-10-15); null for others"
         onboardedAt:
           type: string
           format: date-time
@@ -33599,6 +33868,7 @@ components:
         - wallet
         - pending
         - customFields
+        - transport
         - onboardedAt
         - lastChangedAt
         - version
@@ -34944,7 +35214,7 @@ components:
           anyOf:
             - type: string
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             - type: "null"
         joinedOn:
           anyOf:
@@ -34992,7 +35262,7 @@ components:
                 anyOf:
                   - type: string
                     maxLength: 254
-                    pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                    pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                   - type: "null"
               relation:
                 type: string
@@ -35175,7 +35445,7 @@ components:
           anyOf:
             - type: string
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             - type: "null"
         joinedOn:
           anyOf:
@@ -35900,7 +36170,7 @@ components:
           anyOf:
             - type: string
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             - type: "null"
         acceptsAllowance:
           type: boolean
@@ -39753,7 +40023,7 @@ components:
             email:
               type: string
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             mobile:
               type: string
               pattern: ^[6-9]\d{9}$
@@ -39774,7 +40044,7 @@ components:
                 email:
                   type: string
                   maxLength: 254
-                  pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                  pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                 mobile:
                   type: string
                   pattern: ^[6-9]\d{9}$
@@ -40571,7 +40841,7 @@ components:
             email:
               type: string
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             mobile:
               type: string
               pattern: ^[6-9]\d{9}$
@@ -40592,7 +40862,7 @@ components:
                 email:
                   type: string
                   maxLength: 254
-                  pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+                  pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                 mobile:
                   type: string
                   pattern: ^[6-9]\d{9}$
@@ -40653,7 +40923,7 @@ components:
         email:
           type: string
           maxLength: 254
-          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+          pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
         password:
           type: string
           maxLength: 128
@@ -42376,7 +42646,7 @@ components:
           anyOf:
             - type: string
               maxLength: 254
-              pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+              pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
             - type: "null"
       additionalProperties: false
     QrEmails:
@@ -45093,7 +45363,7 @@ components:
         email:
           type: string
           maxLength: 254
-          pattern: ^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$
+          pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
         joinedOn:
           type: string
           format: date
