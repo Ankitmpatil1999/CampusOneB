@@ -164,15 +164,42 @@ export const INSTITUTION_MESSAGES = [
     ['FR-INS-05', 'prototype o.features'],
     ['institution'],
   ),
-  n('INS.CORPORATE_CODE_FORMAT', 422, 'Use exactly 4 capital letters or digits', [
-    'FR-WAL-03',
-    'OQ-28',
-    'prototype o.institutions',
-  ]),
-  n('INS.CORPORATE_CODE_TAKEN', 409, 'Another institution already uses this code', [
+  n(
+    'INS.CORPORATE_CODE_FORMAT',
+    422,
+    'Use 1 to {max} capital letters or digits',
+    ['FR-WAL-03', 'OQ-28', 'client 2026-10-14: up to 10 characters'],
+    ['max'],
+  ),
+  n('INS.CORPORATE_CODE_TAKEN', 409, 'This corporate code is already in use', [
     'FR-INS-06',
     'OQ-28',
   ]),
+  // A school's corporate codes and their classes (client 2026-10-13/14; migration 0073).
+  n('CC.NOT_FOUND', 404, 'Corporate code not found.', ['client 2026-10-14']),
+  n('CC.BANK_NAME_REQUIRED', 422, 'Enter the bank name (2 to 100 characters).', [
+    'client 2026-10-14',
+  ]),
+  n(
+    'CC.DEFAULT_REQUIRED',
+    409,
+    'The school always has a default code. Make another code the default instead.',
+    ['client 2026-10-14'],
+  ),
+  n(
+    'CC.DEFAULT_DISABLED',
+    409,
+    'The default code can’t be disabled. Make another code the default first.',
+    ['client 2026-10-14'],
+  ),
+  n('CC.CLASS_UNKNOWN', 422, 'Choose classes of this school.', ['client 2026-10-14']),
+  n(
+    'CC.CLASS_TAKEN',
+    409,
+    'Already on the corporate code {code}: {classes}. Take them off that code first.',
+    ['client 2026-10-14: a class uses one corporate code'],
+    ['classes', 'code'],
+  ),
   k(
     'INS.POOL_ACCOUNT_FORMAT',
     'MSG-ONB-39',

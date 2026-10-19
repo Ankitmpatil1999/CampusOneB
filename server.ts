@@ -116,10 +116,17 @@ async function main(): Promise<void> {
     corsOrigins: config.http.corsOrigins,
   });
 
-  const stopSchemaWatch = waitForSchema(runtime, () => health.markStarted());
+  // Client 2026-10-16/19: e-mailed and pushed notices go out from the API once the schema is ready.
+  const stopSchemaWatch = waitForSchema(runtime, () => {
+    health.markStarted();
+    services.emailRelay.start();
+    services.pushRelay.start();
+  });
 
   installShutdown(runtime, async () => {
     stopSchemaWatch();
+    services.emailRelay.stop();
+    services.pushRelay.stop();
     await realtime.close();
     await requestLog.close();
     redirect?.close();

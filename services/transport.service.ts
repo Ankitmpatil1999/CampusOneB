@@ -1543,6 +1543,7 @@ export class TransportService {
           {
             institutionId: inst.id,
             accountIds: await this.familyAccounts(trx, String(m.id)),
+            about: [String(m.id)],
             surface: 'MEMBER',
             category: 'ACCOUNT',
             titleKey: 'NTF.TRANSPORT_ALLOCATED',
@@ -1692,6 +1693,7 @@ export class TransportService {
         {
           institutionId: inst.id,
           accountIds: await this.familyAccounts(trx, String(a.profile_id)),
+          about: [String(a.profile_id)],
           surface: 'MEMBER',
           category: 'ACCOUNT',
           titleKey: 'NTF.TRANSPORT_ENDED',

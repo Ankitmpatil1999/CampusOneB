@@ -19,6 +19,7 @@
  *   breakdown; one assignment per student and year.
  */
 import type { Kysely, Transaction } from 'kysely';
+import { notifyFeeAssigned } from './fee-notices.service';
 import { sql } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { Database } from '../models/ringpe_models';
@@ -1256,6 +1257,7 @@ export class FeesService {
         if (live.state !== 'ACTIVE') throw new CustomAPIError(409, 'FEE.STRUCTURE_NOT_APPROVED');
         created = 0;
         assigned = 0;
+        const totals = new Map<string, number>();
         for (const st of todo) {
           const studentId = binToUuid(st.public_id);
           const opted = [...(optionalOf.get(studentId) ?? [])];
@@ -1314,8 +1316,11 @@ export class FeesService {
               )
               .execute();
             created++;
+            totals.set(String(st.id), (totals.get(String(st.id)) ?? 0) + Number(r.amount));
           }
         }
+        // Client 2026-10-16: the student and parents are told (in the app, and by e-mail).
+        await notifyFeeAssigned(trx, String(i.id), String(s.year_id), totals, at);
         await recordAudit(trx, {
           institutionId: i.id,
           action: 'FEE_STRUCTURE_ASSIGNED',

@@ -49,6 +49,7 @@ import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenera
 import { hashSecret } from '../utils/password';
 import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
+import { setDefaultFromArrangement } from './corporate-codes.service';
 import type { FileService } from './file.service';
 import { planDto } from './plans.service';
 import { addDays, cycleOf, dateOnly, type BillingService } from './billing.service';
@@ -1015,9 +1016,11 @@ export class InstitutionsService {
     input: { corporateCode: string; poolAccountRef: string; shadowAccountRef?: string | null },
   ) {
     const code = input.corporateCode.trim().toUpperCase();
-    const len = await this.limit(LIMITS.corporateCodeLength);
-    if (!new RegExp(`^[A-Z0-9]{${len}}$`).test(code)) {
-      throw new ValidationError([{ field: 'corporateCode', code: 'INS.CORPORATE_CODE_FORMAT' }]);
+    const max = await this.limit(LIMITS.corporateCodeMaxLength);
+    if (!new RegExp(`^[A-Z0-9]{1,${max}}$`).test(code)) {
+      throw new ValidationError([
+        { field: 'corporateCode', code: 'INS.CORPORATE_CODE_FORMAT', params: { max } },
+      ]);
     }
     const at = this.now();
     const by = this.actor(p);
@@ -1042,6 +1045,8 @@ export class InstitutionsService {
         by,
       );
       if (!ok) throw new PreconditionFailedError();
+      // The arrangement's code is the school's default corporate code (client 2026-10-14).
+      await setDefaultFromArrangement(trx, String(row.id), code, input.poolAccountRef, by, at);
       await this.completeStep(trx, row, 'bank', by, `Corporate code ${code}`, at);
       await recordAudit(trx, {
         institutionId: row.id,

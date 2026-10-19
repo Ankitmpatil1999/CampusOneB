@@ -109,12 +109,13 @@ export class EnrolmentsService {
     const accounts = [owner?.account_id, ...guardians.map((g) => g.account_id)].filter(
       (a): a is string => !!a,
     );
-    if (!accounts.length) return;
+    // Parents without the app are e-mailed too (client 2026-10-16).
     await notify(
       trx,
       {
         institutionId,
         accountIds: accounts.map(String),
+        about: [studentId],
         surface: 'MEMBER',
         category: 'ACCOUNT',
         titleKey: 'NTF.CLASS_PLACED',

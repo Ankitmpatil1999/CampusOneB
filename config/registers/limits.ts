@@ -695,13 +695,16 @@ export const LIMITS = {
     basis: 'adopted',
     refs: ['FR-SAS-11', 'RNG-SAS-019', 'prototype o.institutions'],
   }),
-  corporateCodeLength: def({
-    key: 'ins.corporateCode.length',
-    value: 4,
+  // Client 2026-10-14: "keep it 10 as of now" — a corporate code is up to this many letters and
+  // digits (the old fixed 4; Axis allots 4). The VAN is the code followed by the wallet number.
+  corporateCodeMaxLength: def({
+    key: 'ins.corporateCode.maxLength',
+    value: 10,
     unit: 'chars',
+    adjustable: { min: 4, max: 10 },
     scope: 'P',
     basis: 'adopted',
-    refs: ['FR-WAL-03', 'OQ-28', 'prototype o.institutions'],
+    refs: ['FR-WAL-03', 'OQ-28', 'client 2026-10-14 (several corporate codes per school)'],
   }),
   customFieldsMaxActivePerEntity: def({
     key: 'ins.customFields.maxActivePerEntity',
@@ -1010,6 +1013,39 @@ export const LIMITS = {
   }),
 
   // --- approvals (ADR-0015, client Q9) -----------------------------------------------------------
+  /**
+   * Client 2026-10-16 (as the earlier application's FEE_ALERT): an unpaid instalment is reminded
+   * this many days before its due date, and again on the due date (`fee-reminders`, 09:00 IST).
+   */
+  feeReminderDaysBefore: def({
+    key: 'fee.reminder.daysBefore',
+    value: 3,
+    unit: 'days',
+    adjustable: { min: 0, max: 30 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-16: fee reminders by e-mail and in the app'],
+  }),
+  /** Client 2026-10-16: a new parent's e-mail is required, so fee and absence e-mails reach them. */
+  memberParentEmailRequired: def({
+    key: 'mem.parentEmail.required',
+    value: 1,
+    unit: 'flag',
+    adjustable: { min: 0, max: 1 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-16: make e-mail mandatory wherever it is needed'],
+  }),
+  /** E-mailed notices: tries before one is given up as failed (1, 5, 15, 60 minutes apart). */
+  emailMaxAttempts: def({
+    key: 'com.email.maxAttempts',
+    value: 5,
+    unit: 'attempts',
+    adjustable: { min: 1, max: 10 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-16', 'CR-16'],
+  }),
   approvalsAdminSelfApply: def({
     key: 'mkr.adminSelfApply',
     value: 1,

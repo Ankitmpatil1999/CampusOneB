@@ -189,6 +189,32 @@ export const FEE_MESSAGES = [
     '13.3',
     'OI-FEE-04',
   ]),
+  // Notices to the student and parents (client 2026-10-16: as the earlier application's
+  // TUTION_FEE_ASSIGNED and FEE_ALERT, in the app and by e-mail).
+  {
+    key: 'NTF.FEE_ASSIGNED',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: 'Fee of {amount} assigned to {name} for {year}',
+    placeholders: ['amount', 'name', 'year'],
+    approval: 'approved',
+    batch: 10,
+    refs: ['13.4', 'client 2026-10-16'],
+  },
+  {
+    key: 'NTF.FEE_DUE',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: '{label} of {amount} for {name} is due on {date}',
+    placeholders: ['label', 'amount', 'name', 'date'],
+    approval: 'approved',
+    batch: 10,
+    refs: ['13.4', 'client 2026-10-16'],
+  },
 ] as const satisfies readonly MessageDefinition[];
 
 export type FeeMessageKey = (typeof FEE_MESSAGES)[number]['key'];

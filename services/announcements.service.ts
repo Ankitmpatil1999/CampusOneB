@@ -17,6 +17,7 @@
  *   students and their families, in the app (OI-COM-15…17).
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
+import { eventSwitches } from './comm-events.service';
 import { LIMITS, type LimitDefinition } from '../config/registers';
 import type { MessageSender } from '../integrations/sms.provider';
 import type { AnnouncementSource, CommChannel, Database } from '../models/ringpe_models';
@@ -612,6 +613,14 @@ export class AnnouncementsService {
           .execute()
       : [];
     const allowed = await this.allowedChannels(db, String(a.institution_id));
+    // Client 2026-10-16: the school's "Announcements" event switch decides whether they are e-mailed.
+    const emailEvent =
+      (await eventSwitches(db, String(a.institution_id))).get('ANNOUNCEMENT')?.email ?? true;
+    const school = await db
+      .selectFrom('institutions')
+      .select(['name', 'office_email'])
+      .where('id', '=', String(a.institution_id))
+      .executeTakeFirst();
     const accounts: string[] = [];
     for (const person of people) {
       for (const channel of channels) {
@@ -631,6 +640,10 @@ export class AnnouncementsService {
         seen.add(key);
         if (!allowed.includes(channel)) {
           rows.push({ ...base, outcome: 'SKIPPED', reason: 'Channel switched off' });
+          continue;
+        }
+        if (channel === 'EMAIL' && !emailEvent) {
+          rows.push({ ...base, outcome: 'SKIPPED', reason: 'E-mail switched off for announcements' });
           continue;
         }
         if (channel === 'IN_APP') {
@@ -661,6 +674,12 @@ export class AnnouncementsService {
             to,
             purpose: 'announcement',
             log: false,
+            ...(channel === 'EMAIL'
+              ? {
+                  subject: `${titleKey === 'NTF.ANNOUNCEMENT_REMINDER' ? 'Reminder: ' : ''}${a.title}`,
+                  ...(school ? { fromName: school.name, replyTo: school.office_email } : {}),
+                }
+              : {}),
             text: `${titleKey === 'NTF.ANNOUNCEMENT_REMINDER' ? 'Reminder: ' : ''}${a.title} — ${a.body}`.slice(
               0,
               channel === 'SMS' ? 320 : 5000,
@@ -690,6 +709,7 @@ export class AnnouncementsService {
           body: a.body.slice(0, 140),
           link: `/announcements/${ref}`,
           log: false,
+          email: false,
         },
         at,
       );

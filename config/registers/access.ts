@@ -98,6 +98,12 @@ export const INSTITUTION_TASKS: readonly TaskDefinition[] = [
     ['view', 'See payment gateways'],
     ['edit', 'Add and change payment gateways'],
   ]),
+  // Client 2026-10-13/14: a school's corporate codes (bank, IFSC) and the classes each one serves
+  // (migration 0073); the Institution Administrator only.
+  inst('corpcodes', 'Bank accounts & VANs', [
+    ['view', 'See corporate codes and class mapping'],
+    ['edit', 'Add corporate codes and map classes'],
+  ]),
   inst('vouchers', 'Accounting', [
     ['view', 'See vouchers'],
     ['edit', 'Post vouchers'],

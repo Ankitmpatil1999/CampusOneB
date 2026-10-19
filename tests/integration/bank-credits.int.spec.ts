@@ -233,7 +233,7 @@ describe.skipIf(!adminUrl)('partner clients and bank credits on real MySQL', () 
       .select('secret_enc')
       .where('client_id', '=', client.clientId)
       .executeTakeFirstOrThrow();
-    expect(stored.secret_enc.toString('latin1')).not.toContain(client.secret);
+    expect(stored.secret_enc!.toString('latin1')).not.toContain(client.secret);
 
     expect((await token({ secret: 'wrong' })).body).toEqual({ error: 'invalid_client' });
     expect((await token({ scope: 'va.refund' })).body).toEqual({ error: 'invalid_scope' });

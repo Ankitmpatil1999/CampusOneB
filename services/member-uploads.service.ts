@@ -42,6 +42,8 @@ const MEMBER_COLUMNS = [
   'Parent last name',
   'Parent mobile',
   'Parent relation',
+  // Client 2026-10-16: required for a new parent (setting mem.parentEmail.required).
+  'Parent e-mail',
 ] as const;
 
 const STAFF_COLUMNS = [
@@ -152,6 +154,7 @@ export class MemberUploadsService {
             'Shetty',
             '9845012390',
             'Father',
+            'ramesh.shetty@example.in',
           ];
     const cf = fields.map((f) =>
       f.type === 'DROPDOWN' || f.type === 'MULTI_SELECT'
@@ -228,6 +231,7 @@ export class MemberUploadsService {
       academicsRepository.sections(db, inst.id),
     ]);
     const seenAdmission = new Map<string, number>();
+    const parentEmailRequired = await this.deps.members.parentEmailRequired();
     const seenMobile = new Map<string, number>();
     const report: RowReport[] = [];
     for (const [i, cells] of data.entries()) {
@@ -376,11 +380,15 @@ export class MemberUploadsService {
               err('Parent mobile', 'IDN.MOBILE_IN_OTHER_INSTITUTION');
             }
             if (!relation) err('Parent relation', 'VALIDATION.FORMAT');
+            const pEmail = cell('Parent e-mail').toLowerCase();
+            if (pEmail && !EMAIL.test(pEmail)) err('Parent e-mail', 'VALIDATION.EMAIL');
+            else if (!pEmail && parentEmailRequired) err('Parent e-mail', 'VALIDATION.REQUIRED');
             if (pFirst && MOBILE.test(pMobile) && relation) {
               guardians.push({
                 firstName: pFirst,
                 lastName: cell('Parent last name') || null,
                 mobile: pMobile,
+                email: pEmail || null,
                 relation,
               });
             }

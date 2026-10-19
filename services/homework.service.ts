@@ -445,6 +445,7 @@ export class HomeworkService {
         {
           institutionId: me.institutionId,
           accountIds: accounts,
+          about: targets.map((t) => String(t.id)),
           surface: 'MEMBER',
           category: 'ACCOUNT',
           titleKey: 'NTF.HOMEWORK_SET',
@@ -669,6 +670,7 @@ export class HomeworkService {
         {
           institutionId: me.institutionId,
           accountIds: await this.familyAccounts(trx, [String(x.student_profile_id)]),
+          about: [String(x.student_profile_id)],
           surface: 'MEMBER',
           category: 'ACCOUNT',
           titleKey: 'NTF.HOMEWORK_REVIEWED',
@@ -713,6 +715,7 @@ export class HomeworkService {
         {
           institutionId: me.institutionId,
           accountIds: accounts,
+          about: missing.map((m) => String(m.student_profile_id)),
           surface: 'MEMBER',
           category: 'ACCOUNT',
           titleKey: 'NTF.HOMEWORK_REMINDER',

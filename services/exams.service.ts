@@ -1118,10 +1118,11 @@ export class ExamsService {
         .innerJoin('member_profiles as m', 'm.id', 'en.student_profile_id')
         .leftJoin('guardianships as g', 'g.ward_profile_id', 'en.student_profile_id')
         .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
-        .select(['m.account_id', 'gm.account_id as guardian_account'])
+        .select(['en.student_profile_id', 'm.account_id', 'gm.account_id as guardian_account'])
         .where('en.year_id', '=', e.year_id)
         .where('en.section_id', '=', e.section_id)
         .execute();
+      const students = [...new Set(accounts.map((a) => String(a.student_profile_id)))];
       const ids = [
         ...new Set(
           accounts
@@ -1130,12 +1131,14 @@ export class ExamsService {
             .map(String),
         ),
       ];
-      if (ids.length) {
+      // Parents without the app are e-mailed too (client 2026-10-16).
+      if (ids.length || students.length) {
         await notify(
           trx,
           {
             institutionId: me.institutionId,
             accountIds: ids,
+            about: students,
             surface: 'MEMBER',
             category: 'ACCOUNT',
             titleKey: 'NTF.RESULTS_PUBLISHED',

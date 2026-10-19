@@ -23,7 +23,9 @@ export interface ApiClientsTable {
   institution_id: string | null;
   scopes: Json<string[]>;
   ip_allowlist: Json<string[]>;
-  secret_enc: Buffer;
+  /** Null for a client imported with only its secret's bcrypt hash (migration 0074). */
+  secret_enc: ColumnType<Buffer | null, Buffer | null | undefined, Buffer | null>;
+  secret_hash: ColumnType<string | null, string | null | undefined, string | null>;
   previous_secret_enc: Buffer | null;
   previous_valid_until: NullableTimestamp;
   secret_rotated_at: Timestamp;
@@ -67,6 +69,8 @@ export interface BankCreditsTable {
   institution_id: Ref | null;
   wallet_id: Ref | null;
   va_number: string;
+  /** The corporate code the credit came in on (migration 0073). */
+  corporate_code_id: ColumnType<Ref | null, Ref | null | undefined, Ref | null>;
   utr: string;
   bank_txn_id: string;
   amount_paise: ColumnType<string, number | string, number | string>;

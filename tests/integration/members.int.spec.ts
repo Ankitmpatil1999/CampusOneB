@@ -228,7 +228,13 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       admissionNo: 'SPS/2026/0001',
       sectionId: grade6.sections.find((s) => s.name === 'B')!.id,
       guardians: [
-        { firstName: 'Mahesh', lastName: 'Hegde', mobile: parentMobile, relation: 'FATHER' },
+        {
+          firstName: 'Mahesh',
+          lastName: 'Hegde',
+          mobile: parentMobile,
+          email: 'mahesh.hegde@example.in',
+          relation: 'FATHER',
+        },
       ],
     });
     expect(r.status).toBe(201);
@@ -609,6 +615,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
         'Parent first name': 'Suresh',
         'Parent mobile': mobile(),
         'Parent relation': 'Father',
+        'Parent e-mail': 'suresh@example.in',
       }),
       row({
         'User type': 'Student',

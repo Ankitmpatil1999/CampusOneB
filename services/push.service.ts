@@ -1,0 +1,151 @@
+/**
+ * Phone pushes for in-app notices (client 2026-10-19: "even though the mobile is lock also i should
+ * notify"; migration 0076). The app registers its Firebase token for its signed-in session
+ * (COM-034); `notify` queues a push for every notified member account with such a session, in the
+ * notice's own transaction, when the platform's push channel is on (INT-010) and the school lets the
+ * notice's event raise the phone alert (COM-032/033) — the same notices the app's own alert shows.
+ * PushRelay (push-relay.service.ts) sends them after the commit.
+ */
+import { createHash } from 'node:crypto';
+import type { Kysely, Transaction } from 'kysely';
+import type { CommEventKey } from '../config/registers';
+import type { Database } from '../models/ringpe_models';
+import { NotFoundError } from '../utils/CustomAPIError';
+import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
+import type { Principal } from '../utils/principal';
+import { eventSwitches } from './comm-events.service';
+
+type Db = Kysely<Database> | Transaction<Database>;
+
+const on = (v: unknown) => v === true || Number(v) === 1;
+
+export const tokenHash = (token: string) => createHash('sha256').update(token, 'utf8').digest();
+
+/** Whether the platform's push channel is on (back office, INT-010). */
+export async function pushChannelOn(db: Db) {
+  const r = await db
+    .selectFrom('messaging_channels')
+    .select('enabled')
+    .where('channel', '=', 'PUSH')
+    .executeTakeFirst();
+  return on(r?.enabled);
+}
+
+/** The Firebase tokens of these accounts' signed-in member sessions (not ended, not expired). */
+export async function activeTokens(db: Db, accountIds: readonly string[], at: Date) {
+  if (!accountIds.length) return [];
+  return db
+    .selectFrom('session_push_tokens as t')
+    .innerJoin('sessions as s', 's.id', 't.session_id')
+    .select(['t.session_id', 't.account_id', 't.token', 't.lang_code'])
+    .where('t.account_id', 'in', [...accountIds])
+    .where('s.surface', '=', 'MEMBER')
+    .where('s.ended_at', 'is', null)
+    .where('s.absolute_expires_at', '>', at)
+    .execute();
+}
+
+export interface PushQueueInput {
+  readonly institutionId: string | null;
+  readonly accountIds: readonly string[];
+  /** The in-app notices' public ids, one per account in the same order. */
+  readonly refs: readonly Buffer[];
+  readonly eventKey: CommEventKey | null;
+  readonly titleKey: string;
+  readonly params: Readonly<Record<string, string | number>>;
+  readonly body: string;
+  readonly link: string | null;
+}
+
+/** Queues the pushes for a notice (called by `notify` in its transaction). */
+export async function queuePushes(db: Db, n: PushQueueInput, at: Date) {
+  if (!n.accountIds.length || !(await pushChannelOn(db))) return;
+  if (n.institutionId && n.eventKey) {
+    const sw = (await eventSwitches(db, n.institutionId)).get(n.eventKey);
+    if (sw && !sw.alert) return;
+  }
+  const withPhone = new Set(
+    (await activeTokens(db, n.accountIds, at)).map((t) => String(t.account_id)),
+  );
+  const rows = n.accountIds.flatMap((accountId, i) =>
+    withPhone.has(accountId)
+      ? [
+          {
+            institution_id: n.institutionId,
+            account_id: accountId,
+            event_key: n.eventKey,
+            notification_ref: n.refs[i]!,
+            title_key: n.titleKey,
+            params: JSON.stringify(n.params),
+            body: n.body.slice(0, 300),
+            link: n.link ? n.link.slice(0, 300) : null,
+            next_attempt_at: at,
+            created_at: at,
+          },
+        ]
+      : [],
+  );
+  if (rows.length) await db.insertInto('push_outbox').values(rows).execute();
+}
+
+export interface PushTokenInput {
+  readonly token: string;
+  readonly platform: 'ANDROID' | 'IOS';
+  readonly language: string;
+}
+
+export class PushTokensService {
+  constructor(private readonly deps: { db: Kysely<Database>; now?: () => Date }) {}
+
+  private now() {
+    return this.deps.now?.() ?? new Date();
+  }
+
+  /**
+   * COM-034: the phone's token for this signed-in session. A token another session held (the phone
+   * signed in as someone else) moves here, so pushes reach only who is signed in on the phone now.
+   */
+  async register(p: Principal, input: PushTokenInput) {
+    if (!isUuid(p.sessionId) || !isUuid(p.subject)) throw new NotFoundError();
+    const at = this.now();
+    const session = await this.deps.db
+      .selectFrom('sessions as s')
+      .innerJoin('platform_accounts as a', 'a.id', 's.account_id')
+      .select(['s.id', 's.account_id', 'a.public_id'])
+      .where('s.public_id', '=', uuidToBin(p.sessionId))
+      .where('s.surface', '=', 'MEMBER')
+      .where('s.ended_at', 'is', null)
+      .where('s.absolute_expires_at', '>', at)
+      .executeTakeFirst();
+    if (!session || binToUuid(session.public_id).toLowerCase() !== p.subject.toLowerCase()) {
+      throw new NotFoundError();
+    }
+    const hash = tokenHash(input.token);
+    await this.deps.db.transaction().execute(async (trx) => {
+      await trx
+        .deleteFrom('session_push_tokens')
+        .where('token_hash', '=', hash)
+        .where('session_id', '!=', String(session.id))
+        .execute();
+      await trx
+        .insertInto('session_push_tokens')
+        .values({
+          session_id: String(session.id),
+          account_id: String(session.account_id),
+          token: input.token,
+          token_hash: hash,
+          platform: input.platform,
+          lang_code: input.language,
+          updated_at: at,
+        })
+        .onDuplicateKeyUpdate({
+          token: input.token,
+          token_hash: hash,
+          platform: input.platform,
+          lang_code: input.language,
+          updated_at: at,
+        })
+        .execute();
+    });
+  }
+}

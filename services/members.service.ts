@@ -542,6 +542,16 @@ export class MembersService {
         }
       }
       if (input.email !== undefined && (input.email || null) !== m.contact_email) {
+        if (!input.email && (await this.parentEmailRequired())) {
+          const ut = await trx
+            .selectFrom('user_types')
+            .select('category')
+            .where('id', '=', m.user_type_id)
+            .executeTakeFirst();
+          if (ut?.category === 'PARENT') {
+            throw new ValidationError([{ field: 'email', code: 'VALIDATION.REQUIRED' }]);
+          }
+        }
         set.contact_email = input.email ? input.email.toLowerCase() : null;
         before['email'] = m.contact_email;
         after['email'] = set.contact_email;
@@ -676,6 +686,11 @@ export class MembersService {
   }
 
   // --- IDN-048 ------------------------------------------------------------------------------------
+  /** Whether a parent's e-mail is required (setting mem.parentEmail.required). */
+  async parentEmailRequired() {
+    return (await this.limit(LIMITS.memberParentEmailRequired)) === 1;
+  }
+
   async onboard(p: Principal, input: OnboardInput) {
     const by = this.by(p);
     const pub = newPublicIdPair();
@@ -711,6 +726,15 @@ export class MembersService {
     }
     if (parent && !(input.wards ?? []).length)
       errors.push({ field: 'wards', code: 'IDN.WARD_REQUIRED' });
+    // Client 2026-10-16: the primary contact's e-mail is required (fee, absence and other e-mails
+    // reach them); a second parent's stays optional.
+    if (await this.parentEmailRequired()) {
+      if (parent && !input.email?.trim()) errors.push({ field: 'email', code: 'VALIDATION.REQUIRED' });
+      const primary = input.guardians?.[0];
+      if (student && primary && !primary.memberId && !primary.email?.trim()) {
+        errors.push({ field: 'guardians.0.email', code: 'VALIDATION.REQUIRED' });
+      }
+    }
     const fields = await activeFields(trx, inst.id, 'MEMBER');
     const cf = parseValues(fields, input.customFields ?? {}, { partial: false });
     errors.push(...cf.errors);

@@ -438,6 +438,30 @@ export const PAYMENT_MESSAGES = [
     batch: 3,
     refs: ['8.13', 'BR-16', 'client standing approval 2026-10-03'],
   },
+  ...(
+    [
+      [
+        'INT.SECRET_HASH_FORMAT',
+        422,
+        'Paste the bcrypt hash of the secret as it was stored, starting with $2b$ (or $2a$, $2y$).',
+      ],
+      ['INT.CLIENT_ID_TAKEN', 409, 'A client with this client id already exists.'],
+    ] as const
+  ).map(
+    ([key, http, en]) =>
+      ({
+        key,
+        register: null,
+        srsText: null,
+        class: 'N',
+        type: 'error',
+        http,
+        en,
+        approval: 'approved',
+        batch: 9,
+        refs: ['client 2026-10-14: the Axis Bank client of the earlier application'],
+      }) as const,
+  ),
   r(
     'INT.CLIENT_NAME_TAKEN',
     'MSG-INT-06',

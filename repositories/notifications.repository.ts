@@ -70,6 +70,7 @@ export const notificationsRepository = {
     let q = scope(db, accountId, surface, institutionId).select([
       'id',
       'public_id',
+      'institution_id',
       'category',
       'title_key',
       'params',

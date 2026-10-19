@@ -369,7 +369,37 @@ export interface CancellationRequestsTable {
   open_key: ColumnType<string | null, never, never>;
 }
 
+/** A school's corporate codes, one per bank account it collects into (migration 0073). */
+export interface InstitutionCorporateCodesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  bank_name: string | null;
+  ifsc: string | null;
+  corporate_code: string;
+  pool_account_ref: string | null;
+  status: WithDefault<'ACTIVE' | 'DISABLED'>;
+  is_default: WithDefault<number | boolean>;
+  default_key: ColumnType<string | null, never, never>;
+  row_version: Generated<number>;
+  created_by: Buffer | null;
+  updated_by: Buffer | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/** The code a whole class's VANs use (migration 0073). */
+export interface ClassCorporateCodesTable {
+  class_id: Ref;
+  institution_id: Ref;
+  corporate_code_id: Ref;
+  updated_by: Buffer | null;
+  updated_at: Timestamp;
+}
+
 export interface InstitutionTables {
+  institution_corporate_codes: InstitutionCorporateCodesTable;
+  class_corporate_codes: ClassCorporateCodesTable;
   data_exports: DataExportsTable;
   cancellation_requests: CancellationRequestsTable;
   invoices: InvoicesTable;

@@ -139,6 +139,8 @@ export interface FeeRecordsTable {
   financed: Flag;
   remarks: string | null;
   paid_at: NullableTimestamp;
+  /** The last day a fee reminder was sent (migration 0075). */
+  reminded_on: ColumnType<Date | string | null, string | null | undefined, string | null>;
   paid_reference: ColumnType<string | null, string | null | undefined, string | null>;
   row_version: Generated<number>;
   created_by: Buffer | null;

@@ -2744,6 +2744,9 @@ export class AdmissionsService {
     'Parent name',
     'Parent mobile',
     'Parent relation',
+    // Client 2026-10-16 (setting mem.parentEmail.required). A file from before it was added has
+    // no such column: its rows are reported, not the file refused.
+    'Parent e-mail',
   ] as const;
 
   importTemplate() {
@@ -2763,6 +2766,7 @@ export class AdmissionsService {
           'Ramesh Shetty',
           '9845012390',
           'Father',
+          'ramesh.shetty@example.in',
         ],
       ]),
     };
@@ -2778,7 +2782,8 @@ export class AdmissionsService {
     const rows = parseCsv(input.content.trimStart());
     const cols = AdmissionsService.IMPORT_COLUMNS;
     const got = (rows[0] ?? []).map((c) => c.trim().toLowerCase());
-    if (!rows.length || cols.some((h, k) => got[k] !== h.toLowerCase())) {
+    const required = cols.filter((c) => c !== 'Parent e-mail');
+    if (!rows.length || required.some((h, k) => got[k] !== h.toLowerCase())) {
       throw new CustomAPIError(422, 'UPL.HEADER_MISMATCH');
     }
     const data = rows.slice(1).filter((r) => r.some((c) => c.trim()));
@@ -2825,6 +2830,7 @@ export class AdmissionsService {
       mother: 'MOTHER',
       guardian: 'GUARDIAN',
     };
+    const emailRequired = await this.deps.members.parentEmailRequired();
     for (const [k, cells] of data.entries()) {
       const cell = (n: (typeof cols)[number]) => (cells[cols.indexOf(n)] ?? '').trim();
       const errors: { column: string; message: string }[] = [];
@@ -2855,6 +2861,9 @@ export class AdmissionsService {
       if (!parent) err('Parent name', 'VALIDATION.REQUIRED');
       if (!PATTERNS.mobile.test(mobile)) err('Parent mobile', 'ADM.MOBILE_INVALID');
       if (!relation) err('Parent relation', 'VALIDATION.FORMAT');
+      const parentEmail = cell('Parent e-mail').toLowerCase();
+      if (parentEmail && !PATTERNS.email.test(parentEmail)) err('Parent e-mail', 'VALIDATION.EMAIL');
+      else if (!parentEmail && emailRequired) err('Parent e-mail', 'VALIDATION.REQUIRED');
       if (!studentType) err('Class', 'IDN.USER_TYPE_UNKNOWN', { t: 'Student' });
       const name = fullName(first, last) || '—';
       if (errors.length) {
@@ -2884,7 +2893,13 @@ export class AdmissionsService {
               admissionNo,
               sectionId: binToUuid(sec!.public_id),
               guardians: [
-                { firstName: n.firstName, lastName: n.lastName, mobile, relation: relation! },
+                {
+                  firstName: n.firstName,
+                  lastName: n.lastName,
+                  mobile,
+                  email: parentEmail || null,
+                  relation: relation!,
+                },
               ],
             },
             this.by(p),
