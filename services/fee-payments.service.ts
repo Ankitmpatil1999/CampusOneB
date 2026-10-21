@@ -34,6 +34,7 @@ import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
 import { outstandingOf } from './payment-engine.service';
 import type { PaymentGatewaysService } from './payment-gateways.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { vansOf } from './vans';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -316,14 +317,12 @@ export class FeePaymentsService {
       .where('ut.category', '=', 'STUDENT')
       .executeTakeFirst();
     if (!st) throw new NotFoundError();
-    const [van, records, contacts] = await Promise.all([
+    const [wallet, records, contacts] = await Promise.all([
       db
-        .selectFrom('wallets as w')
-        .innerJoin('virtual_accounts as v', 'v.wallet_id', 'w.id')
-        .select(['v.va_number', 'v.status'])
-        .where('w.owner_profile_id', '=', String(st.id))
-        .where('w.kind', '=', 'CAMPUS')
-        .orderBy(sql`v.status = 'ACTIVE'`, 'desc')
+        .selectFrom('wallets')
+        .select('id')
+        .where('owner_profile_id', '=', String(st.id))
+        .where('kind', '=', 'CAMPUS')
         .executeTakeFirst(),
       db
         .selectFrom('fee_records')
@@ -337,6 +336,8 @@ export class FeePaymentsService {
         .execute(),
       this.contactsOf(String(st.id)),
     ]);
+    // The VAN the bank pays into now: the class's corporate code, or the default (services/vans.ts).
+    const van = wallet ? (await vansOf(db, [String(wallet.id)])).get(String(wallet.id)) : undefined;
     return {
       year: { id: binToUuid(y.public_id), label: y.label },
       student: {
@@ -345,7 +346,7 @@ export class FeePaymentsService {
         admissionNo: st.admission_no,
         classSection: st.class_name ? `${st.class_name} ${st.section_name ?? ''}`.trim() : null,
       },
-      van: van ? { number: van.va_number, active: van.status === 'ACTIVE' } : null,
+      van: van ? { number: van.van, active: true } : null,
       sendTo: { mobile: maskMobile(contacts.mobile), email: maskEmail(contacts.email) },
       instalments: records.map((r) => {
         const fine = Number(r.fine_applied) ? Number(r.late_fine_paise) : 0;

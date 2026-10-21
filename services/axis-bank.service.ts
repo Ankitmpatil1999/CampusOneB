@@ -30,6 +30,7 @@ import { ipToBin } from '../utils/ip';
 import { parseAmount } from '../utils/money';
 import type { BankCreditInput, BankCreditsService } from './bank-credits.service';
 import type { PartnersService } from './partners.service';
+import { resolveVan } from './vans';
 import { defaultValues, type SettingValues, type SettingsService } from './settings.service';
 
 /** The bank's call body (JSON or form fields); every value arrives as text. */
@@ -220,12 +221,13 @@ export class AxisBankService {
    * (scope document: "Virtual account no. prefixed / not prefixed by corp code").
    */
   private async account(f: Fields): Promise<Account | undefined> {
-    const by = (n: string) =>
-      this.deps.db
-        .selectFrom('virtual_accounts')
-        .select(['va_number', 'corporate_code', 'institution_id'])
-        .where('va_number', '=', n)
-        .executeTakeFirst();
+    // The wallet's current code + wallet number (services/vans.ts; client 2026-10-14).
+    const by = async (n: string): Promise<Account | undefined> => {
+      const van = await resolveVan(this.deps.db, n);
+      return van
+        ? { va_number: van.van, corporate_code: van.code.code, institution_id: van.institutionId }
+        : undefined;
+    };
     const found = await by(f.vaNumber);
     if (found) return found;
     if (f.corpCode && !f.vaNumber.startsWith(f.corpCode)) return by(f.corpCode + f.vaNumber);

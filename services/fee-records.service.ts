@@ -15,6 +15,7 @@
  * - The job also marks unpaid records past their due date OVERDUE, which applies the late fine once.
  */
 import type { Kysely, Transaction } from 'kysely';
+import { notifyFeeAssigned } from './fee-notices.service';
 import { sql } from 'kysely';
 import type { Database, FeeRecordStatus } from '../models/ringpe_models';
 import { academicsRepository } from '../repositories/academics.repository';
@@ -511,6 +512,14 @@ export class FeeRecordsService {
             due: input.dueDate,
           },
         });
+        // Client 2026-10-16: the student and parents are told (in the app, and by e-mail).
+        await notifyFeeAssigned(
+          trx,
+          instId,
+          String(y.id),
+          new Map([[String(st.id), input.amountPaise]]),
+          now,
+        );
       });
     } catch (e) {
       if ((e as { errno?: number }).errno === 1062) {

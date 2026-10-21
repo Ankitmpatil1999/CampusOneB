@@ -338,7 +338,13 @@ export async function schoolFixture(name: string) {
         admissionNo: `ADM/${++admissionSeq}/${randomInt(0, 1e6)}`,
         sectionId: st.sectionId,
         guardians: [
-          { firstName: 'Guardian', lastName: 'Rao', mobile: guardianMobile, relation: 'FATHER' },
+          {
+            firstName: 'Guardian',
+            lastName: 'Rao',
+            mobile: guardianMobile,
+            email: `guardian.${guardianMobile}@example.in`,
+            relation: 'FATHER',
+          },
         ],
       });
     expect(r.status, JSON.stringify(r.body)).toBe(201);

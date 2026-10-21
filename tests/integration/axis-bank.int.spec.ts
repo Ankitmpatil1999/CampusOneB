@@ -13,6 +13,7 @@
  *   once, a repeat is "Duplicate UTR"; the /cug/bank alias works.
  */
 import { randomInt, randomUUID } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { schoolFixture } from './school';
@@ -365,5 +366,74 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
       .send({ ...credit, Req_type: 'notification' });
     expect(posted.body).toEqual({ Stts_flg: 'S', Err_cd: '000', message: 'Success' });
     expect((await f.balance(wallet)) - before).toBe(10_050);
+  });
+
+  it('keeps the earlier application’s Axis client working: imported with its secret’s bcrypt hash', async () => {
+    // As the bank holds it (client 2026-10-14): a client id and a secret RingPe only knows as a hash.
+    const legacyId = `AXISBANKEC_${randomInt(0, 1e8).toString(16).toUpperCase()}`;
+    const legacySecret = 'legacy-axis-secret-value';
+    const hash = bcrypt.hashSync(legacySecret, 4);
+    const importIt = (body: object) =>
+      request(f.app)
+        .post('/api/v1/ops/api-clients/imports')
+        .set(f.ops)
+        .set('Idempotency-Key', randomUUID())
+        .send(body);
+    const base = {
+      name: 'Axis Bank (earlier client)',
+      partner: 'SPONSOR_BANK',
+      clientId: legacyId,
+      secretHash: hash,
+      scopes: ['va.validate', 'va.notify'],
+      ipAllowlist: ['127.0.0.1', '::1'],
+    };
+    expect((await importIt({ ...base, secretHash: 'not-a-hash' })).body.errors[0]).toMatchObject({
+      field: 'secretHash',
+      code: 'INT.SECRET_HASH_FORMAT',
+    });
+    const imported = await importIt(base);
+    expect(imported.status, JSON.stringify(imported.body)).toBe(201);
+    expect(imported.body).toMatchObject({ clientId: legacyId, secretKind: 'HASH' });
+    expect(JSON.stringify(imported.body)).not.toContain(hash);
+    expect((await importIt({ ...base, name: 'Another name' })).body.code).toBe(
+      'INT.CLIENT_ID_TAKEN',
+    );
+
+    const tok = (secret: string) =>
+      token({
+        grant_type: 'client_credentials',
+        client_id: legacyId,
+        client_secret: secret,
+        scope: 'transaction_validation transaction_notification_posting',
+      });
+    expect((await tok('wrong-secret')).body.message).toBe('INVALID_CLIENT');
+    const t = await tok(legacySecret);
+    expect(t.status, JSON.stringify(t.body)).toBe(200);
+    const bearer = t.body.access_token as string;
+
+    // The student's VAN (code + wallet number): validated, then the money is loaded.
+    const credit = payload({ Txn_amnt: '250.00' });
+    expect((await call('validate', bearer, credit)).body).toEqual({
+      Stts_flg: 'S',
+      Err_cd: '000',
+      message: 'Success',
+    });
+    const before = await f.balance(wallet);
+    expect((await call('notify', bearer, { ...credit, Req_type: 'notification' })).body).toEqual({
+      Stts_flg: 'S',
+      Err_cd: '000',
+      message: 'Success',
+    });
+    expect((await f.balance(wallet)) - before).toBe(25_000);
+
+    // Rotated: a RingPe secret; the hash still works during the overlap.
+    const rotated = await request(f.app)
+      .post(`/api/v1/ops/api-clients/${imported.body.id}/secret-rotations`)
+      .set(f.ops)
+      .set('Idempotency-Key', randomUUID())
+      .send({ overlapHours: 24 });
+    expect(rotated.status, JSON.stringify(rotated.body)).toBeLessThan(300);
+    expect((await tok(legacySecret)).status).toBe(200);
+    expect((await tok(rotated.body.secret)).status).toBe(200);
   });
 });

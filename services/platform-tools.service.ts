@@ -34,7 +34,12 @@ export class PlatformToolsService {
       readonly db: Kysely<Database>;
       readonly i18n?: I18nService;
       /** The configured providers (config.notify): 'log' is the test sender. */
-      readonly providers: { readonly sms: string; readonly email: string };
+      readonly providers: {
+        readonly sms: string;
+        readonly email: string;
+        /** 'off': no push provider configured (PUSH_PROVIDER), so push can't be switched on. */
+        readonly push?: string;
+      };
       readonly now?: () => Date;
     },
   ) {}
@@ -487,6 +492,9 @@ export class PlatformToolsService {
         testMode: this.deps.providers.email === 'log',
         integrated: true,
       };
+    const push = this.deps.providers.push ?? 'off';
+    if (channel === 'PUSH' && push !== 'off')
+      return { provider: push, testMode: push === 'log', integrated: true };
     return { provider: null, testMode: false, integrated: false };
   }
 

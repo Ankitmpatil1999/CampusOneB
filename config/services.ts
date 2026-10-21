@@ -11,6 +11,7 @@ import type { Database } from '../models/ringpe_models';
 import type { ApiServices } from '../routes';
 import { createScanner, type AntivirusScanner } from '../integrations/antivirus.provider';
 import { createEmailSender } from '../integrations/email.provider';
+import { createPushSender, type PushSender } from '../integrations/push.provider';
 import { createSmsSender, type MessageSender } from '../integrations/sms.provider';
 import { createStorage, type StorageProvider } from '../integrations/storage.provider';
 import { FileService } from '../services/file.service';
@@ -49,6 +50,7 @@ import { TransfersService } from '../services/transfers.service';
 import { BankCreditsService } from '../services/bank-credits.service';
 import { PartnersService } from '../services/partners.service';
 import { AxisBankService } from '../services/axis-bank.service';
+import { CorporateCodesService } from '../services/corporate-codes.service';
 import { ReconService } from '../services/recon.service';
 import { ReconReportsService } from '../services/recon-reports.service';
 import { ReconciliationService } from '../services/reconciliation.service';
@@ -71,6 +73,11 @@ import { PlatformToolsService } from '../services/platform-tools.service';
 import { AnnouncementsService } from '../services/announcements.service';
 import { MessagingService } from '../services/messaging.service';
 import { loggedSender } from '../services/comm-log.service';
+import { CommEventsService } from '../services/comm-events.service';
+import { EmailRelay } from '../services/email-relay.service';
+import { PushRelay } from '../services/push-relay.service';
+import { PushTokensService } from '../services/push.service';
+import { FeeNoticesService } from '../services/fee-notices.service';
 import {
   CommReportService,
   commReportCsvRow,
@@ -125,6 +132,8 @@ export interface ServiceOverrides {
   readonly scanner?: AntivirusScanner;
   readonly sms?: MessageSender;
   readonly email?: MessageSender;
+  /** Tests: a push sender without Firebase (null: none configured). */
+  readonly push?: PushSender | null;
   readonly settings?: SettingsService;
   readonly now?: () => Date;
 }
@@ -154,10 +163,18 @@ export function buildApiServices(args: {
     ...(now ? { now } : {}),
   });
   const emailSender = loggedSender(
-    o.email ?? createEmailSender(config.notify.email, loggers, echo),
+    o.email ??
+      createEmailSender(config.notify.email, loggers, { ...echo, smtp: config.notify.smtp }),
     db,
     now,
   );
+  // Phone pushes (client 2026-10-19): Firebase, the app log, or none (PUSH_PROVIDER).
+  const pushSender =
+    o.push !== undefined
+      ? o.push
+      : createPushSender(config.notify.push, loggers, {
+          serviceAccountFile: config.notify.pushServiceAccountFile,
+        });
   const smsSender = loggedSender(
     o.sms ?? createSmsSender(config.notify.sms, loggers, echo),
     db,
@@ -428,6 +445,7 @@ export function buildApiServices(args: {
       `communication-report_${String(params['from'] ?? 'last-30-days')}_${String(params['to'] ?? 'today')}.csv`,
   });
   const jobs = buildJobs({
+    feeNotices: new FeeNoticesService({ db, settings, ...(now ? { now } : {}) }),
     commReport,
     settlement,
     accounting,
@@ -524,6 +542,7 @@ export function buildApiServices(args: {
     cipher: security.cipher,
     admissionLinks,
     paymentGateways,
+    corporateCodes: new CorporateCodesService({ db, settings, ...(now ? { now } : {}) }),
     settlement,
     admissions,
     feePayments,
@@ -553,7 +572,11 @@ export function buildApiServices(args: {
     platformTools: new PlatformToolsService({
       db,
       i18n,
-      providers: { sms: config.notify.sms, email: config.notify.email },
+      providers: {
+        sms: config.notify.sms,
+        email: config.notify.email,
+        push: pushSender?.provider ?? 'off',
+      },
       ...(now ? { now } : {}),
     }),
     files,
@@ -609,6 +632,16 @@ export function buildApiServices(args: {
       ...(now ? { now } : {}),
     }),
     notifications: new NotificationsService({ db, ...(now ? { now } : {}) }),
+    commEvents: new CommEventsService({ db, ...(now ? { now } : {}) }),
+    emailRelay: new EmailRelay({
+      db,
+      email: emailSender,
+      loggers,
+      settings,
+      ...(now ? { now } : {}),
+    }),
+    pushTokens: new PushTokensService({ db, ...(now ? { now } : {}) }),
+    pushRelay: new PushRelay({ db, push: pushSender, loggers, ...(now ? { now } : {}) }),
     auditEvents: new AuditEventsService({ db }),
     institutionSetup,
     institutions,

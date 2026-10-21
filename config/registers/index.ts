@@ -28,6 +28,7 @@ export * from './messages/catalogue';
 export * from './limits';
 export * from './access';
 export * from './institution';
+export * from './comm-events';
 
 import { allMessages } from './messages/catalogue';
 import { accessLabels } from './access';

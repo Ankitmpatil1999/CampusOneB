@@ -13,6 +13,7 @@
  *   date and reference): no collection, no ledger posting at upload (OI-FEE-06).
  */
 import { sql, type Kysely } from 'kysely';
+import { notifyFeeAssigned } from './fee-notices.service';
 import { LIMITS, renderMessage, type MessageKey } from '../config/registers';
 import type { Database } from '../models/ringpe_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
@@ -489,6 +490,7 @@ export class FeeUploadsService {
           .executeTakeFirstOrThrow();
       }
       let n = 0;
+      const totals = new Map<string, number>();
       for (const r of rows) {
         const x = r.input!;
         const st = await trx
@@ -550,6 +552,8 @@ export class FeeUploadsService {
             })
             .execute();
           n++;
+          // A row recorded as already paid (earlier collections) isn't announced.
+          if (!x.paid) totals.set(x.studentRowId, (totals.get(x.studentRowId) ?? 0) + amount);
         }
       }
       const done = await trx
@@ -566,6 +570,8 @@ export class FeeUploadsService {
         entityRef: uploadId,
         after: { students: rows.length, records: n, skipped: u.rows_rejected },
       });
+      // Client 2026-10-16: the students and parents are told (in the app, and by e-mail).
+      await notifyFeeAssigned(trx, String(inst.id), String(u.year_id), totals, at);
       return n;
     });
     return { created, skipped: (await this.status(p, uploadId)).rejected };

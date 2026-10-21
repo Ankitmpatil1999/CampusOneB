@@ -9,6 +9,7 @@ import { createEmailSender } from './integrations/email.provider';
 import { createSmsSender } from './integrations/sms.provider';
 import { AnnouncementsService } from './services/announcements.service';
 import { loggedSender } from './services/comm-log.service';
+import { FeeNoticesService } from './services/fee-notices.service';
 import { CommReportService } from './services/comm-report.service';
 import { HealthService } from './services/health.service';
 import { BillingService } from './services/billing.service';
@@ -73,7 +74,10 @@ function main(): void {
   // The services the jobs use (the same classes as the API).
   const settings = new SettingsService(db);
   const email = loggedSender(
-    createEmailSender(config.notify.email, loggers, { echo: config.notify.otpDevEcho }),
+    createEmailSender(config.notify.email, loggers, {
+      echo: config.notify.otpDevEcho,
+      smtp: config.notify.smtp,
+    }),
     db,
   );
   const billing = new BillingService({ db, loggers, settings, email });
@@ -147,6 +151,7 @@ function main(): void {
       settings,
     }),
     commReport: new CommReportService({ db, settings }),
+    feeNotices: new FeeNoticesService({ db, settings }),
     subscriptions,
     bankCredits,
     allowances,

@@ -187,7 +187,7 @@ defineRoute({
   responses: { 200: { description: 'Branding', schema: brandingSchema } },
 });
 defineRoute({
-  id: 'INS-043',
+  id: 'INS-049',
   method: 'get',
   path: '/api/v1/public/institutions/{institutionId}/logo',
   summary:

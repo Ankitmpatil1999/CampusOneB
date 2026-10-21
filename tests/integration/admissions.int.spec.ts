@@ -1656,7 +1656,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const header = tpl.text.trimStart().split(/\r?\n/)[0]!;
     const csv = [
       header,
-      'Neha,Kamath,Female,2014-03-03,Grade 6,A,ADM/OLD/0001,,Suresh Kamath,9845055501,Father',
+      'Neha,Kamath,Female,2014-03-03,Grade 6,A,ADM/OLD/0001,,Suresh Kamath,9845055501,Father,suresh.kamath@example.in',
       'Bad,Row,Unknown,2014-03-03,Grade 9,Z,,,X,123,Uncle',
     ].join('\n');
     const imp = await request(f.app)
@@ -1673,6 +1673,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         'Admission number',
         'Parent mobile',
         'Parent relation',
+        'Parent e-mail',
       ]),
     );
   });

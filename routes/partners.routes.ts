@@ -7,6 +7,7 @@ import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import {
   apiClientCreatedSchema,
+  apiClientImportSchema,
   apiClientInputSchema,
   apiClientPatchSchema,
   apiClientSchema,
@@ -88,6 +89,17 @@ ops({
   request: apiClientInputSchema,
   idempotent: 'required',
   responses: { 201: { description: 'Created', schema: apiClientCreatedSchema } },
+});
+ops({
+  id: 'INT-011',
+  method: 'post',
+  path: '/api/v1/ops/api-clients/imports',
+  summary:
+    "Import a client created elsewhere with its client id and its secret's bcrypt hash (the earlier application's Axis Bank client; client 2026-10-14): the secret is checked against the hash at the token call; bank (bearer) calls only",
+  auth: 'partners.edit',
+  request: apiClientImportSchema,
+  idempotent: 'required',
+  responses: { 201: { description: 'Imported', schema: apiClientSchema } },
 });
 ops({
   id: 'INT-003',
@@ -270,6 +282,22 @@ export function partnersRoutes(deps: {
     can,
     wrap(async (_req, res) => {
       res.json(await deps.partners.list());
+    }),
+  );
+  router.post(
+    '/ops/api-clients/imports',
+    opsOnly,
+    can,
+    once,
+    wrap(async (req, res) => {
+      res
+        .status(201)
+        .json(
+          await deps.partners.importClient(
+            principal(req),
+            apiClientImportSchema.parse(req.body ?? {}),
+          ),
+        );
     }),
   );
   router.post(

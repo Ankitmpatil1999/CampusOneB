@@ -17,6 +17,7 @@ import type { Database } from '../models/ringpe_models';
 import { istBusinessDate } from '../utils/format';
 import { binToUuid, newPublicIdPair } from '../utils/idGenerator';
 import { recordAudit } from './audit.service';
+import { notifyFeeAssigned } from './fee-notices.service';
 
 /** A transaction (the callers' own, so the assignment commits with what placed the student). */
 type Db = Kysely<Database> | Transaction<Database>;
@@ -140,7 +141,8 @@ export function priceFor(plan: AssignPlan, opted: ReadonlySet<string> = new Set(
 
 /**
  * Assigns the students and raises their records; one already assigned for the year (meanwhile, too)
- * is passed over. `opted` holds the public ids of the optional heads a student takes.
+ * is passed over. `opted` holds the public ids of the optional heads a student takes. The student and
+ * their parents are told what was raised (client 2026-10-16: in the app, and by e-mail).
  */
 export async function raiseFor(
   trx: Db,
@@ -150,6 +152,7 @@ export async function raiseFor(
 ) {
   let assigned = 0;
   let created = 0;
+  const totals = new Map<string, number>();
   for (const st of students) {
     const opted = [...(st.opted ?? [])];
     let assignmentId: string;
@@ -209,8 +212,10 @@ export async function raiseFor(
           .execute();
       }
       created++;
+      totals.set(st.rowId, (totals.get(st.rowId) ?? 0) + Number(r.amount));
     }
   }
+  await notifyFeeAssigned(trx, plan.institutionId, plan.yearId, totals, who.at);
   return { assigned, created };
 }
 

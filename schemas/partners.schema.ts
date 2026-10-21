@@ -91,6 +91,9 @@ const apiClient = z
     statusReason: z.string().nullable(),
     secretRotatedAt: z.string(),
     previousSecretValidUntil: z.string().nullable(),
+    secretKind: z
+      .enum(['ENCRYPTED', 'HASH'])
+      .describe('HASH: imported with a bcrypt hash of its secret; bearer-only bank calls'),
     createdAt: z.string(),
     version: z.number().int(),
   })
@@ -113,6 +116,23 @@ export const apiClientInputSchema = z
     ipAllowlist: allow,
   })
   .meta({ id: 'ApiClientInput' });
+
+export const apiClientImportSchema = z
+  .strictObject({
+    name: text(100),
+    partner: z.enum(['SPONSOR_BANK', 'PAYMENT_GATEWAY', 'POS_VENDOR', 'FINANCING', 'OTHER']),
+    clientId: z
+      .string({ message: 'VALIDATION.REQUIRED' })
+      .max(40)
+      .describe('The client id the partner already holds, e.g. AXISBANKEC_6BBFE1A3'),
+    secretHash: z
+      .string({ message: 'INT.SECRET_HASH_FORMAT' })
+      .max(100)
+      .describe('The bcrypt hash of the secret the partner holds ($2b$12$…)'),
+    scopes,
+    ipAllowlist: allow,
+  })
+  .meta({ id: 'ApiClientImport' });
 
 export const apiClientCreatedSchema = z
   .object({ id: z.uuid(), clientId: z.string(), secret: z.string().describe('Shown once') })

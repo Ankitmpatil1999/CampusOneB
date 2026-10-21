@@ -292,6 +292,13 @@ describe.skipIf(!adminUrl)(
       });
       expect(gateway.status).toBe(201);
       ids['gatewayId'] = gateway.body.id;
+      // A corporate code of school A (INS-043…045; client 2026-10-14).
+      const corp = await post(a.con, '/api/v1/console/corporate-codes', {
+        bankName: 'Isolation Bank',
+        corporateCode: `IS${String(Date.now()).slice(-6)}`,
+      });
+      expect(corp.status, JSON.stringify(corp.body)).toBe(201);
+      ids['codeId'] = corp.body.id;
       const aMember = await t.db
         .selectFrom('member_profiles')
         .select(['id', 'institution_id'])

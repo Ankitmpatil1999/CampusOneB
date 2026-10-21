@@ -142,6 +142,23 @@ export const envSchema = z
     }),
     SOCIAL_PROVIDERS: z.string().default('google,apple'),
     EMAIL_PROVIDER: z.enum(['log', 'smtp']).default('log'),
+    // SMTP (client 2026-10-16: the earlier application's mail server). 587 = STARTTLS (secure
+    // false), 465 = TLS from the start (secure true). EMAIL_USER / EMAIL_PASS keep the earlier
+    // application's names. The certificate is always checked; EMAIL_TLS_VERIFY=false is for a
+    // test server only and is refused in production.
+    EMAIL_SMTP_HOST: z.string().trim().max(200).default('mail.sabadotechnologies.com'),
+    EMAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    EMAIL_SMTP_SECURE: bool(false),
+    EMAIL_USER: z.string().trim().max(200).optional(),
+    EMAIL_PASS: z.string().max(200).optional(),
+    EMAIL_FROM: z.string().trim().max(200).optional(),
+    EMAIL_FROM_NAME: z.string().trim().min(1).max(100).default('RingPe'),
+    EMAIL_TLS_VERIFY: bool(true),
+    // Phone pushes (client 2026-10-19; integrations/push.provider.ts): `fcm` = Firebase Cloud
+    // Messaging with the project's service-account key file (kept out of the repository, like the
+    // keys in keys/); `log` writes them to the app log (refused in production); `off` sends none.
+    PUSH_PROVIDER: z.enum(['off', 'log', 'fcm']).default('off'),
+    PUSH_FCM_SERVICE_ACCOUNT_FILE: z.string().trim().max(500).optional(),
 
     // Uploads (CR-07): private storage and antivirus scan.
     STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
@@ -178,7 +195,18 @@ export const envSchema = z
     } else if (env.HTTP_REDIRECT_PORT) {
       problem('HTTP_REDIRECT_PORT', 'needs USE_HTTPS=true');
     }
+    if (env.EMAIL_PROVIDER === 'smtp') {
+      if (!env.EMAIL_USER || !env.EMAIL_PASS)
+        problem('EMAIL_USER', 'and EMAIL_PASS are required with EMAIL_PROVIDER=smtp');
+      const from = env.EMAIL_FROM || env.EMAIL_USER || '';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))
+        problem('EMAIL_FROM', 'must be an e-mail address (default: EMAIL_USER)');
+    }
+    if (env.PUSH_PROVIDER === 'fcm' && !env.PUSH_FCM_SERVICE_ACCOUNT_FILE)
+      problem('PUSH_FCM_SERVICE_ACCOUNT_FILE', 'is required with PUSH_PROVIDER=fcm');
     if (env.NODE_ENV !== 'production') return;
+    if (env.PUSH_PROVIDER === 'log')
+      problem('PUSH_PROVIDER', 'must be fcm or off in production (log only writes the app log)');
     if (env.API_DOCS_ENABLED) problem('API_DOCS_ENABLED', 'must be false in production');
     if (!env.REDIS_URL) problem('REDIS_URL', 'is required in production (several instances)');
     if (env.CORS_ORIGINS.length === 0) problem('CORS_ORIGINS', 'is required in production');
@@ -230,6 +258,9 @@ export const envSchema = z
       problem('SMS_PROVIDER', 'must be a real provider in production');
     if (env.EMAIL_PROVIDER === 'log') {
       problem('EMAIL_PROVIDER', 'must be a real provider in production');
+    }
+    if (!env.EMAIL_TLS_VERIFY) {
+      problem('EMAIL_TLS_VERIFY', "must be true in production (the mail server's certificate)");
     }
     if (env.STORAGE_PROVIDER === 'local') {
       problem('STORAGE_PROVIDER', 'must be object storage in production');
@@ -315,6 +346,20 @@ export interface Config {
     readonly otpTestShowCode: boolean;
     readonly sms: Env['SMS_PROVIDER'];
     readonly email: Env['EMAIL_PROVIDER'];
+    /** SMTP settings (EMAIL_PROVIDER=smtp); the password is never logged. */
+    readonly smtp: {
+      readonly host: string;
+      readonly port: number;
+      readonly secure: boolean;
+      readonly user: string | null;
+      readonly pass: string | null;
+      readonly from: string | null;
+      readonly fromName: string;
+      readonly tlsVerify: boolean;
+    };
+    readonly push: Env['PUSH_PROVIDER'];
+    /** Firebase service-account key file (PUSH_PROVIDER=fcm). */
+    readonly pushServiceAccountFile: string | null;
   };
   readonly files: {
     readonly storage: Env['STORAGE_PROVIDER'];
@@ -423,6 +468,18 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
       otpTestShowCode: e.OTP_TEST_SHOW_CODE ?? e.NODE_ENV === 'development',
       sms: e.SMS_PROVIDER,
       email: e.EMAIL_PROVIDER,
+      smtp: {
+        host: e.EMAIL_SMTP_HOST,
+        port: e.EMAIL_SMTP_PORT,
+        secure: e.EMAIL_SMTP_SECURE,
+        user: e.EMAIL_USER || null,
+        pass: e.EMAIL_PASS || null,
+        from: e.EMAIL_FROM || e.EMAIL_USER || null,
+        fromName: e.EMAIL_FROM_NAME,
+        tlsVerify: e.EMAIL_TLS_VERIFY,
+      },
+      push: e.PUSH_PROVIDER,
+      pushServiceAccountFile: e.PUSH_FCM_SERVICE_ACCOUNT_FILE || null,
     },
     files: {
       storage: e.STORAGE_PROVIDER,
