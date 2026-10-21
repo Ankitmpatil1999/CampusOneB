@@ -93,7 +93,12 @@ async function rebuild(keep) {
     server.pathname = '/';
     const conn = await createConnection({ uri: server.toString() });
     try {
+      // The schema and its CUG database (migration 0081) reference each other: dropped together
+      // with foreign-key checks off; the migrations create the CUG database again.
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
       await conn.query(`DROP DATABASE IF EXISTS \`${dbName}\``);
+      await conn.query(`DROP DATABASE IF EXISTS \`${dbName}_cug\``);
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
       await conn.query(
         `CREATE DATABASE \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
       );

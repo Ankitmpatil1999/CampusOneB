@@ -1,10 +1,12 @@
 /**
  * Integration test on a real MySQL (brief §7.6). Runs only when TEST_DB_MIGRATOR_URL is set; the
- * user needs CREATE/DROP DATABASE. A throwaway schema `ringpe_it_<random>` is created and dropped.
+ * user needs CREATE/DROP DATABASE. A throwaway schema `ringpe_it_<random>` is created and dropped, with
+ * the CUG database migration 0081 creates beside it (`<name>_cug`).
  */
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { createConnection } from 'mysql2/promise';
+import { CUG_TABLES, cugDatabaseOf } from '../../db/cug-tables';
 import { migrate, migrationStatus, readMigrationDir } from '../../db/migrator';
 import { openMigrationConnection } from '../../db/mysql-executor';
 import { renderReferenceSeedSql } from '../../db/reference-seed';
@@ -28,8 +30,11 @@ describe.skipIf(!adminUrl)('migrations on real MySQL', () => {
   });
 
   afterAll(async () => {
-    const admin = await createConnection({ uri: adminUrl as string });
-    await admin.query(`DROP DATABASE IF EXISTS \`${dbName}\``);
+    const admin = await createConnection({ uri: adminUrl as string, multipleStatements: true });
+    // Each database references the other: foreign-key checks off to drop them.
+    await admin.query(
+      `SET FOREIGN_KEY_CHECKS = 0; DROP DATABASE IF EXISTS \`${dbName}\`; DROP DATABASE IF EXISTS \`${cugDatabaseOf(dbName)}\`; SET FOREIGN_KEY_CHECKS = 1;`,
+    );
     await admin.end();
   });
 
@@ -102,12 +107,48 @@ describe.skipIf(!adminUrl)('migrations on real MySQL', () => {
     }
   });
 
+  it('keeps the school tables in the CUG database and the platform tables in RingPe (0081)', async () => {
+    const conn = await openMigrationConnection(url);
+    try {
+      const tablesOf = async (db: string) =>
+        (
+          await conn.query<{ t: string }>(
+            "SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'",
+            [db],
+          )
+        ).map((r) => r.t);
+      const cug = await tablesOf(cugDatabaseOf(dbName));
+      const ringpe = await tablesOf(dbName);
+      expect([...cug].sort()).toEqual([...CUG_TABLES].sort());
+      expect(ringpe.filter((t) => CUG_TABLES.includes(t))).toEqual([]);
+      expect(ringpe).toEqual(
+        expect.arrayContaining(['platform_accounts', 'sessions', 'schema_migrations']),
+      );
+      // The school tables' triggers moved with them.
+      const [moved] = await conn.query<{ n: number | string }>(
+        'SELECT COUNT(*) AS n FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?',
+        [cugDatabaseOf(dbName)],
+      );
+      expect(Number(moved?.n)).toBe(19);
+      // A key across the two databases is still enforced.
+      await expect(
+        conn.query(
+          `INSERT INTO \`${cugDatabaseOf(dbName)}\`.member_profiles (public_id, institution_id, user_type_id, account_id, first_name, status)
+           VALUES (UUID_TO_BIN(UUID()), 999999, 1, 999999, 'X', 'ACTIVE')`,
+        ),
+      ).rejects.toThrow(/foreign key/i);
+    } finally {
+      await conn.close();
+    }
+  });
+
   it('stores no trigger body ending in a semicolon, so a dump restores (DR drill, 0063)', async () => {
     const conn = await openMigrationConnection(url);
     try {
       const rows = await conn.query<{ name: string }>(
         `SELECT TRIGGER_NAME AS name FROM information_schema.TRIGGERS
-          WHERE TRIGGER_SCHEMA = DATABASE() AND ACTION_STATEMENT REGEXP ';[[:space:]]*$'`,
+          WHERE TRIGGER_SCHEMA IN (DATABASE(), CONCAT(DATABASE(), '_cug'))
+            AND ACTION_STATEMENT REGEXP ';[[:space:]]*$'`,
       );
       expect(rows.map((r) => r.name)).toEqual([]);
     } finally {
@@ -120,7 +161,7 @@ describe.skipIf(!adminUrl)('migrations on real MySQL', () => {
     try {
       await expect(
         conn.query(
-          `INSERT INTO institutions (public_id, identifier, name, short_name, address_line1, city, state, pin_code, name_address_key)
+          `INSERT INTO \`${cugDatabaseOf(dbName)}\`.institutions (public_id, identifier, name, short_name, address_line1, city, state, pin_code, name_address_key)
            VALUES (UUID_TO_BIN(UUID()), 'RPETST00001', 'Test', 'TST', 'Road', 'City', 'KA', '5600A1', SHA2('x', 256))`,
         ),
       ).rejects.toThrow();

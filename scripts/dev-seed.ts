@@ -12,7 +12,9 @@
  * passwords are used (local machines only).
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { cugDatabaseOf, databaseOfUrl, qualifyCugSql } from '../db/cug-tables';
 import { openMigrationConnection } from '../db/mysql-executor';
+import { CugSchemaPlugin } from '../models/cug-schema-plugin';
 import { createStorage } from '../integrations/storage.provider';
 import { institutionIdentifier, nameAddressKey } from '../services/institutions.service';
 import { loadFieldCipher } from '../utils/fieldEncryption';
@@ -606,7 +608,14 @@ const DEMO_TENANTS: readonly DemoTenant[] = [
   },
 ];
 
-const conn = await openMigrationConnection(url);
+// The school tables are in the CUG database (migration 0081): the seed's plain SQL is sent there.
+const cugDatabase = cugDatabaseOf(databaseOfUrl(url));
+const raw = await openMigrationConnection(url);
+const conn = {
+  query: <T>(q: string, p: readonly unknown[] = []) => raw.query<T>(qualifyCugSql(q, cugDatabase), p),
+  script: (q: string) => raw.script(qualifyCugSql(q, cugDatabase)),
+  close: () => raw.close(),
+};
 const one = async <T>(q: string, p: readonly unknown[] = []) =>
   (await conn.query<T>(q, p))[0] as T | undefined;
 /** The row id of a member profile just inserted, by its public id (the connection returns no insertId). */
@@ -1241,6 +1250,7 @@ async function paymentsSetup(tvpsId: string, institutionName: string) {
 
   // Development top-ups: the parent's family wallets start with money to spend (once per wallet).
   const db = new Kysely<Database>({
+    plugins: [new CugSchemaPlugin(cugDatabase)],
     dialect: new MysqlDialect({
       pool: createPool({
         uri: url!,
@@ -1345,6 +1355,7 @@ async function allowancesSetup(tvpsId: string) {
     [tvpsId, MEMBER_MOBILE],
   )) as { id: string; wallet_id: string; contact_mobile: string | null }[];
   const db = new Kysely<Database>({
+    plugins: [new CugSchemaPlugin(cugDatabase)],
     dialect: new MysqlDialect({
       pool: createPool({
         uri: url!,
@@ -1759,6 +1770,7 @@ async function phase5Setup(tvpsId: string) {
   };
   const today = istBusinessDate(new Date());
   const db = new Kysely<Database>({
+    plugins: [new CugSchemaPlugin(cugDatabase)],
     dialect: new MysqlDialect({
       pool: createPool({
         uri: url!,
@@ -2413,7 +2425,7 @@ async function admissionsSetup(tvpsId: string) {
         a.rejection && counsellor ? counsellor.public_id : null,
         a.rejection?.reason ?? null,
         a.rejection?.remarks ?? null,
-        a.appFee === 'ONLINE' || a.appFee === 'CASH' ? 'COMPLETED' : 'PENDING',
+        a.appFee === 'ONLINE' || a.appFee === 'CASH' ? 'PAID' : 'PENDING',
         a.source === 'COUNSELLOR' && counsellor ? counsellor.public_id : null,
         created,
         submitted ?? created,

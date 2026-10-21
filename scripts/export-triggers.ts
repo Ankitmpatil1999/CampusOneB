@@ -1,39 +1,45 @@
 /**
- * Writes db/triggers/create-triggers.sql from the triggers of a migrated database, so they can be
- * created on another server (client 2026-10-09). Each trigger is dropped if it exists and created
- * again exactly as MySQL stores it, without DEFINER (it then runs as the user who executes the
- * script). Tables must already exist (run the migrations or load the schema first).
+ * Writes the triggers of a migrated database pair as SQL scripts, so they can be created on another
+ * server (client 2026-10-09):
+ *
+ * - db/triggers/create-triggers.sql     — the RingPe database's triggers;
+ * - db/triggers/create-triggers-cug.sql — the CUG database's (the school tables, migration 0081).
+ *
+ * Each trigger is dropped if it exists and created again exactly as MySQL stores it, without DEFINER
+ * (it then runs as the user who executes the script). Tables must already exist (run the migrations
+ * or load the schema first).
  *
  *   npx tsx scripts/export-triggers.ts            (reads DATABASE_URL from .env)
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import mysql from 'mysql2/promise';
+import { cugDatabaseOf, databaseOfUrl } from '../db/cug-tables';
 
-const OUT = join(import.meta.dirname, '..', 'db', 'triggers', 'create-triggers.sql');
+const DIR = join(import.meta.dirname, '..', 'db', 'triggers');
 
-async function main() {
-  const url = process.env['DATABASE_URL'];
-  if (!url) throw new Error('DATABASE_URL is not set');
-  const db = await mysql.createConnection(url);
+async function exportOf(db: mysql.Connection, schema: string, file: string, which: string) {
   const [rows] = (await db.query(
     `SELECT TRIGGER_NAME AS name, EVENT_OBJECT_TABLE AS tbl
-       FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()
+       FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?
       ORDER BY EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION, ACTION_ORDER`,
+    [schema],
   )) as unknown as [{ name: string; tbl: string }[]];
   const parts: string[] = [];
   for (const r of rows) {
-    const [show] = (await db.query(`SHOW CREATE TRIGGER \`${r.name}\``)) as unknown as [
-      Record<string, string>[],
-    ];
+    const [show] = (await db.query(
+      `SHOW CREATE TRIGGER \`${schema}\`.\`${r.name}\``,
+    )) as unknown as [Record<string, string>[]];
     const sql = String(show[0]!['SQL Original Statement'])
       .replace(/^CREATE\s+DEFINER\s*=\s*`[^`]*`@`[^`]*`\s+TRIGGER/i, 'CREATE TRIGGER')
+      // The database the script is run against: never the one it was exported from.
+      .split(`\`${schema}\`.`)
+      .join('')
       .trim()
       .replace(/;\s*$/, '');
     parts.push(`-- ${r.tbl}\nDROP TRIGGER IF EXISTS \`${r.name}\`$$\n${sql}$$\n`);
   }
-  await db.end();
-  const header = `-- RingPe database triggers: ${rows.length} triggers, generated from a migrated database by
+  const header = `-- RingPe ${which} triggers: ${rows.length} triggers, generated from a migrated database by
 -- scripts/export-triggers.ts. Do not edit by hand; the migrations (db/migrations) are the source.
 --
 -- Before running:
@@ -42,16 +48,29 @@ async function main() {
 --   * with binary logging on and a user without SUPER, set once as an administrator:
 --       SET GLOBAL log_bin_trust_function_creators = 1;
 --
--- Run (MySQL client):  mysql -u <user> -p <database> < create-triggers.sql
--- MySQL Workbench:     open this file with the database selected and run it all (Ctrl+Shift+Enter).
+-- Run (MySQL client):  mysql -u <user> -p <${which === 'CUG database' ? 'CUG database, e.g. ringpe_cug' : 'RingPe database, e.g. ringpe'}> < ${file}
+-- MySQL Workbench:     open this file with that database selected and run it all (Ctrl+Shift+Enter).
 
 SET NAMES utf8mb4;
 DELIMITER $$
 
 `;
-  mkdirSync(join(OUT, '..'), { recursive: true });
-  writeFileSync(OUT, `${header}${parts.join('\n')}\nDELIMITER ;\n`);
-  console.log(`${rows.length} triggers -> ${OUT}`);
+  writeFileSync(join(DIR, file), `${header}${parts.join('\n')}\nDELIMITER ;\n`);
+  console.log(`${rows.length} ${which} triggers -> db/triggers/${file}`);
+}
+
+async function main() {
+  const url = process.env['DATABASE_URL'];
+  if (!url) throw new Error('DATABASE_URL is not set');
+  const ringpe = databaseOfUrl(url);
+  const db = await mysql.createConnection(url);
+  mkdirSync(DIR, { recursive: true });
+  try {
+    await exportOf(db, ringpe, 'create-triggers.sql', 'RingPe database');
+    await exportOf(db, cugDatabaseOf(ringpe), 'create-triggers-cug.sql', 'CUG database');
+  } finally {
+    await db.end();
+  }
 }
 
 main().catch((e: unknown) => {
