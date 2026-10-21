@@ -29,6 +29,7 @@ import { recordAudit } from './audit.service';
 import { occurrences } from './calendar.service';
 import { memberOf } from './member-roles';
 import { notify } from './notifications.service';
+import { studentTransport } from './student-transport';
 import type { SettingsService } from './settings.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -1176,6 +1177,12 @@ export class TripsService {
   }
 
   // --- TRN-034: the passenger and family ------------------------------------------------------------------------
+  /**
+   * The member's allocation in force, or the next one when it starts later (the console allocates from
+   * tomorrow by default; client 2026-10-21: students, parents and teachers saw none until then), with
+   * the stop's pick-up and drop times and the route's vehicle and crew on that day; today's trips only
+   * once the allocation has started.
+   */
   async mine(p: Principal, f: { for?: string | undefined }) {
     const me = await memberOf(this.deps.db, p, f.for);
     const date = istBusinessDate(this.now());
@@ -1187,6 +1194,7 @@ export class TripsService {
       .select([
         'al.route_id',
         'al.stop_id',
+        'al.year_id',
         'al.effective_from',
         'al.effective_to',
         'r.code',
@@ -1197,10 +1205,30 @@ export class TripsService {
       ])
       .where('al.profile_id', '=', me.rowId)
       .where('al.active', '=', 1)
-      .where('al.effective_from', '<=', date)
       .where('al.effective_to', '>=', date)
+      .orderBy('al.effective_from')
       .executeTakeFirst();
-    if (!al) return { member: { name: me.name }, allocation: null, trips: [] };
+    if (!al) return { member: { name: me.name }, allocation: null, schedule: [], trips: [] };
+    const from = ymd(al.effective_from);
+    const upcoming = from > date;
+    // The stop's times and the route's vehicle and crew on the first day it applies.
+    const plan = await studentTransport(db, {
+      profileRowId: me.rowId,
+      yearId: String(al.year_id),
+      today: upcoming ? from : date,
+    });
+    const allocation = {
+      route: { code: al.code, name: al.route_name },
+      stop: { id: binToUuid(al.stop_public_id), name: al.stop_name, landmark: al.landmark },
+      from,
+      to: ymd(al.effective_to),
+      upcoming,
+      pickUp: plan.allocation?.pickUp ?? null,
+      drop: plan.allocation?.drop ?? null,
+    };
+    if (upcoming) {
+      return { member: { name: me.name }, allocation, schedule: plan.trips, trips: [] };
+    }
     await this.ensureToday(me.institutionId, date);
     const trips = await this.tripRows(db)
       .where('t.institution_id', '=', me.institutionId)
@@ -1244,16 +1272,7 @@ export class TripsService {
         })),
       });
     }
-    return {
-      member: { name: me.name },
-      allocation: {
-        route: { code: al.code, name: al.route_name },
-        stop: { id: binToUuid(al.stop_public_id), name: al.stop_name, landmark: al.landmark },
-        from: ymd(al.effective_from),
-        to: ymd(al.effective_to),
-      },
-      trips: out,
-    };
+    return { member: { name: me.name }, allocation, schedule: plan.trips, trips: out };
   }
 
   /** For the tenant check of console routes before a body is read. */

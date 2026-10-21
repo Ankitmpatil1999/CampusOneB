@@ -517,6 +517,23 @@ describe.skipIf(!adminUrl)('approvals and notifications on real MySQL', () => {
     expect(platform.body.canDecide).toBe(true);
     const p = platform.body.items[0];
     expect(p).toMatchObject({ module: 'PII_CORRECTION', status: 'PENDING', no: 'APR-0001' });
+    // The back-office bell tells the operators who decide (client 2026-10-21).
+    const bell = await request(app).get('/api/v1/ops/notifications').set(ops);
+    expect(bell.status, JSON.stringify(bell.body)).toBe(200);
+    expect(bell.body.unread).toBeGreaterThanOrEqual(1);
+    expect(bell.body.items[0]).toMatchObject({
+      surface: 'OPS',
+      titleKey: 'NTF.APPROVAL_RAISED',
+      link: `/backoffice/approvals?open=${p.id}`,
+      read: false,
+    });
+    expect(
+      (await request(app).post('/api/v1/ops/notifications/read').set(ops).send({ all: true }))
+        .status,
+    ).toBe(204);
+    expect((await request(app).get('/api/v1/ops/notifications').set(ops)).body.unread).toBe(0);
+    // A console session can't read the back office's bell.
+    expect((await request(app).get('/api/v1/ops/notifications').set(a.con)).status).toBe(401);
     const pd = await request(app).get(`/api/v1/ops/approvals/${p.id}`).set(ops);
     expect(pd.body.changes[0]).toMatchObject({ label: 'Date of birth', to: '21 Apr 1990' });
     const r = await decide(

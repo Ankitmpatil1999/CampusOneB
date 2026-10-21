@@ -120,6 +120,11 @@ export const notificationListSchema = z
     items: z.array(
       z.object({
         id: z.uuid(),
+        surface: z
+          .enum(['CONSOLE', 'MEMBER', 'OPS'])
+          .describe(
+            'Where it was sent: a MEMBER link is a member-app path the web maps to its page',
+          ),
         category: z.string(),
         titleKey: z.string().describe('Message register key; translate with the language bundle'),
         params: z.record(z.string(), z.union([z.string(), z.number()])),

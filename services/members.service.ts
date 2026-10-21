@@ -413,9 +413,10 @@ export class MembersService {
     ]);
     const rec = values.get(Buffer.from(r.public_id).toString('hex')) ?? {};
     const kind = kindOf(r.category);
-    // A student's school transport on their profile (client 2026-10-15).
+    // School transport on the profile: a student's (client 2026-10-15), and a teacher's or other
+    // staff member's, who can be allocated too (client 2026-10-21).
     const transport =
-      kind === 'STUDENTS' && yearId
+      (kind === 'STUDENTS' || kind === 'STAFF') && yearId
         ? await studentTransport(db, {
             profileRowId: String(r.id),
             yearId,
@@ -770,7 +771,8 @@ export class MembersService {
     // Client 2026-10-16: the primary contact's e-mail is required (fee, absence and other e-mails
     // reach them); a second parent's stays optional.
     if (await this.parentEmailRequired()) {
-      if (parent && !input.email?.trim()) errors.push({ field: 'email', code: 'VALIDATION.REQUIRED' });
+      if (parent && !input.email?.trim())
+        errors.push({ field: 'email', code: 'VALIDATION.REQUIRED' });
       const primary = input.guardians?.[0];
       if (student && primary && !primary.memberId && !primary.email?.trim()) {
         errors.push({ field: 'guardians.0.email', code: 'VALIDATION.REQUIRED' });

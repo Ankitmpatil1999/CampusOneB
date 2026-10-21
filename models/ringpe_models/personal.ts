@@ -132,7 +132,7 @@ export interface NotificationsTable {
   public_id: Buffer;
   institution_id: Ref | null;
   account_id: Ref;
-  surface: 'CONSOLE' | 'MEMBER';
+  surface: 'CONSOLE' | 'MEMBER' | 'OPS';
   category: string;
   title_key: string;
   params: ColumnType<unknown, string | null, string | null>;

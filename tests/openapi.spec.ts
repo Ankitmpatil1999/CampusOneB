@@ -212,6 +212,8 @@ describe('OpenAPI 3.1 document', () => {
       'COM-032',
       'COM-033',
       'COM-034',
+      'COM-035',
+      'COM-036',
       'CPN-001',
       'CPN-002',
       'CPN-003',

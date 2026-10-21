@@ -6546,7 +6546,7 @@ paths:
   /api/v1/console/notifications:
     get:
       operationId: COM-009
-      summary: "Console bell: approvals and their decisions, newest first, with the unread count"
+      summary: "Console bell, newest first, with the unread count: approvals and their decisions, and for a teacher, principal or merchant on the web their member-app notices from this school too (client 2026-10-21)"
       tags:
         - Notifications
       x-ringpe-auth: console
@@ -14902,6 +14902,54 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/MessagingChannelInput"
+  /api/v1/ops/notifications:
+    get:
+      operationId: COM-035
+      summary: "Back-office bell (client 2026-10-21): platform requests waiting for a checker and the answers to the operator’s own, newest first, with the unread count"
+      tags:
+        - Notifications
+      x-ringpe-auth: session (ops)
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+  /api/v1/ops/notifications/read:
+    post:
+      operationId: COM-036
+      summary: Mark back-office notifications read (ids, or all)
+      tags:
+        - Notifications
+      x-ringpe-auth: session (ops)
+      responses:
+        "204":
+          description: Marked
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationsRead"
   /api/v1/ops/plan-change-requests/{requestId}/decline:
     post:
       operationId: SAS-036
@@ -39299,6 +39347,13 @@ components:
                 type: string
                 format: uuid
                 pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              surface:
+                type: string
+                enum:
+                  - CONSOLE
+                  - MEMBER
+                  - OPS
+                description: "Where it was sent: a MEMBER link is a member-app path the web maps to its page"
               category:
                 type: string
               titleKey:
@@ -39327,6 +39382,7 @@ components:
                 type: string
             required:
               - id
+              - surface
               - category
               - titleKey
               - params

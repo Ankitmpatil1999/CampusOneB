@@ -4,6 +4,10 @@
  * exactly when the change it reports does. The title is a message key rendered in the reader's
  * language (the response carries the key, its parameters and the English text); the body is the
  * request's own text.
+ *
+ * On the web (client 2026-10-21): the console bell also lists the account's member-app notices from
+ * that school when the console session works as a teacher, principal or merchant (they reach their
+ * notices on the web too), and the back office has its own bell (OPS, migration 0080).
  */
 import { emit, rooms } from '../utils/outbox';
 import type { Kysely, Transaction } from 'kysely';
@@ -13,6 +17,7 @@ import { institutionsRepository } from '../repositories/institutions.repository'
 import {
   notificationsRepository,
   type NotificationSurface,
+  type Surfaces,
 } from '../repositories/notifications.repository';
 import { NotFoundError } from '../utils/CustomAPIError';
 import { logCommSafely } from './comm-log.service';
@@ -75,7 +80,7 @@ export async function notify(db: Db, n: NotifyInput, at: Date = new Date()) {
         at,
       })),
     );
-    const surface = n.surface === 'CONSOLE' ? 'console' : 'member';
+    const surface = n.surface === 'CONSOLE' ? 'console' : n.surface === 'OPS' ? 'ops' : 'member';
     await emit(db, {
       institutionId: n.institutionId,
       type: 'notification.created',
@@ -111,7 +116,12 @@ export async function notify(db: Db, n: NotifyInput, at: Date = new Date()) {
     (accounts.length || n.about?.length) &&
     (await emailWanted(db, n.institutionId, event.key))
   ) {
-    const to = await emailRecipients(db, n.institutionId, n.about?.length ? null : accounts, n.about ?? []);
+    const to = await emailRecipients(
+      db,
+      n.institutionId,
+      n.about?.length ? null : accounts,
+      n.about ?? [],
+    );
     if (to.length) {
       const subject = renderMessage(n.titleKey, n.params ?? {}).slice(0, 200);
       const refOf = (accountId: string | null) => {
@@ -147,7 +157,8 @@ export async function notify(db: Db, n: NotifyInput, at: Date = new Date()) {
       kind: 'NOTIFICATION' as const,
       channel: 'IN_APP' as const,
       recipientAccountId: accountId,
-      recipient: n.surface === 'CONSOLE' ? 'Console' : 'In-app',
+      recipient:
+        n.surface === 'CONSOLE' ? 'Console' : n.surface === 'OPS' ? 'Back office' : 'In-app',
       raiser: n.raiser ?? null,
       outcome: 'SUCCESS' as const,
       refType: `notification.${n.category.toLowerCase()}`,
@@ -168,6 +179,19 @@ const parse = (v: unknown): Record<string, string | number> => {
   }
 };
 
+/**
+ * Console sessions that also read the account's member-app notices in the bell: a teacher, a
+ * principal or a merchant working on the web (the same grants that open /me/notifications there).
+ */
+export const MEMBER_NOTICES_ON_CONSOLE = [
+  'teaching.view',
+  'principal.view',
+  'business.view',
+] as const;
+
+/** The bell a caller reads: one surface, or the console's own and the member app's together. */
+type Bell = 'CONSOLE' | 'MEMBER' | 'OPS';
+
 export class NotificationsService {
   constructor(private readonly deps: { db: Kysely<Database>; now?: () => Date }) {}
 
@@ -186,22 +210,31 @@ export class NotificationsService {
     return String(a.id);
   }
 
-  private async scope(p: Principal, surface: NotificationSurface) {
+  private async scope(
+    p: Principal,
+    bell: Bell,
+  ): Promise<{ accountId: string; institutionId: string | null; surfaces: Surfaces }> {
     const accountId = await this.account(p);
-    if (surface === 'MEMBER') return { accountId, institutionId: null };
+    if (bell === 'MEMBER' || bell === 'OPS')
+      return { accountId, institutionId: null, surfaces: bell };
     if (!p.institutionId || !isUuid(p.institutionId)) throw new NotFoundError();
     const inst = await institutionsRepository.byPublicId(this.deps.db, uuidToBin(p.institutionId));
     if (!inst) throw new NotFoundError();
-    return { accountId, institutionId: String(inst.id) };
+    const both = MEMBER_NOTICES_ON_CONSOLE.some((g) => p.subTasks.includes(g));
+    return {
+      accountId,
+      institutionId: String(inst.id),
+      surfaces: both ? (['CONSOLE', 'MEMBER'] as const) : 'CONSOLE',
+    };
   }
 
   /** COM-009 / COM-014: newest first, with the unread count. */
   async list(
     p: Principal,
-    surface: NotificationSurface,
+    bell: Bell,
     q: { unread?: boolean | undefined; cursor?: string | undefined; limit?: number | undefined },
   ) {
-    const { accountId, institutionId } = await this.scope(p, surface);
+    const { accountId, institutionId, surfaces: surface } = await this.scope(p, bell);
     const limit = Math.min(Math.max(q.limit ?? 20, 1), 50);
     const rows = await notificationsRepository.page(
       this.deps.db,
@@ -212,7 +245,12 @@ export class NotificationsService {
     );
     const page = rows.slice(0, limit);
     const last = page.at(-1);
-    const alerts = await this.alerts(accountId, surface, institutionId, page.map((r) => r.institution_id));
+    const alerts = await this.alerts(
+      accountId,
+      surface,
+      institutionId,
+      page.map((r) => r.institution_id),
+    );
     return {
       unread: await notificationsRepository.unread(this.deps.db, accountId, surface, institutionId),
       /** Unread notices whose event raises the phone alert at their school (client 2026-10-16). */
@@ -221,6 +259,8 @@ export class NotificationsService {
         const params = parse(r.params);
         return {
           id: binToUuid(r.public_id),
+          /** Where it was sent: the web opens a member-app link at its own page. */
+          surface: r.surface,
           category: r.category,
           titleKey: r.title_key,
           params,
@@ -242,7 +282,7 @@ export class NotificationsService {
    */
   private async alerts(
     accountId: string,
-    surface: NotificationSurface,
+    surface: Surfaces,
     institutionId: string | null,
     shown: readonly (string | number | null)[],
   ) {
@@ -250,7 +290,7 @@ export class NotificationsService {
       .selectFrom('notifications')
       .select(['institution_id', 'title_key', (eb) => eb.fn.countAll<number>().as('n')])
       .where('account_id', '=', accountId)
-      .where('surface', '=', surface)
+      .where('surface', 'in', typeof surface === 'string' ? [surface] : [...surface])
       .where('read_at', 'is', null);
     if (institutionId) q = q.where('institution_id', '=', institutionId);
     const unread = await q.groupBy(['institution_id', 'title_key']).execute();
@@ -266,7 +306,10 @@ export class NotificationsService {
       return sw ? (sw.get(event.key)?.alert ?? true) : event.alertByDefault;
     };
     return {
-      unread: unread.reduce((a, r) => a + (raises(r.institution_id, r.title_key) ? Number(r.n) : 0), 0),
+      unread: unread.reduce(
+        (a, r) => a + (raises(r.institution_id, r.title_key) ? Number(r.n) : 0),
+        0,
+      ),
       raises,
     };
   }
@@ -274,10 +317,10 @@ export class NotificationsService {
   /** COM-010 / COM-015: mark the given notifications, or all, as read. */
   async markRead(
     p: Principal,
-    surface: NotificationSurface,
+    bell: Bell,
     input: { ids?: readonly string[] | undefined; all?: boolean | undefined },
   ) {
-    const { accountId, institutionId } = await this.scope(p, surface);
+    const { accountId, institutionId, surfaces: surface } = await this.scope(p, bell);
     const ids = input.all ? null : (input.ids ?? []).filter(isUuid).map(uuidToBin);
     await notificationsRepository.markRead(
       this.deps.db,
