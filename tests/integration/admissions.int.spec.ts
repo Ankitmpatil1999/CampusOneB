@@ -522,6 +522,9 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     );
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     expect(ok.body).toMatchObject({ status: 'PAID', applicationStatus: 'SUBMITTED' });
+    // The payment gateway's transaction ID is shown to the family (client 2026-10-16).
+    const txn = again.body.gatewayOrder.test.paymentId as string;
+    expect(ok.body.transactionId).toBe(txn);
     expect(ok.body.receiptNo).toMatch(/\/R\/\d{4}\/\d{6}$/);
     expect(ok.body.receiptNo).toBe(
       `${receiptBase}${String(Number(payRow.id) + 1).padStart(6, '0')}`,
@@ -544,7 +547,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(status.body).toMatchObject({
       status: 'SUBMITTED',
       name: 'D••• S•••••',
-      fees: { application: { status: 'PAID' } },
+      fees: { application: { status: 'PAID', transactionId: txn } },
     });
     expect(JSON.stringify(status.body)).not.toMatch(/Rakesh|657410|Shivamogga/);
     expect(
@@ -1465,6 +1468,10 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       },
     );
     expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    // The gateway's transaction ID on the application, for Accounts (client 2026-10-16); a cash
+    // payment has none.
+    const admTxn = order.body.gatewayOrder.test.paymentId as string;
+    expect(paid.body.transactionId).toBe(admTxn);
     expect(
       (
         await post(`/api/v1/console/applications/${id}/admission-fee/cash`, {
@@ -1503,9 +1510,23 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(
       fees.body.items.filter((x: { applicationId: string }) => x.applicationId === id),
     ).toEqual([
-      expect.objectContaining({ feeType: 'APPLICATION', status: 'PAID', mode: 'CASH' }),
-      expect.objectContaining({ feeType: 'ADMISSION', status: 'PAID', mode: 'ONLINE' }),
+      expect.objectContaining({
+        feeType: 'APPLICATION',
+        status: 'PAID',
+        mode: 'CASH',
+        transactionId: null,
+      }),
+      expect.objectContaining({
+        feeType: 'ADMISSION',
+        status: 'PAID',
+        mode: 'ONLINE',
+        transactionId: admTxn,
+      }),
     ]);
+    expect(
+      c2.body.application.fees.find((x: { feeType: string }) => x.feeType === 'ADMISSION')
+        .transactionId,
+    ).toBe(admTxn);
     const version = c2.body.application.version as number;
 
     // A school without a Parent user type (a new one has only Staff): refused before anything is
@@ -1544,6 +1565,24 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       .where('public_id', '=', uuidToBin(ok.body.memberId))
       .executeTakeFirstOrThrow();
     expect(member).toMatchObject({ admission_no: 'ADM/2026/0042' });
+    // Fee collection details (client 2026-10-19): the application and admission fees in their own
+    // columns, counted in the student's total.
+    const fc = await request(f.app)
+      .get(`/api/v1/console/fee-collection?yearId=${currentYear.id}&q=Kiran`)
+      .set(con);
+    expect(fc.status, JSON.stringify(fc.body)).toBe(200);
+    const kiranRow = fc.body.students.find((x: { id: string }) => x.id === ok.body.memberId);
+    expect(kiranRow).toMatchObject({
+      applicationFee: { amount: inr('500.00'), collected: inr('500.00'), status: 'PAID' },
+      admissionFee: {
+        amount: inr('10000.00'),
+        collected: inr('10000.00'),
+        status: 'PAID',
+        mode: 'ONLINE',
+      },
+      total: { collected: inr('10500.00') },
+    });
+    expect(fc.body.cards.admissionFee.collected).toEqual(inr('10000.00'));
     expect(
       await f.t.db
         .selectFrom('wallets')
@@ -1574,6 +1613,10 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       });
     expect(receipt.status).toBe(200);
     expect((receipt.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    // The receipt names the gateway's transaction ID (client 2026-10-16).
+    const receiptText = (receipt.body as Buffer).toString('latin1');
+    expect(receiptText).toContain('Transaction ID');
+    expect(receiptText).toContain(order.body.gatewayOrder.test.paymentId as string);
   });
 
   it('rejects with a reason, lists by status, and imports existing students (ADM-013/019/020)', async () => {

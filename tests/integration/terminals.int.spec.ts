@@ -6,6 +6,7 @@
  */
 import { createHmac, randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import type { Express } from 'express';
 import { sql } from 'kysely';
 import { adminUrl, createTestDatabase, type TestDatabase } from './db';
@@ -89,11 +90,11 @@ describe.skipIf(!adminUrl)('terminals, readers and cards on real MySQL', () => {
         device: { installId: randomUUID() },
       });
     expect(created.status).toBe(201);
-    const p = await request(app)
-      .post('/api/v1/console/members')
-      .set(school.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: teacherTypeId, firstName: name, mobile: mob });
+    const p = await onboardStaff(app, school.con, {
+      userTypeId: teacherTypeId,
+      firstName: name,
+      mobile: mob,
+    });
     await request(app)
       .put('/api/v1/me/active-profile')
       .set({ Authorization: `Bearer ${created.body.accessToken}` })

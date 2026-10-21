@@ -280,37 +280,25 @@ describe.skipIf(!adminUrl)('fee heads, entry fees and structures on real MySQL',
     });
   });
 
-  it('assigns the approved version: preview, then one record per remaining instalment, once (FEE-007)', async () => {
+  it('assigns on approval and when a student joins, and shows the collection by head (FEE-007, FEE-044/045)', async () => {
     const s = (await request(f.app).get('/api/v1/console/fee-structures').set(con)).body.items[0];
     const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
     const raised = base().instalments.filter((x) => x.dueDate >= today).length;
-    const preview = await post(`/api/v1/console/fee-structures/${s.id}/assignments`, {
-      preview: true,
-    });
-    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
-    expect(preview.body).toMatchObject({
-      version: 1,
-      totals: { students: 3, records: 3 * raised },
-      perClass: [{ class: { name: 'Grade 6' }, students: 3, already: 0, toAssign: 3 }],
-    });
-    expect(await f.t.db.selectFrom('fee_records').selectAll().execute()).toEqual([]);
-
-    const done = await post(`/api/v1/console/fee-structures/${s.id}/assignments`, {
-      preview: false,
-      optional: [{ studentId: students[0]!.id, headIds: [heads['Transport']!] }],
-    });
-    expect(done.status, JSON.stringify(done.body)).toBe(201);
-    expect(done.body).toMatchObject({ recordsCreated: 3 * raised, studentsAssigned: 3 });
-    const recs = await f.t.db
-      .selectFrom('fee_records')
-      .selectAll()
-      .where('student_profile_id', '=', students[0]!.rowId)
-      .orderBy('instalment_seq')
-      .execute();
-    expect(recs).toHaveLength(raised);
+    const rs = (paise: number) => inr((paise / 100).toFixed(2));
+    const recordsOf = (rowId: string) =>
+      f.t.db
+        .selectFrom('fee_records')
+        .selectAll()
+        .where('student_profile_id', '=', rowId)
+        .orderBy('instalment_seq')
+        .execute();
+    // Approved: every active Grade 6 student was assigned at once, with the mandatory heads
+    // (client 2026-10-16). One record per instalment still to come.
+    for (const st of students) expect(await recordsOf(st.rowId)).toHaveLength(raised);
+    const recs = await recordsOf(students[0]!.rowId);
     if (raised) {
-      // Asha takes Transport: ₹6,000 × 30 % = ₹1,800 more per remaining term.
-      expect(Number(recs.at(-1)!.amount_paise)).toBe(1_050_000 + 180_000);
+      // Term 3 (30 %): Tuition ₹9,000 + Annual ₹1,500; the optional Transport is not taken.
+      expect(Number(recs.at(-1)!.amount_paise)).toBe(1_050_000);
       expect(recs.at(-1)).toMatchObject({
         status: 'DUE',
         source: 'STRUCTURE',
@@ -323,16 +311,144 @@ describe.skipIf(!adminUrl)('fee heads, entry fees and structures on real MySQL',
         .execute();
       expect(lines.map((l) => [l.name, Number(l.amount_paise)]).sort()).toEqual([
         ['Annual', 150_000],
-        ['Transport', 180_000],
         ['Tuition', 900_000],
       ]);
     }
+    // Nothing is left for the Assign button, and it raises nothing twice.
+    const preview = await post(`/api/v1/console/fee-structures/${s.id}/assignments`, {
+      preview: true,
+    });
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body).toMatchObject({
+      version: 1,
+      totals: { students: 0, records: 0 },
+      perClass: [{ class: { name: 'Grade 6' }, students: 3, already: 3, toAssign: 0 }],
+    });
     const again = await post(`/api/v1/console/fee-structures/${s.id}/assignments`, {
       preview: false,
     });
     expect(again.body).toMatchObject({ recordsCreated: 0, studentsAssigned: 0 });
+
+    // A student who joins Grade 6 after the approval is assigned on joining.
+    const kiran = await f.student('Kiran', 5_000_000);
+    const kiranRecs = await recordsOf(kiran.rowId);
+    expect(kiranRecs).toHaveLength(raised);
     const after = (await request(f.app).get(`/api/v1/console/fee-structures`).set(con)).body
       .items[0];
-    expect(after.assigned).toEqual({ students: 3, records: 3 * raised });
+    expect(after.assigned).toEqual({ students: 4, records: 4 * raised });
+
+    // Kiran's first instalment is collected from the wallet into the fee account.
+    if (raised) {
+      const office = await f.merchant('Fees Office');
+      const inst = await request(f.app).get('/api/v1/console/institution').set(con);
+      const set = await request(f.app)
+        .put('/api/v1/console/institution/fee-account')
+        .set(con)
+        .set('If-Match', `"v${inst.body.version}"`)
+        .send({ merchantId: office.id });
+      expect(set.status, JSON.stringify(set.body)).toBe(200);
+      await f.feature('tuition', true);
+      const list = (
+        await request(f.app).get(`/api/v1/console/fee-records?studentId=${kiran.id}`).set(con)
+      ).body.items as { id: string; instalment: { seq: number } }[];
+      const first = list.find((x) => x.instalment.seq === kiranRecs[0]!.instalment_seq)!;
+      const paid = await post(`/api/v1/console/fee-records/${first.id}/collections`, {});
+      expect(paid.status, JSON.stringify(paid.body)).toBe(201);
+    }
+
+    // Fee collection details of the structure: its heads, its students by head, the cards.
+    const fc = (query: string) =>
+      request(f.app).get(`/api/v1/console/fee-collection${query}`).set(con);
+    const view = await fc(`?structureId=${s.id}`);
+    expect(view.status, JSON.stringify(view.body)).toBe(200);
+    expect(view.body.structure).toMatchObject({ id: s.id, version: 1 });
+    expect(view.body.year).toEqual({ id: year.id, label: year.label });
+    expect(view.body.heads.map((h: { name: string }) => h.name)).toEqual([
+      'Tuition',
+      'Annual',
+      'Transport',
+    ]);
+    expect(view.body).toMatchObject({ page: 1, pageSize: 15, total: 4 });
+    expect(view.body.students).toHaveLength(4);
+    const k = view.body.students.find((x: { id: string }) => x.id === kiran.id);
+    const billed = kiranRecs.reduce((a, r) => a + Number(r.amount_paise), 0);
+    expect(k.heads[2]).toBeNull(); // Transport not taken
+    // Onboarded at the console: no application, so no application or admission fee.
+    expect(k).toMatchObject({ applicationFee: null, admissionFee: null });
+    if (raised) {
+      const firstLines = await f.t.db
+        .selectFrom('fee_record_heads')
+        .select(['name', 'amount_paise'])
+        .where('record_id', '=', kiranRecs[0]!.id)
+        .execute();
+      const tuition1 = Number(firstLines.find((l) => l.name === 'Tuition')!.amount_paise);
+      const collected = Number(kiranRecs[0]!.amount_paise);
+      expect(k.total).toEqual({
+        amount: rs(billed),
+        collected: rs(collected),
+        pending: rs(billed - collected),
+      });
+      expect(k.heads[0]).toMatchObject({ collected: rs(tuition1) });
+      // Another student has collected nothing yet.
+      const asha = view.body.students.find((x: { id: string }) => x.id === students[0]!.id);
+      expect(asha.total.collected).toEqual(inr('0.00'));
+      // The cards: each head's collection and the total, over every student kept.
+      expect(view.body.cards.heads[0]).toEqual({
+        headId: view.body.heads[0].id,
+        collected: rs(tuition1),
+      });
+      expect(view.body.cards.total.collected).toEqual(rs(collected));
+      expect(view.body.cards.admissionFee.collected).toEqual(inr('0.00'));
+
+      // The year without a structure (the current year by default): the year's heads, every
+      // student enrolled, the same figures.
+      const yearView = await fc('');
+      expect(yearView.status, JSON.stringify(yearView.body)).toBe(200);
+      expect(yearView.body.structure).toBeNull();
+      const names = yearView.body.heads.map((h: { name: string }) => h.name) as string[];
+      expect(names).toEqual(expect.arrayContaining(['Tuition', 'Annual', 'Transport']));
+      expect(names.indexOf('Tuition')).toBeLessThan(names.indexOf('Annual'));
+      expect(yearView.body.total).toBe(4);
+      expect(yearView.body.cards.total.collected).toEqual(rs(collected));
+      // By class, by section, by name; a page at a time, the cards over all of them.
+      expect((await fc(`?classId=${grade6}`)).body.total).toBe(4);
+      const none = await fc(`?classId=${grade7}`);
+      expect(none.body).toMatchObject({ total: 0, students: [] });
+      expect(none.body.cards.total.collected).toEqual(inr('0.00'));
+      expect((await fc(`?sectionId=${randomUUID()}`)).body.total).toBe(0);
+      const byName = await fc('?q=kiran');
+      expect(byName.body.students.map((x: { id: string }) => x.id)).toEqual([kiran.id]);
+      const page2 = await fc(`?structureId=${s.id}&pageSize=3&page=2`);
+      expect(page2.body).toMatchObject({ page: 2, pageSize: 3, total: 4 });
+      expect(page2.body.students).toHaveLength(1);
+      expect(page2.body.cards.total.collected).toEqual(rs(collected));
+
+      // A head's instalments for the student, in the structure and in the year.
+      for (const query of [`?structureId=${s.id}`, '']) {
+        const one = await request(f.app)
+          .get(`/api/v1/console/fee-collection/students/${kiran.id}${query}`)
+          .set(con);
+        expect(one.status, JSON.stringify(one.body)).toBe(200);
+        const tuition = one.body.heads.find((h: { name: string }) => h.name === 'Tuition');
+        expect(tuition.instalments).toHaveLength(raised);
+        expect(tuition.instalments[0]).toMatchObject({
+          status: 'PAID',
+          collected: rs(tuition1),
+          pending: inr('0.00'),
+        });
+        if (raised > 1) {
+          expect(tuition.instalments[1]).toMatchObject({ status: 'DUE', collected: inr('0.00') });
+        }
+      }
+    }
+    // An unknown student, an unknown year: not found.
+    expect(
+      (
+        await request(f.app)
+          .get(`/api/v1/console/fee-collection/students/${randomUUID()}?structureId=${s.id}`)
+          .set(con)
+      ).status,
+    ).toBe(404);
+    expect((await fc(`?yearId=${randomUUID()}`)).status).toBe(404);
   });
 });

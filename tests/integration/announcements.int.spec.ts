@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import { adminUrl } from './db';
 import { mobile, schoolFixture, type Auth, type Payer } from './school';
 
@@ -78,7 +79,7 @@ describe.skipIf(!adminUrl)('announcements on real MySQL', () => {
     ).id;
     const mob = mobile();
     const tokens = await f.signUp(mob, 'Lakshmi');
-    const pr = await post('/console/members', con, {
+    const pr = await onboardStaff(f.app, con, {
       userTypeId: typeId,
       firstName: 'Lakshmi',
       mobile: mob,

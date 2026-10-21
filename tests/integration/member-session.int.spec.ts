@@ -22,11 +22,20 @@ describe.skipIf(!adminUrl)('member sessions start on the active profile (real My
 
   it('signs up and in with the school’s profile in the token, and pays without a switch', async () => {
     const mob = mobile();
+    // A student with a phone of their own: single onboarding is for students (client 2026-10-19).
+    const setup = await f.ensureStudents();
     const created = await request(f.app)
       .post('/api/v1/console/members')
       .set(f.school.con)
       .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: f.teacherTypeId, firstName: 'Nisha', mobile: mob });
+      .send({
+        userTypeId: setup.typeId,
+        firstName: 'Nisha',
+        lastName: 'Rao',
+        admissionNo: `MS/${mob}`,
+        sectionId: setup.sectionId,
+        mobile: mob,
+      });
     expect(created.status).toBe(201);
     const profileId = created.body.id as string;
 

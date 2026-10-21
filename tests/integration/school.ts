@@ -5,6 +5,7 @@
  */
 import { createHmac, randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import { expect } from 'vitest';
 import { createTestDatabase, type TestDatabase } from './db';
 import { buildHttpApp, codeOf } from './http-app';
@@ -255,12 +256,12 @@ export async function schoolFixture(name: string) {
   async function payer(firstName: string, paise: number): Promise<Payer> {
     const mob = mobile();
     const tokens = await signUp(mob, firstName);
-    const r = await request(app)
-      .post('/api/v1/console/members')
-      .set(school.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: teacherTypeId, firstName, mobile: mob });
-    expect(r.status).toBe(201);
+    const r = await onboardStaff(app, school.con, {
+      userTypeId: teacherTypeId,
+      firstName,
+      mobile: mob,
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
     const auth = await onProfile(tokens, r.body.id);
     expect((await request(app).post('/api/v1/me/tpin').set(auth).send({ pin: PIN })).status).toBe(
       201,
@@ -493,6 +494,7 @@ export async function schoolFixture(name: string) {
     t,
     h,
     app,
+    ensureStudents,
     ops,
     school,
     teacherTypeId,

@@ -7,6 +7,7 @@
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import type { Express } from 'express';
 import { adminUrl, createTestDatabase, type TestDatabase } from './db';
 import { buildHttpApp, codeOf } from './http-app';
@@ -202,11 +203,11 @@ describe.skipIf(!adminUrl)('approvals and notifications on real MySQL', () => {
   }
 
   const teacher = async (firstName: string) => {
-    const r = await request(app)
-      .post('/api/v1/console/members')
-      .set(a.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: teacherType.id, firstName, mobile: mobile() });
+    const r = await onboardStaff(app, a.con, {
+      userTypeId: teacherType.id,
+      firstName,
+      mobile: mobile(),
+    });
     expect(r.status).toBe(201);
     return r.body.id as string;
   };
@@ -455,11 +456,11 @@ describe.skipIf(!adminUrl)('approvals and notifications on real MySQL', () => {
     // A member of school A (a teacher onboarded with the same mobile).
     const mob = mobile();
     const auth = await member(mob);
-    const linked = await request(app)
-      .post('/api/v1/console/members')
-      .set(a.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: teacherType.id, firstName: 'Asha', mobile: mob });
+    const linked = await onboardStaff(app, a.con, {
+      userTypeId: teacherType.id,
+      firstName: 'Asha',
+      mobile: mob,
+    });
     expect(linked.status).toBe(201);
     // The app's Me screen lists the school profile on the account (CR-04).
     const me = await request(app).get('/api/v1/me').set(auth);

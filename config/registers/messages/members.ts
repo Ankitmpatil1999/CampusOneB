@@ -175,6 +175,13 @@ export const MEMBER_MESSAGES = [
     'A de-link request for this member is already waiting for approval.',
     ['6.26', 'OI-IDN-25'],
   ),
+  // Single onboarding is for students; every other role is onboarded as staff (client 2026-10-19).
+  n(
+    'IDN.STUDENTS_ONLY',
+    422,
+    'Only students are onboarded here. Onboard staff, teachers and other roles through Staff onboarding.',
+    ['client 2026-10-19'],
+  ),
   n('IDN.WARD_REQUIRED', 422, 'Choose at least one student for the parent.', ['6.20']),
   n('IDN.WARD_NOT_STUDENT', 422, 'Only students can be linked to a parent.', ['6.20']),
   r(
@@ -212,6 +219,35 @@ export const MEMBER_MESSAGES = [
     'This file is the {used} template. Upload it with the {used} upload, or download the {wanted} template.',
     ['6.18', 'OI-IDN-21', 'client 2026-10-13'],
     ['used', 'wanted'],
+  ),
+  // The members template follows the admission form (client 2026-10-19).
+  n(
+    'UPL.OLD_TEMPLATE',
+    422,
+    'This file is the earlier members template. Download the template again — it now has the admission form’s columns.',
+    ['6.18', 'client 2026-10-19'],
+  ),
+  n('UPL.YES_NO', 422, 'Write Yes or No.', ['client 2026-10-19']),
+  n(
+    'UPL.YEAR_UNKNOWN',
+    422,
+    'There is no academic year “{year}”. Leave it empty for the current year.',
+    ['client 2026-10-19'],
+    ['year'],
+  ),
+  n(
+    'UPL.STOP_UNKNOWN',
+    422,
+    'There is no pick-up point “{stop}”. Use a name from the school’s transport stops.',
+    ['client 2026-10-19'],
+    ['stop'],
+  ),
+  n(
+    'UPL.NOT_A_STUDENT',
+    422,
+    'The user type “{t}” is not a student type. Leave it empty for the student type.',
+    ['client 2026-10-19'],
+    ['t'],
   ),
   n(
     'UPL.NOT_CSV',

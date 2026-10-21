@@ -138,6 +138,7 @@ import type { FeesService } from '../services/fees.service';
 import type { FeeRecordsService } from '../services/fee-records.service';
 import type { FeeUploadsService } from '../services/fee-uploads.service';
 import type { FeeDuesService } from '../services/fee-dues.service';
+import type { FeePaymentsService } from '../services/fee-payments.service';
 import type { FinancingService } from '../services/financing.service';
 import type { AdmissionsService } from '../services/admissions.service';
 import type { AdmissionLinksService } from '../services/admission-links.service';
@@ -222,6 +223,8 @@ export interface ApiServices {
   readonly feeRecords: FeeRecordsService;
   readonly feeUploads: FeeUploadsService;
   readonly feeDues: FeeDuesService;
+  /** Collect Fee: cash, a QR code or a payment link (client 2026-10-19). */
+  readonly feePayments: FeePaymentsService;
   readonly financing: FinancingService;
   readonly admissions: AdmissionsService;
   readonly admissionLinks: AdmissionLinksService;
@@ -380,6 +383,7 @@ export function apiRouters(s: ApiServices): Router[] {
       fees: s.fees,
       records: s.feeRecords,
       uploads: s.feeUploads,
+      payments: s.feePayments,
       loggers: s.loggers,
     }),
     feeDuesRoutes({ db: s.db, dues: s.feeDues, loggers: s.loggers }),

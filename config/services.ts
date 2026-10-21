@@ -105,6 +105,7 @@ import {
   PaymentGatewaysService,
   type SchoolGatewayFactory,
 } from '../services/payment-gateways.service';
+import { FeePaymentsService } from '../services/fee-payments.service';
 import { AdmissionsService } from '../services/admissions.service';
 import { AdmissionLinksService } from '../services/admission-links.service';
 import { SettlementService } from '../services/settlement.service';
@@ -481,6 +482,42 @@ export function buildApiServices(args: {
     settings,
     ...(now ? { now } : {}),
   });
+  const gateway =
+    o.gateway ??
+    createPaymentGateway(
+      config.paymentGatewayMode,
+      security.cipher.secret('payment_gateway_test'),
+      config.razorpay,
+    );
+  // Collect Fee: an instalment in cash, or by a payment link or QR code (client 2026-10-19).
+  const feePayments = new FeePaymentsService({
+    db,
+    flows,
+    gateway,
+    gateways: paymentGateways,
+    webUrl: config.publicWebUrl,
+    sms: smsSender,
+    email: emailSender,
+    settings,
+    ...(now ? { now } : {}),
+  });
+  const admissions = new AdmissionsService({
+    db,
+    cipher: security.cipher,
+    files,
+    members,
+    otp,
+    flows,
+    links: admissionLinks,
+    gateway,
+    gateways: paymentGateways,
+    feeOrders: feePayments,
+    webUrl: config.publicWebUrl,
+    sms: smsSender,
+    email: emailSender,
+    settings,
+    ...(now ? { now } : {}),
+  });
   return {
     db,
     loggers,
@@ -488,28 +525,8 @@ export function buildApiServices(args: {
     admissionLinks,
     paymentGateways,
     settlement,
-    admissions: new AdmissionsService({
-      db,
-      cipher: security.cipher,
-      files,
-      members,
-      otp,
-      flows,
-      links: admissionLinks,
-      gateway:
-        o.gateway ??
-        createPaymentGateway(
-          config.paymentGatewayMode,
-          security.cipher.secret('payment_gateway_test'),
-          config.razorpay,
-        ),
-      gateways: paymentGateways,
-      webUrl: config.publicWebUrl,
-      sms: smsSender,
-      email: emailSender,
-      settings,
-      ...(now ? { now } : {}),
-    }),
+    admissions,
+    feePayments,
     settings,
     sessions,
     otp,
@@ -544,7 +561,14 @@ export function buildApiServices(args: {
     billing,
     subscriptions,
     members,
-    memberUploads: new MemberUploadsService({ db, members, settings, ...(now ? { now } : {}) }),
+    memberUploads: new MemberUploadsService({
+      db,
+      members,
+      admissions,
+      cipher: security.cipher,
+      settings,
+      ...(now ? { now } : {}),
+    }),
     academics,
     approvals: new ApprovalsService({
       db,

@@ -554,7 +554,15 @@ export class PrincipalService {
       app
         ? db
             .selectFrom('admission_payments')
-            .select(['fee_type', 'amount_paise', 'status', 'receipt_no', 'paid_at', 'confirmed_at'])
+            .select([
+              'fee_type',
+              'amount_paise',
+              'status',
+              'receipt_no',
+              'gateway_payment_id',
+              'paid_at',
+              'confirmed_at',
+            ])
             .where('application_id', '=', String(app.id))
             .orderBy('fee_type')
             .execute()
@@ -575,8 +583,12 @@ export class PrincipalService {
       records.length
         ? db
             .selectFrom('fee_collections as fc')
-            .innerJoin('payment_attempts as pa', 'pa.id', 'fc.payment_attempt_id')
-            .select(['fc.record_id', 'pa.reference'])
+            // A cash or online collection has its receipt number instead (0075).
+            .leftJoin('payment_attempts as pa', 'pa.id', 'fc.payment_attempt_id')
+            .select([
+              'fc.record_id',
+              sql<string>`COALESCE(pa.reference, fc.receipt_no, '')`.as('reference'),
+            ])
             .where(
               'fc.record_id',
               'in',
@@ -708,6 +720,8 @@ export class PrincipalService {
               amount: money(Number(x.amount_paise)),
               status: x.confirmed_at ? 'CONFIRMED' : x.status,
               receiptNo: x.receipt_no,
+              // The payment gateway's transaction ID (client 2026-10-16).
+              transactionId: x.gateway_payment_id,
               paidAt: isoOf(x.paid_at),
             })),
           }

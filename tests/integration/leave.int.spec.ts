@@ -9,6 +9,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import { adminUrl } from './db';
 import { mobile, schoolFixture, type Auth, type Payer } from './school';
 
@@ -54,7 +55,7 @@ describe.skipIf(!adminUrl)('leave on real MySQL', () => {
     ).id;
     const mob = mobile();
     const tokens = await f.signUp(mob, first);
-    const m = await post('/console/members', con, {
+    const m = await onboardStaff(f.app, con, {
       userTypeId: typeId,
       firstName: first,
       mobile: mob,

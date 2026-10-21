@@ -200,10 +200,17 @@ export interface FeeCollectionsTable {
   public_id: Buffer;
   institution_id: Ref;
   record_id: Ref;
-  payment_attempt_id: Ref;
+  /** The payment-engine attempt of a wallet collection; null for cash and online (0075). */
+  payment_attempt_id: Ref | null;
   amount_paise: Paise;
   fine_paise: ColumnType<string, number | string | undefined, number | string>;
   source: 'CONSOLE' | 'JOB' | 'MEMBER';
+  /** How it was paid (migration 0075): from the wallet, in cash, or through the gateway. */
+  mode: ColumnType<FeeCollectionMode, FeeCollectionMode | undefined, FeeCollectionMode>;
+  receipt_no: string | null;
+  paid_by: string | null;
+  gateway_payment_id: string | null;
+  collected_by: Buffer | null;
   status: ColumnType<
     'COLLECTED' | 'SETTLED',
     'COLLECTED' | 'SETTLED' | undefined,
@@ -211,6 +218,35 @@ export interface FeeCollectionsTable {
   >;
   settlement_ref: string | null;
   collected_at: Timestamp;
+}
+
+export type FeeCollectionMode = 'WALLET' | 'CASH' | 'ONLINE';
+export type FeePaymentRequestStatus = 'OPEN' | 'PAID' | 'CANCELLED';
+
+/** A payment link or QR code for one instalment (migration 0075; client 2026-10-19). */
+export interface FeePaymentRequestsTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  record_id: Ref;
+  channel: 'LINK' | 'QR';
+  amount_paise: Paise;
+  status: ColumnType<
+    FeePaymentRequestStatus,
+    FeePaymentRequestStatus | undefined,
+    FeePaymentRequestStatus
+  >;
+  sent_mobile: string | null;
+  sent_email: string | null;
+  gateway_id: ColumnType<Ref | null, Ref | null | undefined, Ref | null>;
+  gateway_order_id: string | null;
+  gateway_payment_id: string | null;
+  collection_id: ColumnType<Ref | null, Ref | null | undefined, Ref | null>;
+  expires_at: Timestamp;
+  paid_at: NullableTimestamp;
+  created_by: Buffer | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
 }
 
 export interface FeeConsentsTable {
@@ -252,6 +288,7 @@ export interface FeeFinancingRecordsTable {
 export interface FeeTables {
   fee_collection_attempts: FeeCollectionAttemptsTable;
   fee_collections: FeeCollectionsTable;
+  fee_payment_requests: FeePaymentRequestsTable;
   fee_consents: FeeConsentsTable;
   fee_heads: FeeHeadsTable;
   entry_fees: EntryFeesTable;

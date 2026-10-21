@@ -328,14 +328,22 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'FEE.FINANCING_EXISTS': '{student} is already registered with the financing partner ({status}).',
   'FEE.FINANCING_NOT_ELIGIBLE': 'Only unpaid fees of the current academic year can be financed.',
   'FEE.FINE_TOO_HIGH': 'The late fine can’t be more than the smallest instalment ({max}).',
+  'FEE.GATEWAY_NOT_CONFIGURED':
+    'Online payment is not set up for this school yet. Please pay at the school office.',
   'FEE.HEAD_REPEATED': '{name} is listed more than once. Use each head once.',
   'FEE.HEAD_TAKEN': '{name} already exists.',
   'FEE.HEAD_UNKNOWN': 'Choose a fee head from the institution’s list.',
   'FEE.INSTALMENTS_MAX': 'A structure can have at most {max} instalments.',
   'FEE.NOTHING_TO_SUBMIT': 'There is no draft of this structure to submit.',
   'FEE.NOT_A_STUDENT': 'Choose a student of this institution.',
+  'FEE.NO_CONTACT':
+    'The student has no registered mobile number or e-mail address to send the link to. Add one on the student’s profile, or show the QR code instead.',
   'FEE.NO_FEE_ACCOUNT':
     'Designate the institution’s fee account first (Merchants & QR), so event payments have a payee.',
+  'FEE.PAYMENT_NOT_VERIFIED':
+    'The payment could not be confirmed. If money was taken from your account, the school will confirm it shortly; otherwise please try again.',
+  'FEE.PAY_LINK_INVALID':
+    'This payment link is not valid or has expired. Ask the school office for a new one.',
   'FEE.RECORD_PAID': 'This fee is already paid or cancelled, or its amount has changed.',
   'FEE.SHARES_NOT_100': 'Instalment shares add up to {total}%. They must add up to exactly 100%.',
   'FEE.STRUCTURE_LOCKED': 'Waiting for approval — it can’t be changed now.',
@@ -508,6 +516,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'This mobile number is already registered as staff in this institution.',
   'IDN.STAFF_UNDER_18': 'Staff must be at least 18 years old',
   'IDN.STATUS_TRANSITION_INVALID': "A member who is {status} can't be changed this way.",
+  'IDN.STUDENTS_ONLY':
+    'Only students are onboarded here. Onboard staff, teachers and other roles through Staff onboarding.',
   'IDN.SUBTASK_RESERVED': 'Only the {role} role may hold this sub-task.',
   'IDN.SUSPENSION_PENDING': 'A suspension for this member is already waiting for approval.',
   'IDN.TASK_NOT_ASSIGNED': 'Assign the task first; its sub-tasks can then be granted one by one.',
@@ -908,14 +918,22 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'UPL.HEADER_UNKNOWN':
     'The file has a column the template doesn’t: “{found}”. Remove it, or download the template again — your institution’s own fields may have changed.',
   'UPL.NOTHING_ACCEPTED': 'No successful records.',
+  'UPL.NOT_A_STUDENT':
+    'The user type “{t}” is not a student type. Leave it empty for the student type.',
   'UPL.NOT_CSV':
     'This is an Excel workbook, not a CSV file. In Excel choose File › Save As › CSV (Comma delimited), then upload that file.',
   'UPL.NO_ROWS': 'No records received',
+  'UPL.OLD_TEMPLATE':
+    'This file is the earlier members template. Download the template again — it now has the admission form’s columns.',
   'UPL.ROW_CHANGED':
     'Row {row} can no longer be onboarded: {reason} Nothing was onboarded; upload the sheet again.',
+  'UPL.STOP_UNKNOWN':
+    'There is no pick-up point “{stop}”. Use a name from the school’s transport stops.',
   'UPL.TOO_MANY_ROWS': 'Upload at most {max} rows at a time.',
   'UPL.WRONG_TEMPLATE':
     'This file is the {used} template. Upload it with the {used} upload, or download the {wanted} template.',
+  'UPL.YEAR_UNKNOWN': 'There is no academic year “{year}”. Leave it empty for the current year.',
+  'UPL.YES_NO': 'Write Yes or No.',
   'VALIDATION.AMOUNT': 'Enter an amount greater than ₹0 with up to 2 decimals.',
   'VALIDATION.CONFIRM_MISMATCH': "The two entries don't match.",
   'VALIDATION.DATE': 'Enter a valid date.',

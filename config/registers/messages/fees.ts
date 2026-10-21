@@ -133,6 +133,31 @@ export const FEE_MESSAGES = [
     'The family hasn’t agreed to wallet collection yet, so the fee can’t be collected from the wallet.',
     ['13.5', 'OI-FEE-11'],
   ),
+  // Collect Fee: cash, a QR code or a payment link (client 2026-10-19).
+  n(
+    'FEE.NO_CONTACT',
+    409,
+    'The student has no registered mobile number or e-mail address to send the link to. Add one on the student’s profile, or show the QR code instead.',
+    ['client 2026-10-19'],
+  ),
+  n(
+    'FEE.PAY_LINK_INVALID',
+    404,
+    'This payment link is not valid or has expired. Ask the school office for a new one.',
+    ['client 2026-10-19'],
+  ),
+  n(
+    'FEE.PAYMENT_NOT_VERIFIED',
+    402,
+    'The payment could not be confirmed. If money was taken from your account, the school will confirm it shortly; otherwise please try again.',
+    ['client 2026-10-19'],
+  ),
+  n(
+    'FEE.GATEWAY_NOT_CONFIGURED',
+    503,
+    'Online payment is not set up for this school yet. Please pay at the school office.',
+    ['client 2026-10-19'],
+  ),
   n('FEE.FINANCED', 409, 'This fee is paid through the financing partner, not from the wallet.', [
     '13.12',
     'OI-FEE-17',

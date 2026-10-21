@@ -99,6 +99,8 @@ export interface FormView {
     readonly amount: { readonly amount: string };
     readonly status: string;
     readonly receiptNo: string | null;
+    /** The payment gateway's transaction ID (client 2026-10-16). */
+    readonly transactionId?: string | null;
   }[];
   readonly declaration: { readonly at: string | null; readonly by: string | null } | null;
   readonly submittedAt: string | null;
@@ -432,6 +434,7 @@ export function admissionFormPdf(
           rupees(f.amount.amount),
           f.status === 'PAID' ? 'paid' : 'to pay',
           f.receiptNo ? `receipt ${f.receiptNo}` : '',
+          f.transactionId ? `transaction ID ${f.transactionId}` : '',
         ),
       );
     }

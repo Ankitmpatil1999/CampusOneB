@@ -4160,6 +4160,65 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/console/fee-collection:
+    get:
+      operationId: FEE-044
+      summary: "Fee collection details of an academic year (?yearId, the current one by default), narrowed by ?classId, ?sectionId, ?q and an approved ?structureId (then only its heads and its assigned students): every head of the year as a column, each student with what every head has collected, the application and admission fees and the total collected; summary cards over every student the filters keep; ?page and ?pageSize (15, at most 100) (client 2026-10-16, 2026-10-19). From the records and collections; the fee part only, a record’s collection shared between its heads by amount"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.view
+      responses:
+        "200":
+          description: Collection details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeCollectionDetails"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: yearId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: classId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sectionId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: structureId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: string
   /api/v1/console/fee-collection-attempts:
     get:
       operationId: FEE-018
@@ -4185,6 +4244,79 @@ paths:
         - cookie: []
       parameters:
         - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+  /api/v1/console/fee-collection/students/{studentId}:
+    get:
+      operationId: FEE-045
+      summary: "One student’s instalments of every head in the academic year (?yearId, the current one by default), of an approved ?structureId when one is chosen: amount, collected, pending and status of each (client 2026-10-16, 2026-10-19)"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.view
+      responses:
+        "200":
+          description: The student’s heads and instalments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeCollectionStudent"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: yearId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: structureId
+          in: query
+          required: false
+          schema:
+            type: string
+  /api/v1/console/fee-collection/students/{studentId}/collect:
+    get:
+      operationId: FEE-046
+      summary: "Collect Fee: the student’s virtual account number (VAN), the year’s instalments (?yearId, the current year by default) with what is outstanding on each and whether it can be collected, and where a payment link would be sent (masked)"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.collect
+      responses:
+        "200":
+          description: The student to collect from
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeCollectStudent"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: yearId
           in: query
           required: false
           schema:
@@ -4407,6 +4539,47 @@ paths:
           required: true
           schema:
             type: string
+  /api/v1/console/fee-records/{recordId}/cash:
+    post:
+      operationId: FEE-047
+      summary: "Collect an instalment’s outstanding amount (with any late fine) in cash: the record is paid, with a receipt number; any auto-debit waiting and the record’s open payment links end"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.collect
+      responses:
+        "201":
+          description: Collected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeCashCollected"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeeCashInput"
   /api/v1/console/fee-records/{recordId}/change-requests:
     post:
       operationId: FEE-013
@@ -4489,6 +4662,47 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/console/fee-records/{recordId}/payment-requests:
+    post:
+      operationId: FEE-048
+      summary: "A payment link (channel LINK: sent by SMS and e-mail through the school’s channels to the student’s registered mobile and e-mail, a parent’s for a child without their own) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.collect
+      responses:
+        "201":
+          description: The link or QR code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeePaymentRequest"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeePaymentRequestInput"
   /api/v1/console/fee-records/students:
     get:
       operationId: FEE-043
@@ -5302,7 +5516,7 @@ paths:
         - cookie: []
     post:
       operationId: IDN-048
-      summary: Onboard one member (student with grade, section and parents; parent with children; other user types); linked to the RingPe account of the mobile, or linked when it signs up
+      summary: "Onboard one student, with grade, section and parents (client 2026-10-19: every other role through staff onboarding, IDN-053; another user type is refused, IDN.STUDENTS_ONLY); linked to the RingPe account of the mobile, or linked when it signs up"
       tags:
         - Members
       x-ringpe-auth: members.onboard
@@ -5796,7 +6010,7 @@ paths:
   /api/v1/console/members/uploads/templates/{kind}:
     get:
       operationId: IDN-052
-      summary: The template (CSV) with the institution fields as extra columns; kind members or staff
+      summary: "The template (CSV): kind members has the admission form columns (client 2026-10-19), required ones marked *, staff the staff columns; the institution fields follow as extra columns"
       tags:
         - Members
       x-ringpe-auth: members.onboard
@@ -18447,6 +18661,120 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AdmissionStatusLookup"
+  /api/v1/public/fee-payments/{requestId}:
+    get:
+      operationId: FEE-049
+      summary: "The payment page of a link or QR code: the school, the student, the instalment, the amount and whether it is paid. X-Fee-Pay-Token: the payment link's token (or ?token=)"
+      tags:
+        - Fees
+      x-ringpe-auth: public (payment link token)
+      responses:
+        "200":
+          description: The payment page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeePaymentPage"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+  /api/v1/public/fee-payments/{requestId}/orders:
+    post:
+      operationId: FEE-050
+      summary: "An order with the school’s gateway for what is outstanding on the instalment now. X-Fee-Pay-Token: the payment link's token (or ?token=)"
+      tags:
+        - Fees
+      x-ringpe-auth: public (payment link token)
+      responses:
+        "201":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeePaymentOrder"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+  /api/v1/public/fee-payments/{requestId}/verify:
+    post:
+      operationId: FEE-051
+      summary: "The checkout’s answer: its signature, then the payment as the gateway holds it (this order, the whole amount, captured); the instalment is paid once, here or by the gateway’s webhook. X-Fee-Pay-Token: the payment link's token (or ?token=)"
+      tags:
+        - Fees
+      x-ringpe-auth: public (payment link token)
+      responses:
+        "200":
+          description: Paid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeePaymentPage"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeePaymentVerifyInput"
   /api/v1/public/institutions/{institutionId}/logo:
     get:
       operationId: INS-043
@@ -21526,6 +21854,9 @@ components:
           type:
             - string
             - "null"
+        transactionId:
+          type: string
+          description: The payment gateway’s transaction ID
         applicationStatus:
           type: string
           enum:
@@ -21536,6 +21867,7 @@ components:
       required:
         - status
         - receiptNo
+        - transactionId
         - applicationStatus
       additionalProperties: false
     AdmissionPaymentVerify:
@@ -28779,6 +29111,49 @@ components:
       required:
         - preview
       additionalProperties: false
+    FeeCashCollected:
+      type: object
+      properties:
+        receiptNo:
+          type: string
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        mode:
+          type: string
+          const: CASH
+        recordId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        status:
+          type: string
+          const: PAID
+      required:
+        - receiptNo
+        - amount
+        - mode
+        - recordId
+        - status
+      additionalProperties: false
+    FeeCashInput:
+      type: object
+      properties:
+        paidBy:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: "null"
+      additionalProperties: false
     FeeCollected:
       type: object
       properties:
@@ -28891,6 +29266,497 @@ components:
             additionalProperties: false
       required:
         - items
+      additionalProperties: false
+    FeeCollectionDetails:
+      type: object
+      properties:
+        year:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            label:
+              type: string
+          required:
+            - id
+            - label
+          additionalProperties: false
+        structure:
+          anyOf:
+            - type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                name:
+                  type: string
+                version:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+              required:
+                - id
+                - name
+                - version
+              additionalProperties: false
+            - type: "null"
+        heads:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+            required:
+              - id
+              - name
+            additionalProperties: false
+        cards:
+          type: object
+          properties:
+            heads:
+              type: array
+              items:
+                type: object
+                properties:
+                  headId:
+                    type: string
+                  collected:
+                    type: object
+                    properties:
+                      amount:
+                        type: string
+                      currency:
+                        type: string
+                        const: INR
+                    required:
+                      - amount
+                      - currency
+                    additionalProperties: false
+                required:
+                  - headId
+                  - collected
+                additionalProperties: false
+            applicationFee:
+              type: object
+              properties:
+                amount:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+                collected:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+                pending:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+              required:
+                - amount
+                - collected
+                - pending
+              additionalProperties: false
+            admissionFee:
+              type: object
+              properties:
+                amount:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+                collected:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+                pending:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+              required:
+                - amount
+                - collected
+                - pending
+              additionalProperties: false
+            total:
+              type: object
+              properties:
+                amount:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+                collected:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+                pending:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+              required:
+                - amount
+                - collected
+                - pending
+              additionalProperties: false
+          required:
+            - heads
+            - applicationFee
+            - admissionFee
+            - total
+          additionalProperties: false
+        students:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              name:
+                type: string
+              admissionNo:
+                type:
+                  - string
+                  - "null"
+              classSection:
+                type:
+                  - string
+                  - "null"
+              heads:
+                type: array
+                items:
+                  anyOf:
+                    - type: object
+                      properties:
+                        amount:
+                          type: object
+                          properties:
+                            amount:
+                              type: string
+                            currency:
+                              type: string
+                              const: INR
+                          required:
+                            - amount
+                            - currency
+                          additionalProperties: false
+                        collected:
+                          type: object
+                          properties:
+                            amount:
+                              type: string
+                            currency:
+                              type: string
+                              const: INR
+                          required:
+                            - amount
+                            - currency
+                          additionalProperties: false
+                        pending:
+                          type: object
+                          properties:
+                            amount:
+                              type: string
+                            currency:
+                              type: string
+                              const: INR
+                          required:
+                            - amount
+                            - currency
+                          additionalProperties: false
+                        headId:
+                          type: string
+                      required:
+                        - amount
+                        - collected
+                        - pending
+                        - headId
+                      additionalProperties: false
+                    - type: "null"
+              applicationFee:
+                anyOf:
+                  - type: object
+                    properties:
+                      amount:
+                        type: object
+                        properties:
+                          amount:
+                            type: string
+                          currency:
+                            type: string
+                            const: INR
+                        required:
+                          - amount
+                          - currency
+                        additionalProperties: false
+                      collected:
+                        type: object
+                        properties:
+                          amount:
+                            type: string
+                          currency:
+                            type: string
+                            const: INR
+                        required:
+                          - amount
+                          - currency
+                        additionalProperties: false
+                      pending:
+                        type: object
+                        properties:
+                          amount:
+                            type: string
+                          currency:
+                            type: string
+                            const: INR
+                        required:
+                          - amount
+                          - currency
+                        additionalProperties: false
+                      status:
+                        type: string
+                        enum:
+                          - PENDING
+                          - PAID
+                          - FAILED
+                      mode:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - ONLINE
+                              - CASH
+                          - type: "null"
+                      receiptNo:
+                        type:
+                          - string
+                          - "null"
+                    required:
+                      - amount
+                      - collected
+                      - pending
+                      - status
+                      - mode
+                      - receiptNo
+                    additionalProperties: false
+                  - type: "null"
+              admissionFee:
+                anyOf:
+                  - type: object
+                    properties:
+                      amount:
+                        type: object
+                        properties:
+                          amount:
+                            type: string
+                          currency:
+                            type: string
+                            const: INR
+                        required:
+                          - amount
+                          - currency
+                        additionalProperties: false
+                      collected:
+                        type: object
+                        properties:
+                          amount:
+                            type: string
+                          currency:
+                            type: string
+                            const: INR
+                        required:
+                          - amount
+                          - currency
+                        additionalProperties: false
+                      pending:
+                        type: object
+                        properties:
+                          amount:
+                            type: string
+                          currency:
+                            type: string
+                            const: INR
+                        required:
+                          - amount
+                          - currency
+                        additionalProperties: false
+                      status:
+                        type: string
+                        enum:
+                          - PENDING
+                          - PAID
+                          - FAILED
+                      mode:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - ONLINE
+                              - CASH
+                          - type: "null"
+                      receiptNo:
+                        type:
+                          - string
+                          - "null"
+                    required:
+                      - amount
+                      - collected
+                      - pending
+                      - status
+                      - mode
+                      - receiptNo
+                    additionalProperties: false
+                  - type: "null"
+              total:
+                type: object
+                properties:
+                  amount:
+                    type: object
+                    properties:
+                      amount:
+                        type: string
+                      currency:
+                        type: string
+                        const: INR
+                    required:
+                      - amount
+                      - currency
+                    additionalProperties: false
+                  collected:
+                    type: object
+                    properties:
+                      amount:
+                        type: string
+                      currency:
+                        type: string
+                        const: INR
+                    required:
+                      - amount
+                      - currency
+                    additionalProperties: false
+                  pending:
+                    type: object
+                    properties:
+                      amount:
+                        type: string
+                      currency:
+                        type: string
+                        const: INR
+                    required:
+                      - amount
+                      - currency
+                    additionalProperties: false
+                required:
+                  - amount
+                  - collected
+                  - pending
+                additionalProperties: false
+            required:
+              - id
+              - name
+              - admissionNo
+              - classSection
+              - heads
+              - applicationFee
+              - admissionFee
+              - total
+            additionalProperties: false
+        page:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        pageSize:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        total:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+      required:
+        - year
+        - structure
+        - heads
+        - cards
+        - students
+        - page
+        - pageSize
+        - total
       additionalProperties: false
     FeeCollectionPending:
       type: object
@@ -29040,6 +29906,304 @@ components:
       required:
         - rows
         - totals
+      additionalProperties: false
+    FeeCollectionStudent:
+      type: object
+      properties:
+        student:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            name:
+              type: string
+            admissionNo:
+              type:
+                - string
+                - "null"
+            classSection:
+              type:
+                - string
+                - "null"
+          required:
+            - id
+            - name
+            - admissionNo
+            - classSection
+          additionalProperties: false
+        heads:
+          type: array
+          items:
+            type: object
+            properties:
+              amount:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              collected:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              pending:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              id:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              name:
+                type: string
+              instalments:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    amount:
+                      type: object
+                      properties:
+                        amount:
+                          type: string
+                        currency:
+                          type: string
+                          const: INR
+                      required:
+                        - amount
+                        - currency
+                      additionalProperties: false
+                    collected:
+                      type: object
+                      properties:
+                        amount:
+                          type: string
+                        currency:
+                          type: string
+                          const: INR
+                      required:
+                        - amount
+                        - currency
+                      additionalProperties: false
+                    pending:
+                      type: object
+                      properties:
+                        amount:
+                          type: string
+                        currency:
+                          type: string
+                          const: INR
+                      required:
+                        - amount
+                        - currency
+                      additionalProperties: false
+                    seq:
+                      type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    label:
+                      type: string
+                    dueDate:
+                      type: string
+                    status:
+                      type: string
+                  required:
+                    - amount
+                    - collected
+                    - pending
+                    - seq
+                    - label
+                    - dueDate
+                    - status
+                  additionalProperties: false
+            required:
+              - amount
+              - collected
+              - pending
+              - id
+              - name
+              - instalments
+            additionalProperties: false
+      required:
+        - student
+        - heads
+      additionalProperties: false
+    FeeCollectStudent:
+      type: object
+      properties:
+        year:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            label:
+              type: string
+          required:
+            - id
+            - label
+          additionalProperties: false
+        student:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            name:
+              type: string
+            admissionNo:
+              type:
+                - string
+                - "null"
+            classSection:
+              type:
+                - string
+                - "null"
+          required:
+            - id
+            - name
+            - admissionNo
+            - classSection
+          additionalProperties: false
+        van:
+          anyOf:
+            - type: object
+              properties:
+                number:
+                  type: string
+                active:
+                  type: boolean
+              required:
+                - number
+                - active
+              additionalProperties: false
+            - type: "null"
+        sendTo:
+          type: object
+          properties:
+            mobile:
+              type:
+                - string
+                - "null"
+            email:
+              type:
+                - string
+                - "null"
+          required:
+            - mobile
+            - email
+          additionalProperties: false
+        instalments:
+          type: array
+          items:
+            type: object
+            properties:
+              recordId:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              label:
+                type: string
+              dueDate:
+                type: string
+              amount:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              fine:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              paid:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              outstanding:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              status:
+                type: string
+              financed:
+                type: boolean
+              collectable:
+                type: boolean
+            required:
+              - recordId
+              - label
+              - dueDate
+              - amount
+              - fine
+              - paid
+              - outstanding
+              - status
+              - financed
+              - collectable
+            additionalProperties: false
+      required:
+        - year
+        - student
+        - van
+        - sendTo
+        - instalments
       additionalProperties: false
     FeeConsentInput:
       type: object
@@ -29224,6 +30388,224 @@ components:
           pattern: ^[1-9]\d{3}$
       required:
         - pin
+      additionalProperties: false
+    FeePaymentOrder:
+      type: object
+      properties:
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        gatewayOrder:
+          type: object
+          properties:
+            orderId:
+              type: string
+            amount:
+              type: object
+              properties:
+                amount:
+                  type: string
+                currency:
+                  type: string
+                  const: INR
+              required:
+                - amount
+                - currency
+              additionalProperties: false
+            mode:
+              type: string
+              enum:
+                - test
+                - live
+            test:
+              type: object
+              properties:
+                paymentId:
+                  type: string
+                signature:
+                  type: string
+              required:
+                - paymentId
+                - signature
+              additionalProperties: false
+            checkout:
+              type: object
+              properties:
+                keyId:
+                  type: string
+                name:
+                  type: string
+              required:
+                - keyId
+                - name
+              additionalProperties: false
+          required:
+            - orderId
+            - amount
+            - mode
+          additionalProperties: false
+      required:
+        - amount
+        - gatewayOrder
+      additionalProperties: false
+    FeePaymentPage:
+      type: object
+      properties:
+        school:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            name:
+              type: string
+          required:
+            - id
+            - name
+          additionalProperties: false
+        student:
+          type: object
+          properties:
+            name:
+              type: string
+          required:
+            - name
+          additionalProperties: false
+        instalment:
+          type: object
+          properties:
+            label:
+              type: string
+            dueDate:
+              type: string
+          required:
+            - label
+            - dueDate
+          additionalProperties: false
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        status:
+          type: string
+          enum:
+            - OPEN
+            - PAID
+            - CLOSED
+          description: "PAID: paid through this link; CLOSED: paid another way, or withdrawn"
+        receiptNo:
+          type:
+            - string
+            - "null"
+        transactionId:
+          type:
+            - string
+            - "null"
+      required:
+        - school
+        - student
+        - instalment
+        - amount
+        - status
+        - receiptNo
+        - transactionId
+      additionalProperties: false
+    FeePaymentRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        channel:
+          type: string
+          enum:
+            - LINK
+            - QR
+        link:
+          type: string
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        expiresAt:
+          type: string
+        qrSvg:
+          type: string
+        sentTo:
+          description: "Where the link was sent (masked); null: not sent that way"
+          type: object
+          properties:
+            mobile:
+              type:
+                - string
+                - "null"
+            email:
+              type:
+                - string
+                - "null"
+          required:
+            - mobile
+            - email
+          additionalProperties: false
+      required:
+        - id
+        - channel
+        - link
+        - amount
+        - expiresAt
+      additionalProperties: false
+    FeePaymentRequestInput:
+      type: object
+      properties:
+        channel:
+          type: string
+          enum:
+            - LINK
+            - QR
+      required:
+        - channel
+      additionalProperties: false
+    FeePaymentVerifyInput:
+      type: object
+      properties:
+        gatewayPaymentId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        signature:
+          type: string
+          minLength: 1
+          maxLength: 256
+      required:
+        - gatewayPaymentId
+        - signature
       additionalProperties: false
     FeeRecord:
       type: object
@@ -29792,6 +31174,22 @@ components:
                   - CONSOLE
                   - JOB
                   - MEMBER
+              mode:
+                type: string
+                enum:
+                  - WALLET
+                  - CASH
+                  - ONLINE
+                description: From the wallet, in cash, or through the gateway (client 2026-10-19)
+              paidBy:
+                type:
+                  - string
+                  - "null"
+              transactionId:
+                description: The gateway’s, for an online payment
+                type:
+                  - string
+                  - "null"
               status:
                 type: string
                 enum:
@@ -29806,6 +31204,9 @@ components:
               - amount
               - fine
               - source
+              - mode
+              - paidBy
+              - transactionId
               - status
               - collectedAt
             additionalProperties: false

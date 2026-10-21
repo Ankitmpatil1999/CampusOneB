@@ -99,7 +99,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/members',
   summary:
-    'Onboard one member (student with grade, section and parents; parent with children; other user types); linked to the RingPe account of the mobile, or linked when it signs up',
+    'Onboard one student, with grade, section and parents (client 2026-10-19: every other role through staff onboarding, IDN-053; another user type is refused, IDN.STUDENTS_ONLY); linked to the RingPe account of the mobile, or linked when it signs up',
   tags,
   auth: 'members.onboard',
   request: onboardSchema,
@@ -141,7 +141,8 @@ doc({
   id: 'IDN-052',
   method: 'get',
   path: '/api/v1/console/members/uploads/templates/{kind}',
-  summary: 'The template (CSV) with the institution fields as extra columns; kind members or staff',
+  summary:
+    'The template (CSV): kind members has the admission form columns (client 2026-10-19), required ones marked *, staff the staff columns; the institution fields follow as extra columns',
   tags,
   auth: 'members.onboard',
   responses: { 200: { description: 'Template', contentType: 'text/csv' } },

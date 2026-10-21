@@ -22,11 +22,7 @@ import { createHash } from 'node:crypto';
 import type { MessageSender } from '../integrations/sms.provider';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, renderMessage, type MessageKey } from '../config/registers';
-import type {
-  GatewayOrder,
-  GatewayPayment,
-  PaymentGateway,
-} from '../integrations/payment-gateway.provider';
+import type { GatewayOrder, PaymentGateway } from '../integrations/payment-gateway.provider';
 import { ipToBin } from '../utils/ip';
 import type { PaymentGatewaysService } from './payment-gateways.service';
 import type {
@@ -47,6 +43,7 @@ import {
   addressesSectionSchema,
   parentsSectionSchema,
   previousSectionSchema,
+  referenceInputSchema,
 } from '../schemas/admissions.schema';
 import {
   BadRequestError,
@@ -65,18 +62,20 @@ import { PdfDocument, rupeesInWords } from '../utils/pdf';
 import { pdfImage, type PdfImage } from '../utils/pdf-image';
 import type { Principal } from '../utils/principal';
 import type { FieldError } from '../utils/validators';
-import { PATTERNS } from '../utils/validators';
+import { PATTERNS, toFieldErrors } from '../utils/validators';
 import type { AdmissionLinksService } from './admission-links.service';
 import { classOrder } from './admission-links.service';
 import { recordAudit } from './audit.service';
 import { admissionFormPdf } from './admission-form-pdf';
+import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
+import type { FeePaymentsService } from './fee-payments.service';
 import { activeFields, parseValues } from './custom-values.service';
 import { logoFileOf } from './institution-logo';
 import type { FileService } from './file.service';
 import type { MembersService, OnboardInput } from './members.service';
 import type { OtpService } from './otp.service';
 import { defaultValues, type SettingValues } from './settings.service';
-import type { z } from 'zod';
+import { ZodError, type z } from 'zod';
 
 type Db = Kysely<Database> | Transaction<Database>;
 type Addresses = z.infer<typeof addressesSectionSchema>;
@@ -188,7 +187,25 @@ interface StoredData {
   midTermReason?: string | null;
 }
 
-interface State {
+/**
+ * A student of the members bulk upload (client 2026-10-19: its template is the admission form): the
+ * form's sections as the sheet gave them, the year and class as public ids.
+ */
+export interface SheetApplication {
+  readonly yearId: string;
+  readonly classId: string;
+  readonly joiningDate: string | null;
+  readonly midTermReason: string | null;
+  readonly student: unknown;
+  readonly addresses: unknown;
+  readonly previous: unknown;
+  readonly parents: unknown;
+  readonly customFields: Readonly<Record<string, unknown>>;
+  readonly reference: unknown;
+}
+
+/** An application being built (exported for the members bulk upload, client 2026-10-19). */
+export interface State {
   yearRowId: string;
   classRowId: string | null;
   joiningDate: string | null;
@@ -273,6 +290,8 @@ export class AdmissionsService {
       readonly gateway: PaymentGateway;
       /** Each school's own gateways (client 2026-10-09). */
       readonly gateways?: PaymentGatewaysService;
+      /** An instalment's gateway order, for the webhook (client 2026-10-19). */
+      readonly feeOrders?: Pick<FeePaymentsService, 'gatewayOrderPaid'>;
       readonly webUrl: string;
       /** The family's notices (logged senders: every send is in the communication log). */
       readonly sms?: MessageSender;
@@ -397,7 +416,8 @@ export class AdmissionsService {
         .execute(),
       this.entryFees(this.deps.db, String(r.institution_id), String(r.year_id)),
     ]);
-    const owed = this.statesOf(cfg, fees);
+    // A student already at the school (imported, or the members sheet) owes no entry fee.
+    const owed = this.statesOf(r.source === 'IMPORT' ? undefined : cfg, fees);
     const band = r.class_name ? await this.deps.links.band(r.class_name) : null;
     const ref = this.ageReference(r);
     const age = r.dob && ref ? ageOn(day(r.dob), ref) : null;
@@ -488,6 +508,8 @@ export class AdmissionsService {
         status: f.status,
         mode: f.mode,
         receiptNo: f.receipt_no,
+        // The payment gateway's own transaction ID for an online payment (client 2026-10-16).
+        transactionId: f.gateway_payment_id,
         paidAt: iso(f.paid_at),
         paidBy: opts.console ? f.paid_by : null,
         confirmedAt: iso(f.confirmed_at),
@@ -2164,6 +2186,8 @@ export class AdmissionsService {
     return {
       status: 'PAID' as const,
       receiptNo: receipts.find((r) => r.feeType === f.fee_type)?.receiptNo ?? null,
+      // The payment gateway's transaction ID, shown to the family (client 2026-10-16).
+      transactionId: input.gatewayPaymentId,
       receipts,
       applicationStatus: after.status,
     };
@@ -2198,46 +2222,34 @@ export class AdmissionsService {
    * The gateway for a new payment: the test checkout in test mode; else the school's default
    * gateway; else RingPe's own (setting pg.platformFallback); else none.
    */
-  private async gatewayFor(
-    institutionId: string,
-  ): Promise<{ gatewayId: string | null; gateway: PaymentGateway }> {
-    if (this.deps.gateway.mode === 'test') return { gatewayId: null, gateway: this.deps.gateway };
-    const own = await this.deps.gateways?.defaultFor(institutionId);
-    if (own) return { gatewayId: own.id, gateway: own.gateway };
-    if ((await this.limit(LIMITS.pgPlatformFallback)) === 1) {
-      return { gatewayId: null, gateway: this.deps.gateway };
-    }
-    throw new CustomAPIError(503, 'ADM.GATEWAY_NOT_CONFIGURED');
+  /** The gateway a new payment of the school is taken with (gateway-payments.ts). */
+  private gatewayFor(institutionId: string) {
+    return chooseGateway(this.gatewayDeps(), institutionId, 'ADM.GATEWAY_NOT_CONFIGURED');
   }
 
   /** The gateway a payment was taken with. */
-  private async gatewayOf(gatewayId: string | null): Promise<PaymentGateway> {
-    if (gatewayId === null) return this.deps.gateway;
-    const g = await this.deps.gateways?.byId(gatewayId);
-    if (!g) throw new CustomAPIError(503, 'GEN.UNAVAILABLE');
-    return g;
+  private gatewayOf(gatewayId: string | null) {
+    return gatewayById(this.gatewayDeps(), gatewayId);
   }
 
-  private async gatewayProblem(
+  private gatewayProblem(
     g: PaymentGateway,
     f: { gateway_order_id: string | null; amount_paise: number | string },
     paymentId: string,
-  ): Promise<string | null> {
-    if (!g.fetchPayment) return null;
-    let p: GatewayPayment;
-    try {
-      p = await g.fetchPayment(paymentId);
-      if (p.status === 'authorized' && g.capturePayment && p.orderId === f.gateway_order_id) {
-        p = await g.capturePayment(paymentId, Number(f.amount_paise));
-      }
-    } catch {
-      // Not reached or not answered: nothing is marked; the family checks again.
-      throw new CustomAPIError(503, 'GEN.UNAVAILABLE');
-    }
-    if (p.orderId !== f.gateway_order_id) return 'The payment belongs to another order';
-    if (p.amountPaise !== Number(f.amount_paise)) return 'The amount paid differs from the fee';
-    if (p.status !== 'captured') return `The gateway reports the payment as ${p.status}`;
-    return null;
+  ) {
+    return gatewayProblem(
+      g,
+      { orderId: f.gateway_order_id, amountPaise: Number(f.amount_paise) },
+      paymentId,
+    );
+  }
+
+  private gatewayDeps() {
+    return {
+      gateway: this.deps.gateway,
+      gateways: this.deps.gateways,
+      platformFallback: () => this.limit(LIMITS.pgPlatformFallback),
+    };
   }
 
   // --- SAS-033: the gateway's webhook (Razorpay; client 2026-10-09) -------------------------------------
@@ -2319,7 +2331,17 @@ export class AdmissionsService {
       .orderBy('fee_type') // the ENUM's order: the application fee first
       .execute();
     const f = onOrder[0];
-    if (!f) return 'UNKNOWN_ORDER';
+    if (!f) {
+      // Not an admission fee's: an instalment's, paid from a payment link or QR code?
+      const fee = await this.deps.feeOrders?.gatewayOrderPaid({
+        orderId,
+        paymentId,
+        amountPaise: Number(p?.['amount']),
+        captured: p?.['status'] === 'captured',
+        gatewayId,
+      });
+      return fee ?? 'UNKNOWN_ORDER';
+    }
     const due = onOrder.filter((r) => r.status !== 'PAID');
     if (!due.length) return 'ALREADY_PAID';
     const orderPaise = onOrder.reduce((s, r) => s + Number(r.amount_paise), 0);
@@ -2368,7 +2390,7 @@ export class AdmissionsService {
     if (!r) throw new CustomAPIError(404, 'ADM.STATUS_NOT_FOUND');
     const fees = await this.deps.db
       .selectFrom('admission_payments')
-      .select(['fee_type', 'status', 'amount_paise'])
+      .select(['fee_type', 'status', 'amount_paise', 'gateway_payment_id'])
       .where('application_id', '=', r.id)
       .execute();
     const yearFees = await this.entryFees(
@@ -2381,7 +2403,12 @@ export class AdmissionsService {
       const configured =
         t === 'APPLICATION' ? yearFees?.application_fee_paise : yearFees?.admission_fee_paise;
       return f
-        ? { status: f.status, amount: toMoneyDto(Number(f.amount_paise)) }
+        ? {
+            status: f.status,
+            amount: toMoneyDto(Number(f.amount_paise)),
+            // The payment gateway's transaction ID of an online payment (client 2026-10-16).
+            transactionId: f.gateway_payment_id,
+          }
         : configured
           ? { status: 'NOT_DUE' as const, amount: toMoneyDto(Number(configured)) }
           : null;
@@ -2731,38 +2758,7 @@ export class AdmissionsService {
         params: { class: r.class_name ?? '—' },
       });
     }
-    const data = this.dataOf(r);
-    const parents = data.parents;
-    const guardians: NonNullable<OnboardInput['guardians']>[number][] = [];
-    const add = (
-      who: { name: string; mobile?: string | null; email?: string | null } | null | undefined,
-      relation: 'FATHER' | 'MOTHER' | 'GUARDIAN',
-    ) => {
-      if (!who?.mobile || guardians.some((g) => g.mobile === who.mobile)) return;
-      // A RingPe account is keyed on an Indian mobile: a parent with a number from another
-      // country (client 2026-10-13) stays on the application, without an account for now.
-      if (!PATTERNS.mobile.test(who.mobile)) return;
-      const n = splitName(title(who.name));
-      guardians.push({
-        firstName: n.firstName,
-        lastName: n.lastName,
-        mobile: who.mobile,
-        email: who.email ?? null,
-        relation,
-      });
-    };
-    const order: ('FATHER' | 'MOTHER' | 'GUARDIAN')[] = [
-      parents?.primary ?? 'FATHER',
-      'FATHER',
-      'MOTHER',
-      'GUARDIAN',
-    ];
-    for (const rel of order) {
-      add(
-        rel === 'FATHER' ? parents?.father : rel === 'MOTHER' ? parents?.mother : parents?.guardian,
-        rel,
-      );
-    }
+    const guardians = this.guardiansOf(this.dataOf(r).parents);
     // A new institution has only the default Staff type (RNG-ONB-024): without a Parent type the
     // parents cannot be added, and the approval would fail on a field the form does not show.
     if (guardians.length) {
@@ -3138,6 +3134,237 @@ export class AdmissionsService {
     };
   }
 
+  /**
+   * The parents who get a RingPe account with the student (ADM-018): the primary contact first, then
+   * the father, the mother and a guardian, each mobile once.
+   */
+  guardiansOf(parents: StoredData['parents']) {
+    const guardians: NonNullable<OnboardInput['guardians']>[number][] = [];
+    const add = (
+      who: { name: string; mobile?: string | null; email?: string | null } | null | undefined,
+      relation: 'FATHER' | 'MOTHER' | 'GUARDIAN',
+    ) => {
+      if (!who?.mobile || guardians.some((g) => g.mobile === who.mobile)) return;
+      // A RingPe account is keyed on an Indian mobile: a parent with a number from another
+      // country (client 2026-10-13) stays on the application, without an account for now.
+      if (!PATTERNS.mobile.test(who.mobile)) return;
+      const n = splitName(title(who.name));
+      guardians.push({
+        firstName: n.firstName,
+        lastName: n.lastName,
+        mobile: who.mobile,
+        email: who.email ?? null,
+        relation,
+      });
+    };
+    const order: ('FATHER' | 'MOTHER' | 'GUARDIAN')[] = [
+      parents?.primary ?? 'FATHER',
+      'FATHER',
+      'MOTHER',
+      'GUARDIAN',
+    ];
+    for (const rel of order) {
+      add(
+        rel === 'FATHER' ? parents?.father : rel === 'MOTHER' ? parents?.mother : parents?.guardian,
+        rel,
+      );
+    }
+    return guardians;
+  }
+
+  // --- members bulk upload (client 2026-10-19) ---------------------------------------------------------
+  /**
+   * A student from the members bulk upload, whose template is the admission form: each section is
+   * checked as the form checks it, with what the form needs before it is submitted. Not the
+   * documents (a sheet carries no files), nor what only a new admission needs (a year open for
+   * admission, the age band, the mid-term papers) — these students are already at the school.
+   * Returns the application to write, or the field errors (paths as on the form).
+   */
+  async sheetState(db: Db, institutionId: string, a: SheetApplication) {
+    const errors: FieldError[] = [];
+    const caught = (e: unknown, section: string) => {
+      if (e instanceof ZodError) {
+        errors.push(
+          ...toFieldErrors(e).map((f) => ({
+            ...f,
+            field: [section, f.field].filter(Boolean).join('.'),
+          })),
+        );
+      } else if (e instanceof ValidationError) {
+        errors.push(...((e as { errors?: readonly FieldError[] }).errors ?? []));
+      } else if (e instanceof CustomAPIError) {
+        errors.push({ field: section, code: e.code, ...(e.params ? { params: e.params } : {}) });
+      } else throw e;
+    };
+    const y = isUuid(a.yearId)
+      ? await db
+          .selectFrom('academic_years')
+          .select(['id', 'starts_on', 'ends_on'])
+          .where('institution_id', '=', institutionId)
+          .where('public_id', '=', uuidToBin(a.yearId))
+          .executeTakeFirst()
+      : undefined;
+    if (!y) errors.push({ field: 'class.yearId', code: 'VALIDATION.FORMAT' });
+    let classRowId: string | null = null;
+    try {
+      classRowId = (await this.classFor(db, institutionId, a.classId)).rowId;
+    } catch (e) {
+      caught(e, 'class.classId');
+    }
+    // An existing student may have joined years ago; empty, they joined when the year began.
+    const joining = a.joiningDate ?? (y ? day(y.starts_on) : null);
+    if (joining && (!/^\d{4}-\d{2}-\d{2}$/.test(joining) || (y && joining > day(y.ends_on)))) {
+      errors.push({ field: 'class.joiningDate', code: 'VALIDATION.DATE' });
+    }
+    if (a.midTermReason && a.midTermReason.length > 300) {
+      errors.push({ field: 'class.midTermReason', code: 'VALIDATION.FORMAT' });
+    }
+    const s: State = {
+      yearRowId: y ? String(y.id) : '',
+      classRowId,
+      joiningDate: joining,
+      midTerm: !!(y && joining && joining > day(y.starts_on)),
+      firstName: null,
+      middleName: null,
+      lastName: null,
+      gender: null,
+      dob: null,
+      primaryName: null,
+      primaryRelation: null,
+      primaryMobile: null,
+      primaryEmail: null,
+      data: { midTermReason: a.midTermReason },
+      step: 7,
+    };
+    const before = errors.length;
+    for (const k of ['student', 'addresses', 'previous', 'parents', 'customFields'] as const) {
+      try {
+        await this.apply(db, institutionId, s, k, a[k]);
+      } catch (e) {
+        caught(e, k);
+      }
+    }
+    const addresses = s.data.addresses;
+    if (addresses && !addresses.sameAsResidential && !addresses.correspondence) {
+      errors.push({ field: 'addresses.correspondence', code: 'VALIDATION.REQUIRED' });
+    }
+    if (s.data.parents) {
+      try {
+        this.distinct(s);
+      } catch (e) {
+        caught(e, 'parents');
+      }
+    }
+    // The numbers a submission needs, from the row itself: missing ones are reported with the
+    // section's other mistakes, not after they are fixed.
+    const sent = (a.parents ?? {}) as Partial<
+      Record<IdHolder, { aadhaar?: unknown; pan?: unknown } | null>
+    > & { primary?: unknown; hostel?: unknown };
+    const primary = (['FATHER', 'MOTHER', 'GUARDIAN'] as const).find((x) => x === sent.primary);
+    for (const h of idsRequired(primary ?? null, sent.hostel === true)) {
+      for (const kind of ['aadhaar', 'pan'] as const) {
+        if (!sent[h]?.[kind] && !errors.some((e) => e.field === `parents.${h}.${kind}`)) {
+          errors.push({ field: `parents.${h}.${kind}`, code: 'VALIDATION.REQUIRED' });
+        }
+      }
+    }
+    if (s.data.customFields) {
+      const fields = await activeFields(db, institutionId, 'ADMISSION_APPLICATION');
+      const done = parseValues(fields, s.data.customFields, { partial: false });
+      if (!errors.some((e) => e.field.startsWith('customFields'))) errors.push(...done.errors);
+    }
+    let reference: z.infer<typeof referenceInputSchema> | null = null;
+    if (a.reference) {
+      const r = referenceInputSchema.safeParse(a.reference);
+      if (r.success) reference = r.data;
+      else caught(r.error, 'reference');
+    }
+    // The same child already at the school this year, from the form or an earlier sheet.
+    if (errors.length === before && s.classRowId && s.yearRowId) {
+      try {
+        await this.duplicate(db, institutionId, s);
+      } catch (e) {
+        caught(e, 'student.firstName');
+      }
+    }
+    return errors.length ? { errors } : { errors, state: s, reference };
+  }
+
+  /**
+   * Writes the upload's student as an approved application of the form (source IMPORT), linked to
+   * the member just onboarded — as an admission leaves it (client 2026-10-19).
+   */
+  async insertFromSheet(
+    trx: Transaction<Database>,
+    institutionId: string,
+    s: State,
+    reference: z.infer<typeof referenceInputSchema> | null,
+    ctx: { sectionId: string; admissionNo: string; memberRowId: string; by: Buffer | null },
+  ) {
+    const inst = await trx
+      .selectFrom('institutions')
+      .select(['id', 'name', 'short_name'])
+      .where('id', '=', institutionId)
+      .executeTakeFirstOrThrow();
+    const [y, sec] = await Promise.all([
+      trx
+        .selectFrom('academic_years')
+        .select('starts_on')
+        .where('id', '=', s.yearRowId)
+        .executeTakeFirstOrThrow(),
+      trx
+        .selectFrom('sections')
+        .select('id')
+        .where('institution_id', '=', institutionId)
+        .where('public_id', '=', uuidToBin(ctx.sectionId))
+        .executeTakeFirstOrThrow(),
+    ]);
+    const no = await this.nextNo(
+      trx,
+      institutionId,
+      this.prefixOf(inst),
+      Number(day(y.starts_on).slice(0, 4)),
+    );
+    const pub = newPublicIdPair();
+    const at = this.now();
+    const app = await trx
+      .insertInto('admission_applications')
+      .values({
+        public_id: pub.bin,
+        institution_id: institutionId,
+        application_no: no,
+        source: 'IMPORT',
+        status: 'APPROVED',
+        ...this.columns(s),
+        ...this.identityColumns(institutionId, pub.id, s),
+        section_id: String(sec.id),
+        admission_no: ctx.admissionNo,
+        member_profile_id: ctx.memberRowId,
+        submitted_at: at,
+        decided_at: at,
+        decided_by: ctx.by,
+        created_by: ctx.by,
+        created_at: at,
+        updated_at: at,
+      })
+      .executeTakeFirstOrThrow();
+    if (reference) {
+      await trx
+        .insertInto('admission_references')
+        .values({
+          public_id: newPublicIdPair().bin,
+          application_id: String(app.insertId),
+          name: title(reference.name),
+          relation: reference.relation?.trim() || null,
+          mobile: reference.mobile,
+          email: reference.email ?? null,
+          created_at: at,
+        })
+        .execute();
+    }
+    return no;
+  }
+
   // --- ADM-021…024 ---------------------------------------------------------------------------------------
   /** Application and admission fees by year (prototype c.admfees). */
   async fees(
@@ -3187,6 +3414,8 @@ export class AdmissionsService {
       status: 'PENDING' | 'PAID' | 'FAILED';
       mode: 'ONLINE' | 'CASH' | null;
       receiptNo: string | null;
+      /** The payment gateway's transaction ID (online payments; client 2026-10-16). */
+      transactionId: string | null;
       paidAt: string | null;
       paidBy: string | null;
       confirmedAt: string | null;
@@ -3199,6 +3428,8 @@ export class AdmissionsService {
       for (const type of ['APPLICATION', 'ADMISSION'] as const) {
         if (f.feeType && f.feeType !== type) continue;
         const row = pays.find((x) => x.application_id === a.id && x.fee_type === type);
+        // A student already at the school (imported, or the members sheet) owes no entry fee.
+        if (!row && a.source === 'IMPORT') continue;
         const cfg = yearFees.get(String(a.year_id));
         const configured = Number(
           (type === 'APPLICATION' ? cfg?.application_fee_paise : cfg?.admission_fee_paise) ?? 0,
@@ -3224,6 +3455,7 @@ export class AdmissionsService {
           status,
           mode: row?.mode ?? null,
           receiptNo: row?.receipt_no ?? null,
+          transactionId: row?.gateway_payment_id ?? null,
           paidAt: iso(row?.paid_at),
           paidBy: row?.paid_by ?? null,
           confirmedAt: iso(row?.confirmed_at),
@@ -3397,6 +3629,7 @@ export class AdmissionsService {
         'f.status',
         'f.mode',
         'f.receipt_no',
+        'f.gateway_payment_id',
         'f.paid_at',
         'f.paid_by',
         'a.application_no',
@@ -3437,6 +3670,10 @@ export class AdmissionsService {
       ['Academic year', f.year_label],
       ['Admission number', f.admission_no ?? '—'],
       ['Paid', f.mode === 'CASH' ? `In cash${f.paid_by ? ` by ${f.paid_by}` : ''}` : 'Online'],
+      // The payment gateway's transaction ID (client 2026-10-16).
+      ...(f.gateway_payment_id
+        ? [['Transaction ID', f.gateway_payment_id] as [string, string]]
+        : []),
     ];
     let y = 200;
     for (const [k, v] of rows) {

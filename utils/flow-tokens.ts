@@ -18,7 +18,9 @@ export type FlowPurpose =
   | 'portal-signup-new'
   | 'admission-resume'
   | 'admission-pay'
-  | 'admission-otp';
+  | 'admission-otp'
+  // An instalment's payment link or QR code (client 2026-10-19).
+  | 'fee-pay';
 
 export interface FlowTokens {
   issue(

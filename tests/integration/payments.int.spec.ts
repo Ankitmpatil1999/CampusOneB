@@ -11,6 +11,7 @@
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import type { Express } from 'express';
 import { sql } from 'kysely';
 import { createServer } from 'node:http';
@@ -178,11 +179,11 @@ describe.skipIf(!adminUrl)('payments, merchants and QR on real MySQL', () => {
   async function payer(name: string, paise: number) {
     const mob = mobile();
     const tokens = await signUp(mob);
-    const r = await request(app)
-      .post('/api/v1/console/members')
-      .set(school.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: teacherTypeId, firstName: name, mobile: mob });
+    const r = await onboardStaff(app, school.con, {
+      userTypeId: teacherTypeId,
+      firstName: name,
+      mobile: mob,
+    });
     expect(r.status).toBe(201);
     const auth = await onProfile(tokens, r.body.id);
     expect((await request(app).post('/api/v1/me/tpin').set(auth).send({ pin: PIN })).status).toBe(

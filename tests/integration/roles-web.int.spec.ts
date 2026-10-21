@@ -7,6 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import { adminUrl } from './db';
 import { inr, mobile, schoolFixture, type Auth } from './school';
 import { newPublicIdPair } from '../../utils/idGenerator';
@@ -61,11 +62,11 @@ describe.skipIf(!adminUrl)('the principal, merchants and vendor merchants on the
     ).id as string;
     const mob = mobile();
     await f.signUp(mob, 'Kavitha');
-    const p = await request(f.app)
-      .post('/api/v1/console/members')
-      .set(con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: principalType, firstName: 'Kavitha', mobile: mob });
+    const p = await onboardStaff(f.app, con, {
+      userTypeId: principalType,
+      firstName: 'Kavitha',
+      mobile: mob,
+    });
     expect(p.status, JSON.stringify(p.body)).toBe(201);
     principalId = p.body.id as string;
     canteen = await f.merchant('Campus Canteen');

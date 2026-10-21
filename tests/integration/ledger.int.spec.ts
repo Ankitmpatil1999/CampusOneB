@@ -6,6 +6,7 @@
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import type { Express } from 'express';
 import { sql } from 'kysely';
 import { adminUrl, createTestDatabase, type TestDatabase } from './db';
@@ -98,11 +99,11 @@ describe.skipIf(!adminUrl)('wallets and the ledger on real MySQL', () => {
 
   /** A profile of the school with its wallets (onboarded through the console). */
   async function profile(firstName: string, mob = mobile()) {
-    const r = await request(app)
-      .post('/api/v1/console/members')
-      .set(school.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: teacherTypeId, firstName, mobile: mob });
+    const r = await onboardStaff(app, school.con, {
+      userTypeId: teacherTypeId,
+      firstName,
+      mobile: mob,
+    });
     expect(r.status).toBe(201);
     const row = await t.db
       .selectFrom('member_profiles')

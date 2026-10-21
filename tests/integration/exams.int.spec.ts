@@ -11,6 +11,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import { adminUrl } from './db';
 import { mobile, schoolFixture, type Auth, type Payer } from './school';
 
@@ -91,7 +92,7 @@ describe.skipIf(!adminUrl)('exams and marks on real MySQL', () => {
     expect(pt.status, JSON.stringify(pt.body)).toBe(201);
     const mob = mobile();
     const tokens = await f.signUp(mob, 'Lakshmi');
-    const pr = await send('post', '/members', {
+    const pr = await onboardStaff(f.app, con, {
       userTypeId: (await get('/user-types')).body.items.find(
         (x: { name: string }) => x.name === 'Principal',
       ).id,

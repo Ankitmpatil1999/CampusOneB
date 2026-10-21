@@ -192,8 +192,14 @@ export class FeeDuesService {
     if (!recordRowIds.length) return new Map<string, { reference: string; status: string }>();
     const rows = await this.deps.db
       .selectFrom('fee_collections as fc')
-      .innerJoin('payment_attempts as pa', 'pa.id', 'fc.payment_attempt_id')
-      .select(['fc.record_id', 'fc.status', 'fc.settlement_ref', 'pa.reference'])
+      // A cash or online collection has no engine attempt (0075): its receipt number instead.
+      .leftJoin('payment_attempts as pa', 'pa.id', 'fc.payment_attempt_id')
+      .select([
+        'fc.record_id',
+        'fc.status',
+        'fc.settlement_ref',
+        sql<string>`COALESCE(pa.reference, fc.receipt_no, '')`.as('reference'),
+      ])
       .where('fc.record_id', 'in', recordRowIds)
       .orderBy('fc.id')
       .execute();

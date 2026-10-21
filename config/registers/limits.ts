@@ -305,6 +305,16 @@ export const LIMITS = {
     basis: 'proposed',
     refs: ['19.8'],
   }),
+  /** How long an instalment's payment link or QR code stays valid (client 2026-10-19). */
+  feePayLinkDays: def({
+    key: 'fee.payLink.days',
+    value: 7,
+    unit: 'days',
+    adjustable: { min: 1, max: 30 },
+    scope: 'P',
+    basis: 'proposed',
+    refs: ['client 2026-10-19'],
+  }),
   feeInstalmentsMax: def({
     key: 'fee.instalments.max',
     value: 12,

@@ -12,6 +12,8 @@ import {
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import { singleFileUpload, uploadErrors } from '../controllers/file.controller';
+import { FeeCollectionService } from '../services/fee-collection.service';
+import type { FeePaymentsService } from '../services/fee-payments.service';
 import type { FeeRecordsService } from '../services/fee-records.service';
 import type { FeeUploadsService } from '../services/fee-uploads.service';
 import type { FeesService } from '../services/fees.service';
@@ -302,6 +304,11 @@ const recordDetail = record
         amount: money.describe('The fee part'),
         fine: money.describe('The late-fine part; the wallet was debited amount + fine'),
         source: z.enum(['CONSOLE', 'JOB', 'MEMBER']),
+        mode: z
+          .enum(['WALLET', 'CASH', 'ONLINE'])
+          .describe('From the wallet, in cash, or through the gateway (client 2026-10-19)'),
+        paidBy: z.string().nullable(),
+        transactionId: z.string().nullable().describe('The gateway’s, for an online payment'),
         status: z.enum(['COLLECTED', 'SETTLED']),
         collectedAt: z.string().nullable(),
       }),
@@ -468,6 +475,93 @@ fee({
       schema: z
         .object({ items: z.array(record), nextCursor: z.string().nullable() })
         .meta({ id: 'FeeRecords' }),
+    },
+  },
+});
+const sums = z.object({ amount: money, collected: money, pending: money });
+/** An application or admission fee: the payment made, or the admission fee still owed. */
+const entryFee = sums.extend({
+  status: z.enum(['PENDING', 'PAID', 'FAILED']),
+  mode: z.enum(['ONLINE', 'CASH']).nullable(),
+  receiptNo: z.string().nullable(),
+});
+fee({
+  id: 'FEE-044',
+  method: 'get',
+  path: '/api/v1/console/fee-collection',
+  summary:
+    'Fee collection details of an academic year (?yearId, the current one by default), narrowed by ?classId, ?sectionId, ?q and an approved ?structureId (then only its heads and its assigned students): every head of the year as a column, each student with what every head has collected, the application and admission fees and the total collected; summary cards over every student the filters keep; ?page and ?pageSize (15, at most 100) (client 2026-10-16, 2026-10-19). From the records and collections; the fee part only, a record’s collection shared between its heads by amount',
+  auth: 'fees.view',
+  responses: {
+    200: {
+      description: 'Collection details',
+      schema: z
+        .object({
+          year: z.object({ id: z.uuid(), label: z.string() }),
+          structure: z
+            .object({ id: z.uuid(), name: z.string(), version: z.number().int() })
+            .nullable(),
+          heads: z.array(z.object({ id: z.string(), name: z.string() })),
+          cards: z.object({
+            heads: z.array(z.object({ headId: z.string(), collected: money })),
+            applicationFee: sums,
+            admissionFee: sums,
+            total: sums,
+          }),
+          students: z.array(
+            z.object({
+              id: z.uuid(),
+              name: z.string(),
+              admissionNo: z.string().nullable(),
+              classSection: z.string().nullable(),
+              heads: z.array(sums.extend({ headId: z.string() }).nullable()),
+              applicationFee: entryFee.nullable(),
+              admissionFee: entryFee.nullable(),
+              total: sums,
+            }),
+          ),
+          page: z.number().int(),
+          pageSize: z.number().int(),
+          total: z.number().int(),
+        })
+        .meta({ id: 'FeeCollectionDetails' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-045',
+  method: 'get',
+  path: '/api/v1/console/fee-collection/students/{studentId}',
+  summary:
+    'One student’s instalments of every head in the academic year (?yearId, the current one by default), of an approved ?structureId when one is chosen: amount, collected, pending and status of each (client 2026-10-16, 2026-10-19)',
+  auth: 'fees.view',
+  responses: {
+    200: {
+      description: 'The student’s heads and instalments',
+      schema: z
+        .object({
+          student: z.object({
+            id: z.uuid(),
+            name: z.string(),
+            admissionNo: z.string().nullable(),
+            classSection: z.string().nullable(),
+          }),
+          heads: z.array(
+            sums.extend({
+              id: z.uuid(),
+              name: z.string(),
+              instalments: z.array(
+                sums.extend({
+                  seq: z.number().int(),
+                  label: z.string(),
+                  dueDate: z.string(),
+                  status: z.string(),
+                }),
+              ),
+            }),
+          ),
+        })
+        .meta({ id: 'FeeCollectionStudent' }),
     },
   },
 });
@@ -722,11 +816,174 @@ const structureIn = (b: z.infer<typeof structureInputSchema>) => ({
 });
 
 /** Mounted under /api/v1. */
+// --- Collect Fee (client 2026-10-19) ----------------------------------------------------------------
+const FEE_PAY_TOKEN = 'X-Fee-Pay-Token';
+const feePayToken = `${FEE_PAY_TOKEN}: the payment link's token (or ?token=)`;
+const gatewayOrderSchema = z.object({
+  orderId: z.string(),
+  amount: money,
+  mode: z.enum(['test', 'live']),
+  test: z.object({ paymentId: z.string(), signature: z.string() }).optional(),
+  checkout: z.object({ keyId: z.string(), name: z.string() }).optional(),
+});
+const feePaySummary = z
+  .object({
+    school: z.object({ id: z.uuid(), name: z.string() }),
+    student: z.object({ name: z.string() }),
+    instalment: z.object({ label: z.string(), dueDate: z.string() }),
+    amount: money,
+    status: z
+      .enum(['OPEN', 'PAID', 'CLOSED'])
+      .describe('PAID: paid through this link; CLOSED: paid another way, or withdrawn'),
+    receiptNo: z.string().nullable(),
+    transactionId: z.string().nullable(),
+  })
+  .meta({ id: 'FeePaymentPage' });
+export const feeCashSchema = z
+  .strictObject({ paidBy: z.string().trim().max(100).nullish() })
+  .meta({ id: 'FeeCashInput' });
+export const feePayRequestSchema = z
+  .strictObject({ channel: z.enum(['LINK', 'QR'], { message: 'VALIDATION.FORMAT' }) })
+  .meta({ id: 'FeePaymentRequestInput' });
+export const feePayVerifySchema = z
+  .strictObject({
+    gatewayPaymentId: z.string().min(1).max(64),
+    signature: z.string().min(1).max(256),
+  })
+  .meta({ id: 'FeePaymentVerifyInput' });
+fee({
+  id: 'FEE-046',
+  method: 'get',
+  path: '/api/v1/console/fee-collection/students/{studentId}/collect',
+  summary:
+    'Collect Fee: the student’s virtual account number (VAN), the year’s instalments (?yearId, the current year by default) with what is outstanding on each and whether it can be collected, and where a payment link would be sent (masked)',
+  auth: 'fees.collect',
+  responses: {
+    200: {
+      description: 'The student to collect from',
+      schema: z
+        .object({
+          year: z.object({ id: z.uuid(), label: z.string() }),
+          student: z.object({
+            id: z.uuid(),
+            name: z.string(),
+            admissionNo: z.string().nullable(),
+            classSection: z.string().nullable(),
+          }),
+          van: z.object({ number: z.string(), active: z.boolean() }).nullable(),
+          sendTo: z.object({ mobile: z.string().nullable(), email: z.string().nullable() }),
+          instalments: z.array(
+            z.object({
+              recordId: z.uuid(),
+              label: z.string(),
+              dueDate: z.string(),
+              amount: money,
+              fine: money,
+              paid: money,
+              outstanding: money,
+              status: z.string(),
+              financed: z.boolean(),
+              collectable: z.boolean(),
+            }),
+          ),
+        })
+        .meta({ id: 'FeeCollectStudent' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-047',
+  method: 'post',
+  path: '/api/v1/console/fee-records/{recordId}/cash',
+  summary:
+    'Collect an instalment’s outstanding amount (with any late fine) in cash: the record is paid, with a receipt number; any auto-debit waiting and the record’s open payment links end',
+  auth: 'fees.collect',
+  idempotent: 'required',
+  request: feeCashSchema,
+  responses: {
+    201: {
+      description: 'Collected',
+      schema: z
+        .object({
+          receiptNo: z.string(),
+          amount: money,
+          mode: z.literal('CASH'),
+          recordId: z.uuid(),
+          status: z.literal('PAID'),
+        })
+        .meta({ id: 'FeeCashCollected' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-048',
+  method: 'post',
+  path: '/api/v1/console/fee-records/{recordId}/payment-requests',
+  summary:
+    'A payment link (channel LINK: sent by SMS and e-mail through the school’s channels to the student’s registered mobile and e-mail, a parent’s for a child without their own) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days',
+  auth: 'fees.collect',
+  idempotent: 'required',
+  request: feePayRequestSchema,
+  responses: {
+    201: {
+      description: 'The link or QR code',
+      schema: z
+        .object({
+          id: z.uuid(),
+          channel: z.enum(['LINK', 'QR']),
+          link: z.string(),
+          amount: money,
+          expiresAt: z.string(),
+          qrSvg: z.string().optional(),
+          sentTo: z
+            .object({ mobile: z.string().nullable(), email: z.string().nullable() })
+            .optional()
+            .describe('Where the link was sent (masked); null: not sent that way'),
+        })
+        .meta({ id: 'FeePaymentRequest' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-049',
+  method: 'get',
+  path: '/api/v1/public/fee-payments/{requestId}',
+  summary: `The payment page of a link or QR code: the school, the student, the instalment, the amount and whether it is paid. ${feePayToken}`,
+  auth: 'public (payment link token)',
+  responses: { 200: { description: 'The payment page', schema: feePaySummary } },
+});
+fee({
+  id: 'FEE-050',
+  method: 'post',
+  path: '/api/v1/public/fee-payments/{requestId}/orders',
+  summary: `An order with the school’s gateway for what is outstanding on the instalment now. ${feePayToken}`,
+  auth: 'public (payment link token)',
+  idempotent: 'required',
+  responses: {
+    201: {
+      description: 'Order',
+      schema: z
+        .object({ amount: money, gatewayOrder: gatewayOrderSchema })
+        .meta({ id: 'FeePaymentOrder' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-051',
+  method: 'post',
+  path: '/api/v1/public/fee-payments/{requestId}/verify',
+  summary: `The checkout’s answer: its signature, then the payment as the gateway holds it (this order, the whole amount, captured); the instalment is paid once, here or by the gateway’s webhook. ${feePayToken}`,
+  auth: 'public (payment link token)',
+  request: feePayVerifySchema,
+  responses: { 200: { description: 'Paid', schema: feePaySummary } },
+});
+
 export function feesRoutes(deps: {
   db: Kysely<Database>;
   fees: FeesService;
   records: FeeRecordsService;
   uploads: FeeUploadsService;
+  payments: FeePaymentsService;
   loggers: Loggers;
 }): Router {
   const router = Router();
@@ -857,6 +1114,114 @@ export function feesRoutes(deps: {
           status: recordStatus.optional().parse(q(req, 'status')),
           cursor: q(req, 'cursor'),
         }),
+      );
+    }),
+  );
+  // Fee collection details (client 2026-10-16).
+  const collection = new FeeCollectionService({ db: deps.db });
+  router.get(
+    '/console/fee-collection',
+    ...console,
+    authorize('fees.view', L),
+    wrap(async (req, res) => {
+      const n = (k: string) => {
+        const v = Number(q(req, k));
+        return Number.isFinite(v) && v > 0 ? v : undefined;
+      };
+      res.json(
+        await collection.view(principal(req), {
+          yearId: q(req, 'yearId') || undefined,
+          structureId: q(req, 'structureId') || undefined,
+          classId: q(req, 'classId') || undefined,
+          sectionId: q(req, 'sectionId') || undefined,
+          q: q(req, 'q'),
+          page: n('page'),
+          pageSize: n('pageSize'),
+        }),
+      );
+    }),
+  );
+  router.get(
+    '/console/fee-collection/students/:studentId',
+    ...console,
+    authorize('fees.view', L),
+    wrap(async (req, res) => {
+      res.json(
+        await collection.student(principal(req), param(req, 'studentId'), {
+          yearId: q(req, 'yearId') || undefined,
+          structureId: q(req, 'structureId') || undefined,
+        }),
+      );
+    }),
+  );
+  // Collect Fee (client 2026-10-19): cash, a QR code or a payment link.
+  const P = deps.payments;
+  const payToken = (req: Request) => req.get(FEE_PAY_TOKEN) ?? q(req, 'token');
+  router.get(
+    '/console/fee-collection/students/:studentId/collect',
+    ...console,
+    authorize('fees.collect', L),
+    wrap(async (req, res) => {
+      res.json(
+        await P.student(principal(req), param(req, 'studentId'), {
+          yearId: q(req, 'yearId') || undefined,
+        }),
+      );
+    }),
+  );
+  router.post(
+    '/console/fee-records/:recordId/cash',
+    ...console,
+    authorize('fees.collect', L),
+    once,
+    wrap(async (req, res) => {
+      res
+        .status(201)
+        .json(
+          await P.cash(principal(req), param(req, 'recordId'), feeCashSchema.parse(req.body ?? {})),
+        );
+    }),
+  );
+  router.post(
+    '/console/fee-records/:recordId/payment-requests',
+    ...console,
+    authorize('fees.collect', L),
+    once,
+    wrap(async (req, res) => {
+      res
+        .status(201)
+        .json(
+          await P.request(
+            principal(req),
+            param(req, 'recordId'),
+            feePayRequestSchema.parse(req.body ?? {}),
+          ),
+        );
+    }),
+  );
+  router.get(
+    '/public/fee-payments/:requestId',
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await P.summary(param(req, 'requestId'), payToken(req)));
+    }),
+  );
+  router.post(
+    '/public/fee-payments/:requestId/orders',
+    once,
+    wrap(async (req, res) => {
+      res.status(201).json(await P.order(param(req, 'requestId'), payToken(req)));
+    }),
+  );
+  router.post(
+    '/public/fee-payments/:requestId/verify',
+    wrap(async (req, res) => {
+      res.json(
+        await P.verify(
+          param(req, 'requestId'),
+          payToken(req),
+          feePayVerifySchema.parse(req.body ?? {}),
+        ),
       );
     }),
   );

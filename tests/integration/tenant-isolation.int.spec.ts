@@ -10,6 +10,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import type { Express } from 'express';
 import { parse } from 'yaml';
 import { adminUrl, createTestDatabase, type TestDatabase } from './db';
@@ -167,7 +168,7 @@ describe.skipIf(!adminUrl)(
       const types = (await request(app).get('/api/v1/console/user-types').set(a.con)).body.items;
       const teacher = types.find((x: { name: string }) => x.name === 'Teacher');
       ids['userTypeId'] = teacher.id;
-      const m = await post(a.con, '/api/v1/console/members', {
+      const m = await onboardStaff(app, a.con, {
         userTypeId: teacher.id,
         firstName: 'Kavya',
         mobile: mobile(),
@@ -222,7 +223,7 @@ describe.skipIf(!adminUrl)(
       const header = String(tpl.body).replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
       const row = header
         .split(',')
-        .map((c) => (c === 'First name' ? 'Isha' : ''))
+        .map((c) => (c.replace(' *', '') === 'First name' ? 'Isha' : ''))
         .join(',');
       const up = await request(app)
         .post('/api/v1/console/members/uploads')
@@ -876,6 +877,7 @@ describe.skipIf(!adminUrl)(
             'COM-006': { channels: [] },
             'COM-020': { text: 'Testing isolation' },
             'COM-021': { archived: true },
+            'FEE-048': { channel: 'QR' },
           } as Record<string, object>
         )[opId] ?? {}
       );
@@ -894,7 +896,10 @@ describe.skipIf(!adminUrl)(
       for (const r of ROUTES) {
         const url = r.path
           .replace('/api/v1', '')
-          .replace(/\{(\w+)\}/g, (_m, n: string) => ids[n] ?? randomUUID());
+          // A path value that is not an id (ADM-036's document type) takes a valid value.
+          .replace(/\{(\w+)\}/g, (_m, n: string) =>
+            n === 'docType' ? 'PHOTO' : (ids[n] ?? randomUUID()),
+          );
         const res = await request(app)
           [r.method](`/api/v1${url}`)
           .set(b.con)
@@ -911,7 +916,9 @@ describe.skipIf(!adminUrl)(
 
     it("leaves school A's records as they were and keeps them out of school B's lists", async () => {
       const m = await request(app).get(`/api/v1/console/members/${ids['memberId']}`).set(a.con);
-      expect(m.body).toMatchObject({ status: 'ACTIVE', contact: { email: null } });
+      expect(m.body).toMatchObject({ status: 'ACTIVE' });
+      // Still the staff member's own e-mail, not the one school B sent (IDN-046).
+      expect(m.body.contact.email).toMatch(/^kavya\.\d+@example\.in$/);
       const approval = await request(app)
         .get(`/api/v1/console/approvals/${ids['approvalId']}`)
         .set(a.con);

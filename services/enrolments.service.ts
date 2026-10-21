@@ -34,6 +34,7 @@ import {
 } from './academic-year';
 import { raiseApproval } from './approvals.service';
 import { recordAudit } from './audit.service';
+import { assignStudent } from './fee-assignment';
 import { notify } from './notifications.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -314,6 +315,12 @@ export class EnrolmentsService {
         .where('id', '=', String(ins.insertId))
         .executeTakeFirstOrThrow();
       publicId = binToUuid(row.public_id);
+      // The approved fee structure of the class, unless already assigned (client 2026-10-16).
+      await assignStudent(
+        trx,
+        { institutionId: String(inst.id), studentId: String(st.id), yearId: String(year.id) },
+        { by: this.by(p), at },
+      );
       await this.change(trx, {
         institutionId: inst.id,
         studentId: String(st.id),
@@ -950,6 +957,16 @@ export class EnrolmentsService {
             created_by: by,
           })
           .execute();
+        // The new year's approved fee structure of the class (client 2026-10-16).
+        await assignStudent(
+          trx,
+          {
+            institutionId: String(inst.id),
+            studentId: String(i.student_profile_id),
+            yearId: String(to.id),
+          },
+          { by, at },
+        );
         await this.change(trx, {
           institutionId: inst.id,
           studentId: String(i.student_profile_id),

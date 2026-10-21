@@ -59,6 +59,7 @@ import {
   type CfField,
 } from './custom-values.service';
 import { memberOf } from './member-roles';
+import { assignStudent } from './fee-assignment';
 import { studentTransport } from './student-transport';
 import type { SessionService } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
@@ -578,6 +579,12 @@ export class MembersService {
           sectionId: sec.id,
           by,
         });
+        // The approved fee structure of the class, unless already assigned (client 2026-10-16).
+        await assignStudent(
+          trx,
+          { institutionId: String(inst.id), studentId: String(m.id), yearId: String(year.id) },
+          { by, at: this.now() },
+        );
         after['section'] = `${sec.class_name} ${sec.name}`;
         changed = true;
       }
@@ -707,6 +714,14 @@ export class MembersService {
     const pub = newPublicIdPair();
     const out = await this.deps.db.transaction().execute(async (trx) => {
       const inst = await this.own(p, trx, true);
+      // Students only (client 2026-10-19): staff, teachers and every other role are onboarded
+      // through staff onboarding (IDN-053), parents with their child.
+      const ut = await this.userType(trx, inst.id, input.userTypeId);
+      if (ut.category !== 'STUDENT') {
+        throw new CustomAPIError(422, 'IDN.STUDENTS_ONLY', {
+          errors: [{ field: 'userTypeId', code: 'IDN.STUDENTS_ONLY' }],
+        });
+      }
       return this.createMember(trx, inst, pub, input, by);
     });
     return { id: pub.id, memberNo: out.memberNo, guardians: out.guardians };
@@ -811,6 +826,12 @@ export class MembersService {
         sectionId: section.id,
         by,
       });
+      // A new student gets the approved fee structure of their class (client 2026-10-16).
+      await assignStudent(
+        trx,
+        { institutionId: String(inst.id), studentId: String(id), yearId: String(year.id) },
+        { by, at: this.now() },
+      );
     }
     await saveValues(trx, inst.id, pub.bin, cf.parsed);
 

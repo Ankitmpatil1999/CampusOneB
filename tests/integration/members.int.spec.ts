@@ -8,6 +8,7 @@
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import type { Express } from 'express';
 import { adminUrl, createTestDatabase, type TestDatabase } from './db';
 import { buildHttpApp, codeOf } from './http-app';
@@ -276,7 +277,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       code: 'IDN.MOBILE_IN_OTHER_INSTITUTION',
     });
     const bParent = await userType(b.con, 'Teacher');
-    const refused = await onboard(b.con, {
+    const refused = await onboardStaff(app, b.con, {
       userTypeId: bParent.id,
       firstName: 'Mahesh',
       mobile: parentMobile,
@@ -346,9 +347,22 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     expect(wallets.filter((w) => w.kind === 'CAMPUS' && w.va_number)).toHaveLength(2);
     expect(wallets.filter((w) => w.kind === 'ALLOWANCE')).toHaveLength(2);
 
+    // Single onboarding is for students; a teacher is onboarded as staff (client 2026-10-19).
+    const teacherType = (await userType(a.con, 'Teacher')).id;
+    const refused = await onboard(a.con, {
+      userTypeId: teacherType,
+      firstName: 'Lakshmi',
+      lastName: 'Rao',
+      mobile: mobile(),
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body).toMatchObject({
+      code: 'IDN.STUDENTS_ONLY',
+      errors: [{ field: 'userTypeId', code: 'IDN.STUDENTS_ONLY' }],
+    });
     // A teacher keeps a campus wallet with an active virtual account (client 2026-10-14).
-    const teacher = await onboard(a.con, {
-      userTypeId: (await userType(a.con, 'Teacher')).id,
+    const teacher = await onboardStaff(app, a.con, {
+      userTypeId: teacherType,
       firstName: 'Lakshmi',
       lastName: 'Rao',
       mobile: mobile(),
@@ -446,7 +460,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
 
   it('changes statuses: deactivate and activate at once; a suspension waits for a checker when self-apply is off', async () => {
     const teacher = await userType(a.con, 'Teacher');
-    const m = await onboard(a.con, {
+    const m = await onboardStaff(app, a.con, {
       userTypeId: teacher.id,
       firstName: 'Kavya',
       mobile: mobile(),
@@ -644,66 +658,163 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     expect(again.body).toEqual({ created: 2, skipped: 0 });
   });
 
-  it('checks a sheet row by row and onboards the accepted rows only', async () => {
+  /** An Aadhaar number (twelve digits, not starting with 0 or 1) and a PAN, each new. */
+  const aadhaar = () => `${randomInt(2, 10)}${String(randomInt(0, 1e11)).padStart(11, '0')}`;
+  const pan = () => `ABCP${'XYZ'[randomInt(0, 3)]}${String(randomInt(0, 1e4)).padStart(4, '0')}K`;
+  /** A student of the members sheet: the admission form filled in (client 2026-10-19). */
+  const student = (v: Record<string, string> = {}): Record<string, string> => ({
+    Class: 'Grade 6',
+    Section: 'A',
+    'First name': 'Isha',
+    'Last name': 'Rao',
+    Gender: 'Female',
+    'Date of birth': '21/05/2014',
+    'Residential house number and street': '12 4th Cross',
+    'Residential area or locality': 'Vinoba Nagar',
+    'Residential city or town': 'Shivamogga',
+    'Residential state': 'Karnataka',
+    'Residential PIN code': '577204',
+    'Father full name': 'Suresh Rao',
+    'Father mobile': mobile(),
+    'Father e-mail': `suresh.${randomInt(0, 1e9)}@example.in`,
+    'Father Aadhaar number': aadhaar(),
+    'Father PAN': pan(),
+    'Mother full name': 'Latha Rao',
+    'Mother mobile': mobile(),
+    'Mother Aadhaar number': aadhaar(),
+    'Mother PAN': pan(),
+    'Primary contact': 'Father',
+    'Children in the family': 'Single child',
+    'Blood group': 'A+',
+    ...v,
+  });
+  async function membersTemplate() {
     const tpl = await request(app)
       .get('/api/v1/console/members/uploads/templates/members')
       .set(a.con);
     expect(tpl.status).toBe(200);
-    expect(tpl.headers['content-type']).toContain('text/csv');
-    const header = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
-    expect(header.startsWith('User type,First name,Last name')).toBe(true);
-    const cols = header.split(',');
-    const row = (v: Record<string, string>) => cols.map((c) => v[c] ?? '').join(',');
-    const csv = [
-      header,
-      row({
-        'User type': 'Student',
-        'First name': 'Isha',
-        'Admission number': 'SPS/2026/0101',
-        Grade: 'Grade 6',
-        Section: 'A',
-        'Blood group': 'A+',
-      }),
-      row({
-        'User type': 'Student',
-        'First name': 'Rohan',
-        'Admission number': 'SPS/2026/0101',
-        Grade: 'Grade 6',
-        Section: 'A',
-        'Blood group': 'A+',
-      }),
-      row({
-        'User type': 'Student',
-        'First name': 'Meera',
-        'Admission number': 'SPS/2026/0102',
-        Grade: 'Grade 6',
-        Section: 'B',
-        'Blood group': 'O+',
-        'Parent first name': 'Suresh',
-        'Parent mobile': mobile(),
-        'Parent relation': 'Father',
-      }),
-      row({
-        'User type': 'Student',
-        'First name': 'Tejas',
-        'Admission number': 'SPS/2026/0103',
-        Grade: 'Grade 9',
-        Section: 'A',
-        'Blood group': 'A+',
-      }),
-    ].join('\r\n');
-    const up = await request(app)
+    const lines = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n');
+    const cols = lines[0]!.split(',');
+    /** A row of the sheet: each column's value by its name (without the required mark). */
+    const row = (v: Record<string, string>, sep = ',', only: readonly string[] = cols) =>
+      only.map((c) => v[c.replace(/ \*$/, '')] ?? '').join(sep);
+    return { tpl, header: lines[0]!, example: lines[1]!, cols, row };
+  }
+  const sendSheet = (body: Buffer | string, kind = 'members') =>
+    request(app)
       .post('/api/v1/console/members/uploads')
       .set(a.con)
       .set('Idempotency-Key', randomUUID())
-      .field('kind', 'members')
-      .attach('file', Buffer.from(csv), { filename: 'students.csv', contentType: 'text/csv' });
-    expect(up.status).toBe(201);
-    expect(up.body).toMatchObject({ total: 4, accepted: 2, rejected: 2, status: 'VALIDATED' });
-    expect(up.body.rows[1].errors[0].message).toBe(
-      'Duplicate admission number in the file: SPS/2026/0101',
-    );
-    expect(up.body.rows[3].errors[0].column).toBe('Grade');
+      .field('kind', kind)
+      .attach('file', Buffer.isBuffer(body) ? body : Buffer.from(body), {
+        filename: 'sheet.csv',
+        contentType: 'text/csv',
+      });
+
+  it('takes students on the admission form, checks each row as the form does, and onboards the accepted ones with their application (client 2026-10-19)', async () => {
+    const { tpl, header, example, cols, row } = await membersTemplate();
+    expect(tpl.headers['content-type']).toContain('text/csv');
+    // The form's steps, in order, the required columns marked.
+    expect(
+      header.startsWith('Academic year,Class *,Section *,Admission number *,Joining date'),
+    ).toBe(true);
+    for (const c of [
+      'First name *',
+      'Middle name',
+      'Aadhaar number',
+      'Residential PIN code *',
+      'Correspondence same as residential',
+      'Last school attended',
+      'Father Aadhaar number *',
+      'Mother PAN *',
+      'Guardian full name',
+      'Primary contact *',
+      'Children in the family *',
+      'Opt for school transport',
+      'Hostel accommodation',
+      'Local guardian full name',
+      'Reference full name',
+    ]) {
+      expect(cols).toContain(c);
+    }
+    // The institution's "Blood group" is the form's column, not a second one.
+    expect(cols.filter((c) => c === 'Blood group')).toHaveLength(1);
+    // The template's example row passes as it is.
+    const sample = await sendSheet(`${header}\r\n${example}`);
+    expect(sample.status, JSON.stringify(sample.body)).toBe(201);
+    expect(sample.body.rows[0], JSON.stringify(sample.body.rows[0])).toMatchObject({
+      accepted: true,
+    });
+
+    const meeraFather = mobile();
+    const meeraMother = mobile();
+    const csv = [
+      header,
+      row(student({ 'Admission number': 'SPS/2026/0101', 'Aadhaar number': '2345 6789 0124' })),
+      row(student({ 'First name': 'Rohan', 'Admission number': 'SPS/2026/0101' })),
+      row(
+        student({
+          'First name': 'Meera',
+          'Middle name': 'K',
+          Section: 'B',
+          'Admission number': 'SPS/2026/0102',
+          'Father mobile': meeraFather,
+          'Mother mobile': meeraMother,
+          'Mother e-mail': `latha.${randomInt(0, 1e9)}@example.in`,
+          'Primary contact': 'Mother',
+          'Correspondence same as residential': 'No',
+          'Correspondence house number and street': '7 Main Road',
+          'Correspondence area or locality': 'Gandhi Bazaar',
+          'Correspondence city or town': 'Bengaluru',
+          'Correspondence state': 'Karnataka',
+          'Correspondence PIN code': '560004',
+          'Last school attended': 'Little Flower School',
+          Board: 'CBSE',
+          'Father annual income': '₹600000',
+          'Reference full name': 'Anitha Bhat',
+          'Reference: how they know the student': 'Class teacher',
+          'Reference phone': mobile(),
+          'Blood group': 'O+',
+        }),
+      ),
+      row(
+        student({ 'First name': 'Tejas', 'Admission number': 'SPS/2026/0103', Class: 'Grade 9' }),
+      ),
+      row(
+        student({
+          'First name': 'Kavya',
+          'Admission number': 'SPS/2026/0104',
+          'Father PAN': '',
+          'Mother mobile': '12345',
+        }),
+      ),
+      row(
+        student({
+          'First name': 'Nikhil',
+          'Admission number': 'SPS/2026/0105',
+          'Hostel accommodation': 'Maybe',
+        }),
+      ),
+    ].join('\r\n');
+    const up = await sendSheet(csv);
+    expect(up.status, JSON.stringify(up.body)).toBe(201);
+    expect(up.body).toMatchObject({ total: 6, accepted: 2, rejected: 4, status: 'VALIDATED' });
+    expect(up.body.rows[1].errors[0]).toMatchObject({ column: 'Admission number' });
+    expect(up.body.rows[3].errors[0].column).toBe('Class');
+    expect(up.body.rows[4].errors.map((e: { column: string }) => e.column).sort()).toEqual([
+      'Father PAN',
+      'Mother mobile',
+    ]);
+    expect(up.body.rows[5].errors).toEqual([
+      { column: 'Hostel accommodation', message: 'Write Yes or No.' },
+    ]);
+    // The report keeps the rows encrypted: no Aadhaar number in it.
+    const stored = await t.db
+      .selectFrom('member_uploads')
+      .select('report')
+      .where('public_id', '=', uuidToBin(up.body.id))
+      .executeTakeFirstOrThrow();
+    expect(JSON.stringify(stored.report)).not.toContain('234567890124');
 
     const commit = (mode: string) =>
       request(app)
@@ -712,69 +823,100 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
         .set('Idempotency-Key', randomUUID())
         .send({ mode });
     expect((await commit('ALL')).body.code).toBe('UPL.HAS_REJECTED');
-    expect((await commit('ACCEPTED')).body).toEqual({ created: 2, skipped: 2 });
+    const done = await commit('ACCEPTED');
+    expect(done.body, JSON.stringify(done.body)).toEqual({ created: 2, skipped: 4 });
     expect((await commit('ACCEPTED')).body.code).toBe('UPL.ALREADY_COMMITTED');
-    const meera = await request(app).get('/api/v1/console/search?q=Meera').set(a.con);
-    expect(meera.body.members[0]).toMatchObject({ detail: 'Grade 6 B' });
+    const found = await request(app).get('/api/v1/console/search?q=Meera').set(a.con);
+    expect(found.body.members[0]).toMatchObject({ detail: 'Grade 6 B' });
 
-    const bad = await request(app)
-      .post('/api/v1/console/members/uploads')
-      .set(a.con)
-      .set('Idempotency-Key', randomUUID())
-      .field('kind', 'members')
-      .attach('file', Buffer.from('Name,Class\r\nIsha,6'), {
-        filename: 'x.csv',
-        contentType: 'text/csv',
-      });
-    // Says which column is wrong (client 2026-10-13).
+    // Each student has the approved application an admission leaves, with the form on it.
+    const meera = await t.db
+      .selectFrom('admission_applications as x')
+      .innerJoin('member_profiles as m', 'm.id', 'x.member_profile_id')
+      .select([
+        'x.id',
+        'x.status',
+        'x.source',
+        'x.admission_no',
+        'x.middle_name',
+        'x.primary_relation',
+        'x.data',
+        'x.father_aadhaar_last4',
+        'x.mother_pan_enc',
+        'm.first_name',
+        'm.last_name',
+      ])
+      .where('x.admission_no', '=', 'SPS/2026/0102')
+      .executeTakeFirstOrThrow();
+    expect(meera).toMatchObject({
+      status: 'APPROVED',
+      source: 'IMPORT',
+      middle_name: 'K',
+      primary_relation: 'MOTHER',
+    });
+    expect(meera.father_aadhaar_last4).toMatch(/^\d{4}$/);
+    expect(meera.mother_pan_enc).not.toBeNull();
+    const data = (typeof meera.data === 'string' ? JSON.parse(meera.data) : meera.data) as {
+      student: { bloodGroup: string };
+      addresses: { sameAsResidential: boolean; correspondence: { city: string } };
+      previous: { school: string; board: string };
+      parents: { father: { annualIncome: number } };
+    };
+    expect(data.student.bloodGroup).toBe('O+');
+    expect(data.addresses).toMatchObject({
+      sameAsResidential: false,
+      correspondence: { city: 'Bengaluru' },
+    });
+    expect(data.previous).toMatchObject({ school: 'Little Flower School', board: 'CBSE' });
+    expect(data.parents.father.annualIncome).toBe(600_000);
+    const refs = await t.db
+      .selectFrom('admission_references')
+      .select('name')
+      .where('application_id', '=', meera.id)
+      .execute();
+    expect(refs).toEqual([{ name: 'Anitha Bhat' }]);
+    // The parents have RingPe profiles at the school, as on an admission.
+    const parents = await t.db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select('m.contact_mobile')
+      .where('m.contact_mobile', 'in', [meeraFather, meeraMother])
+      .where('ut.category', '=', 'PARENT')
+      .execute();
+    expect(parents).toHaveLength(2);
+
+    // Another file's first row.
+    const bad = await sendSheet('Name,Class\r\nIsha,6');
     expect(bad.body).toMatchObject({
       code: 'UPL.HEADER_COLUMN',
       detail:
-        'Column 1 of the first row should be “User type”, but the file has “Name”. Download the template and keep its first row as it is.',
+        'Column 1 of the first row should be “Academic year”, but the file has “Name”. Download the template and keep its first row as it is.',
     });
+    // The members template from before it was the admission form.
+    const old = await sendSheet(
+      'User type,First name,Last name,Gender,Date of birth,Mobile,E-mail,Admission number,Grade,Section,Department,Joining date,Parent first name,Parent last name,Parent mobile,Parent relation\r\nStudent,Isha',
+    );
+    expect(old.body.code).toBe('UPL.OLD_TEMPLATE');
   });
 
   it('reads the sheets Excel really saves, and says what is wrong with one it cannot (client 2026-10-13)', async () => {
-    const send = (body: Buffer | string, kind = 'members') =>
-      request(app)
-        .post('/api/v1/console/members/uploads')
-        .set(a.con)
-        .set('Idempotency-Key', randomUUID())
-        .field('kind', kind)
-        .attach('file', Buffer.isBuffer(body) ? body : Buffer.from(body), {
-          filename: 'sheet.csv',
-          contentType: 'text/csv',
-        });
-    const tpl = await request(app)
-      .get('/api/v1/console/members/uploads/templates/members')
-      .set(a.con);
-    const header = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
-    const cols = header.split(',');
-    const row = (v: Record<string, string>, sep = ',', only = cols) =>
-      only.map((c) => v[c] ?? '').join(sep);
-    const isha = {
-      'User type': 'Student',
-      'First name': 'Isha',
-      'Admission number': 'SPS/2026/0201',
-      Grade: 'Grade 6',
-      Section: 'A',
-      'Blood group': 'A+',
-    };
+    const { header, cols, row } = await membersTemplate();
+    const isha = student({ 'First name': 'Ishani', 'Admission number': 'SPS/2026/0201' });
     // Semicolons (Excel in some regional settings).
-    const semi = await send([cols.join(';'), row(isha, ';')].join('\r\n'));
+    const semi = await sendSheet([cols.join(';'), row(isha, ';')].join('\r\n'));
     expect(semi.status, JSON.stringify(semi.body)).toBe(201);
-    expect(semi.body).toMatchObject({ total: 1, accepted: 1 });
-    // A template from before the institution's own field was added: read as empty.
-    const base = cols.filter((c) => c !== 'Blood group');
-    const older = await send([base.join(','), row(isha, ',', base)].join('\r\n'));
-    expect(older.status, JSON.stringify(older.body)).toBe(201);
-    expect(older.body.total).toBe(1);
+    expect(semi.body, JSON.stringify(semi.body.rows)).toMatchObject({ total: 1, accepted: 1 });
+    // Without the required marks, and with the empty lines Excel leaves.
+    const plain = cols.map((c) => c.replace(/ \*$/, ''));
+    const unmarked = await sendSheet([plain.join(','), row(isha), ',,,', ''].join('\r\n'));
+    expect(unmarked.status, JSON.stringify(unmarked.body)).toBe(201);
+    expect(unmarked.body.total).toBe(1);
     // Excel's "Unicode text": UTF-16 with tabs.
     const utf16 = Buffer.concat([
       Buffer.from([0xff, 0xfe]),
       Buffer.from([cols.join('\t'), row(isha, '\t')].join('\r\n'), 'utf16le'),
     ]);
-    const tabbed = await send(utf16);
+    const tabbed = await sendSheet(utf16);
     expect(tabbed.status, JSON.stringify(tabbed.body)).toBe(201);
     expect(tabbed.body.total).toBe(1);
 
@@ -783,18 +925,20 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       .get('/api/v1/console/members/uploads/templates/staff')
       .set(a.con);
     const staffHeader = staffTpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
-    expect((await send(`${staffHeader}\r\nTeacher`)).body).toMatchObject({
+    expect((await sendSheet(`${staffHeader}\r\nTeacher`)).body).toMatchObject({
       code: 'UPL.WRONG_TEMPLATE',
       detail:
         'This file is the staff template. Upload it with the staff upload, or download the members template.',
     });
+    // The members template on the staff upload.
+    expect((await sendSheet(`${header}\r\nx`, 'staff')).body.code).toBe('UPL.WRONG_TEMPLATE');
     // A column no one knows.
-    expect((await send(`${header},Hobby\r\n${row(isha)},Chess`)).body).toMatchObject({
+    expect((await sendSheet(`${header},Hobby\r\n${row(isha)},Chess`)).body).toMatchObject({
       code: 'UPL.HEADER_UNKNOWN',
       params: { found: 'Hobby' },
     });
     // An Excel workbook instead of the CSV.
-    expect((await send(Buffer.from('PK\u0003\u0004xl/workbook.xml'))).body.code).toBe(
+    expect((await sendSheet(Buffer.from('PK\u0003\u0004xl/workbook.xml'))).body.code).toBe(
       'UPL.NOT_CSV',
     );
   });

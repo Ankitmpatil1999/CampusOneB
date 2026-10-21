@@ -37,6 +37,7 @@ import type { Principal } from '../utils/principal';
 import { retryOnLock } from '../utils/retry';
 import { raiseApproval } from './approvals.service';
 import { recordAudit } from './audit.service';
+import { assignPlan, assignVersion, headParts, priceFor, raiseFor } from './fee-assignment';
 import type { MembersService } from './members.service';
 import { defaultValues, type SettingValues } from './settings.service';
 
@@ -53,16 +54,7 @@ export const DEFAULT_FEE_HEADS = [
   'Other',
 ] as const;
 
-/**
- * A head's part of each instalment: whole rupees by share, the remainder on the last (RNG-FEE-164).
- * The parts always add up to the head's amount.
- */
-export function headParts(amountPaise: number, sharesBp: readonly number[]): number[] {
-  const parts = sharesBp.map((bp) => Math.floor((amountPaise * bp) / 1_000_000) * 100);
-  const last = parts.length - 1;
-  parts[last] = amountPaise - parts.slice(0, last).reduce((a, b) => a + b, 0);
-  return parts;
-}
+export { headParts };
 
 /** The one formula: instalments are the sums of the mandatory parts; the total is their sum. */
 export function structureTotals(
@@ -1035,6 +1027,8 @@ export class FeesService {
       entityRef: binToUuid(v.public_id),
       after: { version: versionId },
     });
+    // Approved: every active student of its classes is assigned at once (client 2026-10-16).
+    await assignVersion(trx, String(v.id), { by: null, at });
   }
 
   /** A checker's rejection returns the version to draft with the remarks (prototype "Returned by"). */
@@ -1136,26 +1130,8 @@ export class FeesService {
     const wanted = input.classIds?.length
       ? view.classes.filter((c) => input.classIds!.map((x) => x.toLowerCase()).includes(c.id))
       : view.classes;
-    const today = istBusinessDate(this.now());
-    const instalments = await this.deps.db
-      .selectFrom('fee_structure_instalments')
-      .selectAll()
-      .where('version_id', '=', v.id)
-      .orderBy('seq')
-      .execute();
-    const due = (x: { due_date: Date | string }) => istBusinessDate(new Date(x.due_date));
-    const future = instalments.filter((x) => due(x) >= today);
-    const heads = await this.deps.db
-      .selectFrom('fee_structure_heads as sh')
-      .innerJoin('fee_heads as h', 'h.id', 'sh.head_id')
-      .select(['sh.head_id', 'h.public_id', 'h.name', 'sh.optional', 'sh.amount_paise'])
-      .where('sh.version_id', '=', v.id)
-      .orderBy('sh.sort_order')
-      .execute();
-    const shares = instalments.map((x) => x.share_bp);
-    const parts = new Map(
-      heads.map((h) => [String(h.head_id), headParts(Number(h.amount_paise), shares)]),
-    );
+    const plan = (await assignPlan(this.deps.db, String(v.id), istBusinessDate(this.now())))!;
+    const future = plan.instalments.filter((x) => x.raised);
     const optionalOf = new Map(
       (input.optional ?? []).map((o) => [
         o.studentId.toLowerCase(),
@@ -1198,20 +1174,13 @@ export class FeesService {
           .where('ut.category', '=', 'STUDENT')
           .execute()
       : [];
-    const priceFor = (studentPublicId: string) => {
-      const opted = optionalOf.get(studentPublicId) ?? new Set<string>();
-      const taken = heads.filter((h) => !Number(h.optional) || opted.has(binToUuid(h.public_id)));
-      return future.map((x) => {
-        const idx = instalments.findIndex((y) => y.seq === x.seq);
-        const lines = taken.map((h) => ({ head: h, amount: parts.get(String(h.head_id))![idx]! }));
-        return { x, lines, amount: lines.reduce((a, l) => a + l.amount, 0) };
-      });
-    };
+    const priceOf = (studentPublicId: string) =>
+      priceFor(plan, optionalOf.get(studentPublicId) ?? new Set<string>());
     const perClass = wanted.map((c) => {
       const mine = students.filter((st) => classIdOf.get(String(st.class_id)) === c.id);
       const todo = mine.filter((st) => !st.assignment_id);
       const amount = todo.reduce(
-        (a, st) => a + priceFor(binToUuid(st.public_id)).reduce((b, r) => b + r.amount, 0),
+        (a, st) => a + priceOf(binToUuid(st.public_id)).reduce((b, r) => b + r.amount, 0),
         0,
       );
       return {
@@ -1226,11 +1195,11 @@ export class FeesService {
     });
     const summary = {
       version: view.no,
-      instalments: instalments.map((x) => ({
+      instalments: plan.instalments.map((x) => ({
         seq: x.seq,
         label: x.label,
-        dueDate: due(x),
-        raised: due(x) >= today,
+        dueDate: x.due,
+        raised: x.raised,
       })),
       perClass: perClass.map(({ amountPaise: _a, ...rest }) => rest),
       totals: {
@@ -1254,68 +1223,17 @@ export class FeesService {
           .forShare()
           .executeTakeFirstOrThrow();
         if (live.state !== 'ACTIVE') throw new CustomAPIError(409, 'FEE.STRUCTURE_NOT_APPROVED');
-        created = 0;
-        assigned = 0;
-        for (const st of todo) {
-          const studentId = binToUuid(st.public_id);
-          const opted = [...(optionalOf.get(studentId) ?? [])];
-          let assignmentId: string;
-          try {
-            const a = await trx
-              .insertInto('fee_assignments')
-              .values({
-                public_id: newPublicIdPair().bin,
-                institution_id: i.id,
-                year_id: String(s.year_id),
-                student_profile_id: String(st.id),
-                structure_id: String(s.id),
-                version_id: String(v.id),
-                optional_heads: opted.length ? JSON.stringify(opted) : null,
-                assigned_by: this.by(p),
-                assigned_at: at,
-              })
-              .executeTakeFirstOrThrow();
-            assignmentId = String(a.insertId);
-          } catch (e) {
-            if ((e as { errno?: number }).errno === 1062) continue; // assigned meanwhile
-            throw e;
-          }
-          assigned++;
-          for (const r of priceFor(studentId)) {
-            const rec = await trx
-              .insertInto('fee_records')
-              .values({
-                public_id: newPublicIdPair().bin,
-                institution_id: i.id,
-                year_id: String(s.year_id),
-                student_profile_id: String(st.id),
-                source: 'STRUCTURE',
-                assignment_id: assignmentId,
-                version_id: String(v.id),
-                instalment_seq: r.x.seq,
-                label: r.x.label,
-                due_date: due(r.x),
-                amount_paise: r.amount,
-                late_fine_paise: Number(v.late_fine_paise),
-                created_by: this.by(p),
-                created_at: at,
-                updated_at: at,
-              })
-              .executeTakeFirstOrThrow();
-            await trx
-              .insertInto('fee_record_heads')
-              .values(
-                r.lines.map((l) => ({
-                  record_id: String(rec.insertId),
-                  head_id: String(l.head.head_id),
-                  name: l.head.name,
-                  amount_paise: l.amount,
-                })),
-              )
-              .execute();
-            created++;
-          }
-        }
+        const out = await raiseFor(
+          trx,
+          plan,
+          todo.map((st) => ({
+            rowId: String(st.id),
+            opted: [...(optionalOf.get(binToUuid(st.public_id)) ?? [])],
+          })),
+          { by: this.by(p), at },
+        );
+        created = out.created;
+        assigned = out.assigned;
         await recordAudit(trx, {
           institutionId: i.id,
           action: 'FEE_STRUCTURE_ASSIGNED',

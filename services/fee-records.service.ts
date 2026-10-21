@@ -339,11 +339,16 @@ export class FeeRecordsService {
         .execute(),
       this.deps.db
         .selectFrom('fee_collections as fc')
-        .innerJoin('payment_attempts as pa', 'pa.id', 'fc.payment_attempt_id')
+        // Cash and online collections have no engine attempt (0075): their receipt is the reference.
+        .leftJoin('payment_attempts as pa', 'pa.id', 'fc.payment_attempt_id')
         .select([
           'fc.amount_paise',
           'fc.fine_paise',
           'fc.source',
+          'fc.mode',
+          'fc.receipt_no',
+          'fc.paid_by',
+          'fc.gateway_payment_id',
           'fc.status',
           'fc.collected_at',
           'pa.reference',
@@ -364,10 +369,13 @@ export class FeeRecordsService {
       ...this.view(r),
       heads: heads.map((h) => ({ name: h.name, amount: toMoneyDto(Number(h.amount_paise)) })),
       collections: collections.map((c) => ({
-        reference: c.reference,
+        reference: c.reference ?? c.receipt_no ?? '—',
         amount: toMoneyDto(Number(c.amount_paise)),
         fine: toMoneyDto(Number(c.fine_paise)),
         source: c.source,
+        mode: c.mode,
+        paidBy: c.paid_by,
+        transactionId: c.gateway_payment_id,
         status: c.status,
         collectedAt: iso(c.collected_at),
       })),

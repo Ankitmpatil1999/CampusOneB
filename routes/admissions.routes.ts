@@ -357,6 +357,7 @@ doc({
         .object({
           status: z.literal('PAID'),
           receiptNo: z.string().nullable(),
+          transactionId: z.string().describe('The payment gateway’s transaction ID'),
           applicationStatus: appStatus,
         })
         .meta({ id: 'AdmissionPaymentVerified' }),

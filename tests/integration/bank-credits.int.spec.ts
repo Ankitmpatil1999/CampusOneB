@@ -11,6 +11,7 @@
  */
 import { createHmac, randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { onboardStaff } from './staff';
 import type { Express } from 'express';
 import { adminUrl, createTestDatabase, type TestDatabase } from './db';
 import { buildHttpApp, codeOf } from './http-app';
@@ -80,11 +81,11 @@ describe.skipIf(!adminUrl)('partner clients and bank credits on real MySQL', () 
   }
   /** A member of the school with its campus wallet and virtual account. */
   async function member(name: string) {
-    const r = await request(app)
-      .post('/api/v1/console/members')
-      .set(school.con)
-      .set('Idempotency-Key', randomUUID())
-      .send({ userTypeId: teacherTypeId, firstName: name, mobile: mobile() });
+    const r = await onboardStaff(app, school.con, {
+      userTypeId: teacherTypeId,
+      firstName: name,
+      mobile: mobile(),
+    });
     expect(r.status).toBe(201);
     const w = await t.db
       .selectFrom('member_profiles as m')

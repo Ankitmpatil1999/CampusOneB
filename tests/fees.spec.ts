@@ -1,5 +1,6 @@
 /** The one fee formula (SRS 13.19 CR-11, RNG-FEE-164/165). */
 import { headParts, shareBp, structureTotals } from '../services/fees.service';
+import { headShares } from '../services/fee-collection.service';
 
 describe('fee structure formula', () => {
   it('splits a head by the shares in whole rupees, the remainder on the last', () => {
@@ -34,5 +35,26 @@ describe('fee structure formula', () => {
     expect(shareBp('100.01')).toBeNull();
     expect(shareBp('12.345')).toBeNull();
     expect(shareBp('abc')).toBeNull();
+  });
+});
+
+describe('fee collection by head (FEE-044)', () => {
+  const heads = [
+    { key: 'tuition', amountPaise: 1_200_000 },
+    { key: 'annual', amountPaise: 200_000 },
+  ];
+  it('splits a part payment across the heads by amount, the remainder on the last', () => {
+    expect([...headShares(700_000, heads)]).toEqual([
+      ['tuition', 600_000],
+      ['annual', 100_000],
+    ]);
+    // ₹1 over three equal heads: 33 + 33 + 34 paise.
+    const thirds = ['a', 'b', 'c'].map((key) => ({ key, amountPaise: 300 }));
+    expect([...headShares(100, thirds).values()]).toEqual([33, 33, 34]);
+  });
+
+  it('gives each head its full amount when paid in full, and nothing when unpaid', () => {
+    expect([...headShares(1_400_000, heads).values()]).toEqual([1_200_000, 200_000]);
+    expect([...headShares(0, heads).values()]).toEqual([0, 0]);
   });
 });
