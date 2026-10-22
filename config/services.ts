@@ -12,6 +12,7 @@ import type { ApiServices } from '../routes';
 import { createScanner, type AntivirusScanner } from '../integrations/antivirus.provider';
 import { createEmailSender } from '../integrations/email.provider';
 import { createPushSender, type PushSender } from '../integrations/push.provider';
+import { createMapsRouter, type MapsRouter } from '../integrations/maps.provider';
 import { createSmsSender, type MessageSender } from '../integrations/sms.provider';
 import { createStorage, type StorageProvider } from '../integrations/storage.provider';
 import { FileService } from '../services/file.service';
@@ -69,6 +70,8 @@ import { AttendanceService } from '../services/attendance.service';
 import { AttendanceAdminService } from '../services/attendance-admin.service';
 import { TransportService } from '../services/transport.service';
 import { TripsService } from '../services/trips.service';
+import { TransportFeesService } from '../services/transport-fees.service';
+import { TransportLiveService } from '../services/transport-live.service';
 import { PlatformToolsService } from '../services/platform-tools.service';
 import { AnnouncementsService } from '../services/announcements.service';
 import { MessagingService } from '../services/messaging.service';
@@ -134,6 +137,8 @@ export interface ServiceOverrides {
   readonly email?: MessageSender;
   /** Tests: a push sender without Firebase (null: none configured). */
   readonly push?: PushSender | null;
+  /** Tests: a map service without Google (null: maps off). */
+  readonly maps?: MapsRouter | null;
   readonly settings?: SettingsService;
   readonly now?: () => Date;
 }
@@ -360,6 +365,21 @@ export function buildApiServices(args: {
     ...(now ? { now } : {}),
   });
   const trips = new TripsService({ db, settings, ...(now ? { now } : {}) });
+  // Google Maps for transport (client 2026-10-21): road distances; the live view needs no map call.
+  const transportLive = new TransportLiveService({
+    db,
+    settings,
+    maps:
+      o.maps !== undefined
+        ? o.maps
+        : createMapsRouter(config.maps.provider, { serverKey: config.maps.serverKey }),
+    mapsConfig: {
+      provider: o.maps === undefined ? config.maps.provider : (o.maps?.provider ?? 'off'),
+      browserKey: config.maps.browserKey,
+    },
+    ...(now ? { now } : {}),
+  });
+  const transportFees = new TransportFeesService({ db, ...(now ? { now } : {}) });
   const commReport = new CommReportService({ db, settings, ...(now ? { now } : {}) });
   const reportExports = new ReportExportsService({
     db,
@@ -713,6 +733,8 @@ export function buildApiServices(args: {
     attendanceAdmin,
     transport,
     trips,
+    transportLive,
+    transportFees,
     announcements,
     messaging: new MessagingService({ db, settings, ...(now ? { now } : {}) }),
     commReport,

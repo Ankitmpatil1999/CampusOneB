@@ -301,7 +301,19 @@ export class FeeRecordsService {
         'sec.name as section_name',
       ])
       .where('m.institution_id', '=', instId)
-      .where('ut.category', '=', 'STUDENT')
+      // Students, and staff with transport dues (client 2026-10-21).
+      .where((eb) =>
+        eb.or([
+          eb('ut.category', '=', 'STUDENT'),
+          eb.exists(
+            eb
+              .selectFrom('fee_records as fr')
+              .select('fr.id')
+              .whereRef('fr.student_profile_id', '=', 'm.id')
+              .where('fr.source', '=', 'TRANSPORT'),
+          ),
+        ]),
+      )
       .where('m.status', '=', 'ACTIVE');
     const term = f.q?.trim();
     if (term) {

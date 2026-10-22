@@ -11,6 +11,8 @@ import {
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
+import type { TransportFeesService } from '../services/transport-fees.service';
+import type { TransportLiveService } from '../services/transport-live.service';
 import type { TransportService } from '../services/transport.service';
 import type { TripsService } from '../services/trips.service';
 import { AuthenticationError } from '../utils/CustomAPIError';
@@ -159,6 +161,36 @@ export const boardingSchema = z
     method: z.enum(['QR', 'NFC', 'MANUAL']).optional(),
   })
   .meta({ id: 'TripBoarding' });
+
+// Maps, live tracking and the transport fee by distance (client 2026-10-21).
+const coordinate = (max: number) =>
+  z.number({ message: 'TRN.POSITION' }).min(-max, { message: 'TRN.POSITION' }).max(max, {
+    message: 'TRN.POSITION',
+  });
+export const positionsSchema = z
+  .strictObject({
+    points: z
+      .array(
+        z.strictObject({
+          lat: coordinate(90),
+          lng: coordinate(180),
+          accuracy: z.number().min(0).nullable().optional(),
+          speed: z.number().nullable().optional(),
+          heading: z.number().nullable().optional(),
+          at: z.iso.datetime({ offset: true, message: 'TRN.POSITION' }),
+        }),
+      )
+      .min(1, { message: 'TRN.POSITION' })
+      .max(100, { message: 'TRN.POSITION' }),
+  })
+  .meta({ id: 'TripPositions' });
+export const feeRuleSchema = z
+  .strictObject({
+    active: z.boolean({ message: 'VALIDATION.REQUIRED' }),
+    ratePaisePerKm: z.number({ message: 'TRN.FEE_RATE' }).int({ message: 'TRN.FEE_RATE' }),
+    dueDay: z.number({ message: 'TRN.FEE_DUE_DAY' }).int({ message: 'TRN.FEE_DUE_DAY' }),
+  })
+  .meta({ id: 'TransportFeeRule' });
 
 const routesQuery = z.object({ active: z.enum(['true', 'false']).optional() });
 const allocationsQuery = z.object({
@@ -450,10 +482,80 @@ doc({
   responses: { 200: { description: 'Transport' } },
 });
 
+doc({
+  id: 'TRN-036',
+  method: 'post',
+  path: '/api/v1/crew/trips/{tripId}/positions',
+  summary:
+    'The crew’s phone sends the bus’s position while the trip runs (client 2026-10-21): up to 100 fixes; inaccurate, early or future ones are not used, a resent one adds nothing; a stop the bus comes near is told once; 409 TRN.TRIP_NOT_RUNNING once the trip is no longer Started (stop sharing)',
+  auth: 'member',
+  request: positionsSchema,
+  responses: { 200: { description: 'Accepted fixes and the interval to send at' } },
+});
+doc({
+  id: 'TRN-037',
+  method: 'get',
+  path: '/api/v1/me/transport/live',
+  summary:
+    'Where the bus is (client 2026-10-21): for a passenger of the route — a student, a staff member — or a parent (for: a child on the account), while a trip of the route runs today: the bus’s position, its trail, the stops and about how many minutes to the member’s stop',
+  auth: 'member|teaching.view,principal.view',
+  query: forQuery,
+  responses: { 200: { description: 'Live transport' } },
+});
+doc({
+  id: 'TRN-038',
+  method: 'post',
+  path: '/api/v1/console/routes/{routeId}/distances',
+  summary:
+    'The road distance from each stop of the route to the next through the map service (every stop placed on the map first); nothing is saved — the stops are saved with TRN-004',
+  auth: 'transport.edit',
+  responses: { 200: { description: 'Distances' } },
+});
+doc({
+  id: 'TRN-039',
+  method: 'get',
+  path: '/api/v1/console/maps',
+  summary:
+    'What the console’s maps load with: the map provider, the browser key (restricted to the site in Google Cloud) and how often live positions refresh',
+  auth: 'transport.view',
+  responses: { 200: { description: 'Maps' } },
+});
+doc({
+  id: 'TRN-040',
+  method: 'get',
+  path: '/api/v1/console/transport/fee-rule',
+  summary:
+    'The transport fee by distance (client 2026-10-21): on or off, the yearly rate per km of the round trip, the due day, and the current year’s months',
+  auth: 'transport.view',
+  responses: { 200: { description: 'Fee rule' } },
+});
+doc({
+  id: 'TRN-041',
+  method: 'put',
+  path: '/api/v1/console/transport/fee-rule',
+  summary:
+    'Set the transport fee by distance (Institution Administrator); dues already raised don’t change; If-Match ("v0" before it was first saved)',
+  auth: 'transport.fees',
+  request: feeRuleSchema,
+  responses: { 200: { description: 'Fee rule' } },
+});
+doc({
+  id: 'TRN-042',
+  method: 'post',
+  path: '/api/v1/console/transport/fee-rule/apply',
+  summary:
+    'Raise the transport dues of every allocation of the current year still in force (for a rule switched on after the buses were allocated); re-runnable — months already charged are left alone',
+  auth: 'transport.fees',
+  idempotent: 'required',
+  responses: { 200: { description: 'Dues raised' } },
+});
+
 export function transportRoutes(deps: {
   db: Kysely<Database>;
   transport: TransportService;
   trips: TripsService;
+  live: TransportLiveService;
+  fees: TransportFeesService;
   loggers: Loggers;
 }): Router {
   const router = Router();
@@ -466,6 +568,7 @@ export function transportRoutes(deps: {
   const console = [requireSurface(L, 'console'), requireTenant(L)];
   const view = authorize('transport.view', L);
   const edit = authorize('transport.edit', L);
+  const feesSet = authorize('transport.fees', L);
   const T = deps.transport;
   const wrap =
     (fn: RequestHandler): RequestHandler =>
@@ -810,6 +913,57 @@ export function transportRoutes(deps: {
     '/me/transport',
     either('teaching.view', 'principal.view'),
     json((req) => deps.trips.mine(principal(req), forQuery.parse(req.query))),
+  );
+
+  // maps, live tracking and the transport fee by distance (client 2026-10-21)
+  router.post(
+    '/crew/trips/:tripId/positions',
+    member,
+    json((req) =>
+      deps.live.ingest(
+        principal(req),
+        param(req, 'tripId'),
+        positionsSchema.parse(req.body ?? {}).points,
+      ),
+    ),
+  );
+  router.get(
+    '/me/transport/live',
+    either('teaching.view', 'principal.view'),
+    json((req) => deps.live.mine(principal(req), forQuery.parse(req.query))),
+  );
+  router.post(
+    '/console/routes/:routeId/distances',
+    ...console,
+    edit,
+    json((req) => deps.live.distances(principal(req), param(req, 'routeId'))),
+  );
+  router.get(
+    '/console/maps',
+    ...console,
+    view,
+    json((req) => deps.live.mapsConfig(principal(req))),
+  );
+  router.get(
+    '/console/transport/fee-rule',
+    ...console,
+    view,
+    json((req) => deps.fees.rule(principal(req))),
+  );
+  router.put(
+    '/console/transport/fee-rule',
+    ...console,
+    feesSet,
+    json((req) =>
+      deps.fees.setRule(principal(req), expectedVersion(req), feeRuleSchema.parse(req.body ?? {})),
+    ),
+  );
+  router.post(
+    '/console/transport/fee-rule/apply',
+    ...console,
+    feesSet,
+    once,
+    json((req) => deps.fees.apply(principal(req))),
   );
   return router;
 }

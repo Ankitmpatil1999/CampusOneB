@@ -44,9 +44,13 @@ export interface Merchant {
   auth: Auth;
 }
 
-export async function schoolFixture(name: string) {
+export async function schoolFixture(
+  name: string,
+  /** The app's settings and service overrides (e.g. a map service). */
+  opts: Parameters<typeof buildHttpApp>[1] = {},
+) {
   const t: TestDatabase = await createTestDatabase();
-  const h = await buildHttpApp(t);
+  const h = await buildHttpApp(t, opts);
   const app = h.app;
 
   async function account(first: string) {

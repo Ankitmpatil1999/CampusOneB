@@ -93,7 +93,7 @@ describe('SMTP sender', () => {
 });
 
 describe('notification events', () => {
-  it('every in-app notice belongs to one event, and every event is on by default', () => {
+  it('every in-app notice belongs to one event, and every event is on by default (the bus-near e-mail off)', () => {
     const notices = allMessages()
       .map((m) => m.key)
       .filter((k) => k.startsWith('NTF.'));
@@ -101,6 +101,8 @@ describe('notification events', () => {
     expect(notices.filter((k) => !commEventOf(k))).toEqual([]);
     const titles = COMM_EVENTS.flatMap((e) => e.titles);
     expect(new Set(titles).size).toBe(titles.length);
-    expect(COMM_EVENTS.every((e) => e.emailByDefault && e.alertByDefault)).toBe(true);
+    expect(COMM_EVENTS.every((e) => e.alertByDefault)).toBe(true);
+    // Client 2026-10-21: "the bus is near your stop" by e-mail would arrive after the bus has gone.
+    expect(COMM_EVENTS.filter((e) => !e.emailByDefault).map((e) => e.key)).toEqual(['BUS_NEAR']);
   });
 });

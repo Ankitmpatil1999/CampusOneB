@@ -91,6 +91,15 @@ export class FeeDuesService {
         'y.label as year_label',
         'c.name as class_name',
         's.name as section_name',
+        // A staff member with transport dues pays them here too (client 2026-10-21).
+        (eb) =>
+          eb
+            .selectFrom('fee_records as fr')
+            .select(sql<number>`COUNT(*)`.as('n'))
+            .whereRef('fr.student_profile_id', '=', 'm.id')
+            .where('fr.source', '=', 'TRANSPORT')
+            .where('fr.status', '<>', 'CANCELLED')
+            .as('transport_dues'),
       ])
       .where('a.public_id', '=', uuidToBin(p.subject))
       .where('m.public_id', '=', uuidToBin(wanted))
@@ -102,6 +111,8 @@ export class FeeDuesService {
       name: nameOf(m.first_name, m.last_name),
       admissionNo: m.admission_no,
       student: m.category === 'STUDENT',
+      /** Has fees: a student, or anyone with transport dues (staff, client 2026-10-21). */
+      payer: m.category === 'STUDENT' || Number(m.transport_dues ?? 0) > 0,
       institutionId: String(m.institution_id),
       institutionName: m.institution_name,
       accountRowId: String(m.account_id),
@@ -255,7 +266,7 @@ export class FeeDuesService {
   async dues(p: Principal, forProfile?: string, yearId?: string) {
     const t = await this.target(p, forProfile);
     // Fees belong to students: a parent's own profile has none (the app opens a child's).
-    if (!t.student) throw new CustomAPIError(422, 'FEE.NOT_A_STUDENT');
+    if (!t.payer) throw new CustomAPIError(422, 'FEE.NOT_A_STUDENT');
     let q = this.recordRows(t.institutionId, t.rowId).where('r.status', '<>', 'CANCELLED');
     if (yearId) {
       if (!isUuid(yearId)) throw new NotFoundError();
@@ -371,7 +382,7 @@ export class FeeDuesService {
     idempotencyKey: string,
   ) {
     const t = await this.target(p, input.studentProfileId);
-    if (!t.student) throw new CustomAPIError(422, 'FEE.NOT_A_STUDENT');
+    if (!t.payer) throw new CustomAPIError(422, 'FEE.NOT_A_STUDENT');
     if (input.templateVersion !== CONSENT_TEMPLATE_VERSION) {
       throw new CustomAPIError(409, 'FEE.CONSENT_TEMPLATE_STALE');
     }

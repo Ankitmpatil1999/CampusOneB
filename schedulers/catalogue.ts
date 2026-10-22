@@ -138,7 +138,7 @@ export const JOB_CATALOGUE: readonly JobCatalogueEntry[] = [
     money: false,
     phase: 7,
     unit: 'trips',
-    does: "Cancels stale Scheduled trips and creates today's trips from active vehicle assignments, respecting each session's days and skipping holidays for everyone; stops in travel order with planned times.",
+    does: "Cancels stale Scheduled trips and creates today's trips from active vehicle assignments, respecting each session's days and skipping holidays for everyone; stops in travel order with planned times. Also deletes bus positions older than trn.positions.retentionDays (30).",
     window: 'The run date',
     previous: "Generates today's trips only; stale ones are cancelled.",
     twice: 'A trip already generated for the assignment and date is not duplicated.',

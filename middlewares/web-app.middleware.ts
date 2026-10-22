@@ -97,6 +97,14 @@ export function webAppRoutes(opts: { root: string; production: boolean }): Route
   return router;
 }
 
+/** What the Maps JavaScript API loads from (Google's CSP guide, without 'unsafe-eval'). */
+const GOOGLE_MAPS = {
+  script: ['https://maps.googleapis.com', 'https://maps.gstatic.com'],
+  style: ['https://fonts.googleapis.com'],
+  font: ['https://fonts.gstatic.com'],
+  connect: ['https://maps.googleapis.com', 'https://*.googleapis.com', 'https://maps.gstatic.com'],
+} as const;
+
 /** A page's security headers: its inline loader script is allowed by its hash. */
 function pageHeaders(index: string, production: boolean): RequestHandler {
   return helmet({
@@ -104,12 +112,24 @@ function pageHeaders(index: string, production: boolean): RequestHandler {
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", ...inlineScriptHashes(index), 'https://checkout.razorpay.com'],
+        // Google Maps (client 2026-10-21): its script hosts only — no 'unsafe-eval' or inline scripts.
+        scriptSrc: [
+          "'self'",
+          ...inlineScriptHashes(index),
+          'https://checkout.razorpay.com',
+          ...GOOGLE_MAPS.script,
+        ],
         // Angular writes component styles and style attributes at run time.
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", ...GOOGLE_MAPS.style],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-        fontSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'", CARD_READER_ORIGIN, 'https://*.razorpay.com'],
+        fontSrc: ["'self'", 'data:', ...GOOGLE_MAPS.font],
+        connectSrc: [
+          "'self'",
+          CARD_READER_ORIGIN,
+          'https://*.razorpay.com',
+          ...GOOGLE_MAPS.connect,
+        ],
+        workerSrc: ["'self'", 'blob:'],
         frameSrc: ['https://api.razorpay.com', 'https://checkout.razorpay.com'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],

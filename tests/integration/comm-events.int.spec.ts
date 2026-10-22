@@ -100,8 +100,10 @@ describe.skipIf(!adminUrl)('notification e-mails and settings on real MySQL', ()
   });
 
   it('requires a new parent’s e-mail, and keeps a parent’s e-mail from being cleared', async () => {
-    const types = (await request(f.app).get('/api/v1/console/user-types').set(con)).body
-      .items as { id: string; name: string }[];
+    const types = (await request(f.app).get('/api/v1/console/user-types').set(con)).body.items as {
+      id: string;
+      name: string;
+    }[];
     const classes = (await request(f.app).get('/api/v1/console/classes').set(con)).body.items as {
       sections: { id: string }[];
     }[];
@@ -183,10 +185,13 @@ describe.skipIf(!adminUrl)('notification e-mails and settings on real MySQL', ()
   it('every event is on by default; switching one off stops its e-mail and phone alert (COM-032/033)', async () => {
     const view = await events();
     expect(view.emailChannel).toBe(true);
-    expect(view.items).toHaveLength(15);
-    expect(view.items.every((x: { email: boolean; alert: boolean }) => x.email && x.alert)).toBe(
-      true,
-    );
+    expect(view.items).toHaveLength(16);
+    // Every phone alert is on; every e-mail too but "the bus is near your stop" (client 2026-10-21).
+    expect(
+      view.items
+        .filter((x: { email: boolean; alert: boolean }) => !(x.email && x.alert))
+        .map((x: { event: string; email: boolean; alert: boolean }) => [x.event, x.email, x.alert]),
+    ).toEqual([['BUS_NEAR', false, true]]);
 
     const off = await request(f.app)
       .patch('/api/v1/console/notification-events')

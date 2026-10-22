@@ -314,7 +314,19 @@ export class FeePaymentsService {
       ])
       .where('m.institution_id', '=', inst)
       .where('m.public_id', '=', uuidToBin(studentId))
-      .where('ut.category', '=', 'STUDENT')
+      // Students, and staff with transport dues (client 2026-10-21).
+      .where((eb) =>
+        eb.or([
+          eb('ut.category', '=', 'STUDENT'),
+          eb.exists(
+            eb
+              .selectFrom('fee_records as fr')
+              .select('fr.id')
+              .whereRef('fr.student_profile_id', '=', 'm.id')
+              .where('fr.source', '=', 'TRANSPORT'),
+          ),
+        ]),
+      )
       .executeTakeFirst();
     if (!st) throw new NotFoundError();
     const [wallet, records, contacts] = await Promise.all([

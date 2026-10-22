@@ -5550,6 +5550,25 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LocationCapture"
+  /api/v1/console/maps:
+    get:
+      operationId: TRN-039
+      summary: "What the console’s maps load with: the map provider, the browser key (restricted to the site in Google Cloud) and how often live positions refresh"
+      tags:
+        - Transport
+      x-ringpe-auth: transport.view
+      responses:
+        "200":
+          description: Maps
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
   /api/v1/console/marks-status:
     get:
       operationId: ACA-039
@@ -7838,6 +7857,31 @@ paths:
                 active:
                   type: boolean
               additionalProperties: false
+  /api/v1/console/routes/{routeId}/distances:
+    post:
+      operationId: TRN-038
+      summary: The road distance from each stop of the route to the next through the map service (every stop placed on the map first); nothing is saved — the stops are saved with TRN-004
+      tags:
+        - Transport
+      x-ringpe-auth: transport.edit
+      responses:
+        "200":
+          description: Distances
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/console/routes/{routeId}/stops:
     put:
       operationId: TRN-004
@@ -9019,6 +9063,75 @@ paths:
                 active:
                   type: boolean
               additionalProperties: false
+  /api/v1/console/transport/fee-rule:
+    get:
+      operationId: TRN-040
+      summary: "The transport fee by distance (client 2026-10-21): on or off, the yearly rate per km of the round trip, the due day, and the current year’s months"
+      tags:
+        - Transport
+      x-ringpe-auth: transport.view
+      responses:
+        "200":
+          description: Fee rule
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+    put:
+      operationId: TRN-041
+      summary: Set the transport fee by distance (Institution Administrator); dues already raised don’t change; If-Match ("v0" before it was first saved)
+      tags:
+        - Transport
+      x-ringpe-auth: transport.fees
+      responses:
+        "200":
+          description: Fee rule
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransportFeeRule"
+  /api/v1/console/transport/fee-rule/apply:
+    post:
+      operationId: TRN-042
+      summary: Raise the transport dues of every allocation of the current year still in force (for a rule switched on after the buses were allocated); re-runnable — months already charged are left alone
+      tags:
+        - Transport
+      x-ringpe-auth: transport.fees
+      responses:
+        "200":
+          description: Dues raised
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
   /api/v1/console/transport/reports/{reportKind}:
     get:
       operationId: TRN-026
@@ -9704,6 +9817,37 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/crew/trips/{tripId}/positions:
+    post:
+      operationId: TRN-036
+      summary: "The crew’s phone sends the bus’s position while the trip runs (client 2026-10-21): up to 100 fixes; inaccurate, early or future ones are not used, a resent one adds nothing; a stop the bus comes near is told once; 409 TRN.TRIP_NOT_RUNNING once the trip is no longer Started (stop sharing)"
+      tags:
+        - Transport
+      x-ringpe-auth: member
+      responses:
+        "200":
+          description: Accepted fixes and the interval to send at
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TripPositions"
   /api/v1/crew/trips/{tripId}/start:
     post:
       operationId: TRN-029
@@ -12638,6 +12782,32 @@ paths:
       responses:
         "200":
           description: Transport
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: for
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+  /api/v1/me/transport/live:
+    get:
+      operationId: TRN-037
+      summary: "Where the bus is (client 2026-10-21): for a passenger of the route — a student, a staff member — or a parent (for: a child on the account), while a trip of the route runs today: the bus’s position, its trail, the stops and about how many minutes to the member’s stop"
+      tags:
+        - Transport
+      x-ringpe-auth: member|teaching.view,principal.view
+      responses:
+        "200":
+          description: Live transport
         default:
           description: Error (RFC 9457 problem details)
           content:
@@ -48894,6 +49064,24 @@ components:
         - opted
         - reason
       additionalProperties: false
+    TransportFeeRule:
+      type: object
+      properties:
+        active:
+          type: boolean
+        ratePaisePerKm:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        dueDay:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+      required:
+        - active
+        - ratePaisePerKm
+        - dueDay
+      additionalProperties: false
     TransportRouteInput:
       type: object
       properties:
@@ -49020,6 +49208,49 @@ components:
           maxLength: 300
       required:
         - remarks
+      additionalProperties: false
+    TripPositions:
+      type: object
+      properties:
+        points:
+          minItems: 1
+          maxItems: 100
+          type: array
+          items:
+            type: object
+            properties:
+              lat:
+                type: number
+                minimum: -90
+                maximum: 90
+              lng:
+                type: number
+                minimum: -180
+                maximum: 180
+              accuracy:
+                anyOf:
+                  - type: number
+                    minimum: 0
+                  - type: "null"
+              speed:
+                type:
+                  - number
+                  - "null"
+              heading:
+                type:
+                  - number
+                  - "null"
+              at:
+                type: string
+                format: date-time
+                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+            required:
+              - lat
+              - lng
+              - at
+            additionalProperties: false
+      required:
+        - points
       additionalProperties: false
     TripStopEvent:
       type: object

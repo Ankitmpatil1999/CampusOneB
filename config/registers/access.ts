@@ -167,6 +167,8 @@ export const INSTITUTION_TASKS: readonly TaskDefinition[] = [
   inst('transport', 'Transport', [
     ['view', 'See transport'],
     ['edit', 'Edit routes, vehicles and allocations'],
+    // Client 2026-10-21: the transport fee by distance is set by the Institution Administrator.
+    ['fees', 'Set the transport fee per km'],
   ]),
   inst('comms', 'Announcements', [
     ['view', 'See announcements'],
@@ -267,6 +269,8 @@ export const RESERVED_SUB_TASKS: Readonly<Record<string, readonly string[]>> = {
   // application), not the Counsellor; Accounts confirms the fees received before that.
   'admissions.approve': ['INSTITUTION_ADMIN', 'ACADEMIC_COORDINATOR'],
   'admfees.verify': ['INSTITUTION_ADMIN', 'ACCOUNTANT'],
+  // Client 2026-10-21: the rate per km is the Institution Administrator's.
+  'transport.fees': ['INSTITUTION_ADMIN'],
 };
 
 /** Every sub-task of the tasks a role may hold (reserved ones only where allowed), less some. */

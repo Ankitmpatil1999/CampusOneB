@@ -126,6 +126,8 @@ import type { AttendanceService } from '../services/attendance.service';
 import type { AttendanceAdminService } from '../services/attendance-admin.service';
 import type { TransportService } from '../services/transport.service';
 import type { TripsService } from '../services/trips.service';
+import type { TransportFeesService } from '../services/transport-fees.service';
+import type { TransportLiveService } from '../services/transport-live.service';
 import type { PlatformToolsService } from '../services/platform-tools.service';
 import type { AnnouncementsService } from '../services/announcements.service';
 import type { MessagingService } from '../services/messaging.service';
@@ -213,6 +215,8 @@ export interface ApiServices {
   readonly attendanceAdmin: AttendanceAdminService;
   readonly transport: TransportService;
   readonly trips: TripsService;
+  readonly transportLive: TransportLiveService;
+  readonly transportFees: TransportFeesService;
   readonly platformTools: PlatformToolsService;
   readonly announcements: AnnouncementsService;
   readonly messaging: MessagingService;
@@ -360,7 +364,14 @@ export function apiRouters(s: ApiServices): Router[] {
       terminals: s.terminals,
       loggers: s.loggers,
     }),
-    transportRoutes({ db: s.db, transport: s.transport, trips: s.trips, loggers: s.loggers }),
+    transportRoutes({
+      db: s.db,
+      transport: s.transport,
+      trips: s.trips,
+      live: s.transportLive,
+      fees: s.transportFees,
+      loggers: s.loggers,
+    }),
     platformToolsRoutes({ db: s.db, tools: s.platformTools, loggers: s.loggers }),
     announcementsRoutes({ db: s.db, announcements: s.announcements, loggers: s.loggers }),
     messagingRoutes({ db: s.db, messaging: s.messaging, loggers: s.loggers }),

@@ -95,6 +95,9 @@ export const CUG_TABLES: readonly string[] = [
   'transport_trip_stops',
   'transport_trip_events',
   'transport_boardings',
+  'transport_trip_positions',
+  'transport_fee_rules',
+  'transport_fee_charges',
   // --- admissions
   'admission_links',
   'admission_applications',

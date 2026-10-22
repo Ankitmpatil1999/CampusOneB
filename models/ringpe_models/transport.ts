@@ -163,6 +163,17 @@ export interface TransportTripsTable {
   completed_at: NullableTimestamp;
   cancelled_at: NullableTimestamp;
   cancel_remarks: string | null;
+  /** The latest fix from the crew's phone and the km run so far (migration 0082). */
+  last_lat: ColumnType<string | null, number | string | null | undefined, number | string | null>;
+  last_lng: ColumnType<string | null, number | string | null | undefined, number | string | null>;
+  last_speed_kmph: ColumnType<
+    string | null,
+    number | string | null | undefined,
+    number | string | null
+  >;
+  last_heading: ColumnType<number | null, number | null | undefined, number | null>;
+  last_position_at: NullableTimestamp;
+  km_run: Decimal;
   created_at: Timestamp;
   row_version: Version;
 }
@@ -178,6 +189,8 @@ export interface TransportTripStopsTable {
   reached_at: NullableTimestamp;
   departed_at: NullableTimestamp;
   skip_remarks: string | null;
+  /** The "bus is near your stop" notice went out (migration 0082). */
+  near_notified_at: NullableTimestamp;
 }
 
 export interface TransportTripEventsTable {
@@ -210,6 +223,47 @@ export interface TransportBoardingsTable {
   row_version: Version;
 }
 
+/** The phone's fixes while a trip runs (migration 0082; append-only, kept trn.positions.retentionDays). */
+export interface TransportTripPositionsTable {
+  id: Generated<string>;
+  institution_id: Ref;
+  trip_id: Ref;
+  lat: Decimal;
+  lng: Decimal;
+  accuracy_m: number | null;
+  speed_kmph: ColumnType<string | null, number | string | null, number | string | null>;
+  heading: number | null;
+  recorded_at: Timestamp;
+  received_at: Timestamp;
+}
+
+/** A school's transport fee by distance (migration 0082): per km of the round trip, per year. */
+export interface TransportFeeRulesTable {
+  institution_id: Ref;
+  rate_paise_per_km: ColumnType<string, number | string | undefined, number | string>;
+  due_day: ColumnType<number, number | undefined, number>;
+  active: Flag;
+  updated_by: Buffer | null;
+  updated_at: Timestamp;
+  row_version: Version;
+}
+
+/** One calculation behind a member's transport dues (migration 0082). */
+export interface TransportFeeChargesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  year_id: Ref;
+  profile_id: Ref;
+  allocation_id: Ref;
+  distance_km: Decimal;
+  rate_paise_per_km: ColumnType<string, number | string, number | string>;
+  yearly_paise: ColumnType<string, number | string, number | string>;
+  months: number;
+  created_by: Buffer | null;
+  created_at: Timestamp;
+}
+
 export interface TransportTables {
   transport_stops: TransportStopsTable;
   transport_routes: TransportRoutesTable;
@@ -223,4 +277,7 @@ export interface TransportTables {
   transport_trip_stops: TransportTripStopsTable;
   transport_trip_events: TransportTripEventsTable;
   transport_boardings: TransportBoardingsTable;
+  transport_trip_positions: TransportTripPositionsTable;
+  transport_fee_rules: TransportFeeRulesTable;
+  transport_fee_charges: TransportFeeChargesTable;
 }

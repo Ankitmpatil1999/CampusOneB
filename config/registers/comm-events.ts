@@ -18,6 +18,7 @@ export type CommEventKey =
   | 'RESULTS'
   | 'CLASS'
   | 'TRANSPORT'
+  | 'BUS_NEAR'
   | 'LEAVE'
   | 'ANNOUNCEMENT'
   | 'MESSAGE'
@@ -43,12 +44,22 @@ const ev = (
   label: string,
   description: string,
   titles: readonly MessageKey[],
-): CommEventDefinition => ({ key, label, description, titles, emailByDefault: true, alertByDefault: true });
+): CommEventDefinition => ({
+  key,
+  label,
+  description,
+  titles,
+  emailByDefault: true,
+  alertByDefault: true,
+});
 
 export const COMM_EVENTS: readonly CommEventDefinition[] = [
-  ev('FEE_ASSIGNED', 'Fee assigned', 'A student’s fee for the year is set: the student and parents', [
-    'NTF.FEE_ASSIGNED',
-  ]),
+  ev(
+    'FEE_ASSIGNED',
+    'Fee assigned',
+    'A student’s fee for the year is set: the student and parents',
+    ['NTF.FEE_ASSIGNED'],
+  ),
   ev('FEE_DUE', 'Fee due reminder', 'An unpaid instalment is due soon: the student and parents', [
     'NTF.FEE_DUE',
   ]),
@@ -57,7 +68,12 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     'HOMEWORK',
     'Homework and classwork',
     'Set, reminded or reviewed: the student and parents; submitted: the teacher',
-    ['NTF.HOMEWORK_SET', 'NTF.HOMEWORK_REMINDER', 'NTF.HOMEWORK_REVIEWED', 'NTF.HOMEWORK_SUBMITTED'],
+    [
+      'NTF.HOMEWORK_SET',
+      'NTF.HOMEWORK_REMINDER',
+      'NTF.HOMEWORK_REVIEWED',
+      'NTF.HOMEWORK_SUBMITTED',
+    ],
   ),
   ev('RESULTS', 'Exam results', 'Results are published: the student and parents', [
     'NTF.RESULTS_PUBLISHED',
@@ -71,6 +87,17 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     'Bus allocated or ended, trip started or cancelled: the passengers and parents',
     ['NTF.TRANSPORT_ALLOCATED', 'NTF.TRANSPORT_ENDED', 'NTF.TRIP_STARTED', 'NTF.TRIP_CANCELLED'],
   ),
+  // Live tracking (client 2026-10-21): an e-mail would arrive after the bus has gone, so it is off
+  // by default (the school can turn it on); the phone alert is on.
+  {
+    ...ev(
+      'BUS_NEAR',
+      'Bus near the stop',
+      'The bus is close to a passenger’s stop: the passengers and parents',
+      ['NTF.BUS_NEAR_STOP'],
+    ),
+    emailByDefault: false,
+  },
   ev('LEAVE', 'Leave', 'Leave requested, reviewed or decided: the people concerned', [
     'NTF.LEAVE_REQUESTED',
     'NTF.LEAVE_FOR_DECISION',
@@ -100,14 +127,19 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
       'NTF.ALLOWANCE_EXPIRED',
     ],
   ),
-  ev('PAYMENTS', 'Payments and transfers', 'Each payment or transfer: the payer, payee and parents', [
-    'NTF.PAYMENT_SENT',
-    'NTF.PAYMENT_RECEIVED',
-    'NTF.TRANSFER_SENT',
-    'NTF.TRANSFER_RECEIVED',
-    'NTF.WARD_PAYMENT',
-    'NTF.WARD_TRANSFER',
-  ]),
+  ev(
+    'PAYMENTS',
+    'Payments and transfers',
+    'Each payment or transfer: the payer, payee and parents',
+    [
+      'NTF.PAYMENT_SENT',
+      'NTF.PAYMENT_RECEIVED',
+      'NTF.TRANSFER_SENT',
+      'NTF.TRANSFER_RECEIVED',
+      'NTF.WARD_PAYMENT',
+      'NTF.WARD_TRANSFER',
+    ],
+  ),
   ev('CARDS', 'Card blocked or active', 'A card is blocked or made active again: its holder', [
     'NTF.CARD_ACTIVE',
     'NTF.CARD_BLOCKED',
