@@ -229,10 +229,16 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       admissionNo: 'SPS/2026/0001',
       sectionId: grade6.sections.find((s) => s.name === 'B')!.id,
       guardians: [
-        { firstName: 'Mahesh', lastName: 'Hegde', mobile: parentMobile, relation: 'FATHER' },
+        {
+          firstName: 'Mahesh',
+          lastName: 'Hegde',
+          mobile: parentMobile,
+          email: `mahesh.${randomInt(0, 1e9)}@example.in`,
+          relation: 'FATHER',
+        },
       ],
     });
-    expect(r.status).toBe(201);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(r.body.memberNo).toMatch(/^[A-Z]+-\d{5}$/);
     expect(r.body.guardians).toHaveLength(1);
 
@@ -303,7 +309,15 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
         lastName: 'Kini',
         admissionNo,
         sectionId: grade6.sections[0]!.id,
-        guardians: [{ firstName: 'Ramesh', lastName: 'Kini', mobile: father, relation: 'FATHER' }],
+        guardians: [
+          {
+            firstName: 'Ramesh',
+            lastName: 'Kini',
+            mobile: father,
+            email: 'ramesh.kini@example.in',
+            relation: 'FATHER',
+          },
+        ],
       });
     const diya = await child('Diya', 'SPS/2026/0901');
     expect(diya.status, JSON.stringify(diya.body)).toBe(201);
@@ -681,6 +695,8 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     'Father PAN': pan(),
     'Mother full name': 'Latha Rao',
     'Mother mobile': mobile(),
+    // Client 2026-10-16: a new parent's e-mail is required (mem.parentEmail.required).
+    'Mother e-mail': `latha.${randomInt(0, 1e9)}@example.in`,
     'Mother Aadhaar number': aadhaar(),
     'Mother PAN': pan(),
     'Primary contact': 'Father',

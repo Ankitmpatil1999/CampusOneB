@@ -8,6 +8,7 @@
  * every process is in ./catalogue.ts.
  */
 import type { AllowancesService } from '../services/allowances.service';
+import type { FeeNoticesService } from '../services/fee-notices.service';
 import type { BankCreditsService } from '../services/bank-credits.service';
 import type { CouponsService } from '../services/coupons.service';
 import type { EventsService } from '../services/events.service';
@@ -69,6 +70,7 @@ export const RUNNABLE_JOB_IDS: readonly string[] = [
   'trip-generation',
   'announcement-dispatch',
   'comm-log-purge',
+  'fee-reminders',
 ];
 
 /** The runners, built from the services they use. */
@@ -86,8 +88,28 @@ export function buildJobs(deps: {
   trips?: TripsService;
   announcements?: AnnouncementsService;
   commReport?: CommReportService;
+  feeNotices?: FeeNoticesService;
 }): JobDefinition[] {
   return [
+    ...(deps.feeNotices
+      ? [
+          {
+            id: 'fee-reminders',
+            cron: '0 9 * * *',
+            timeZone: 'Asia/Kolkata' as const,
+            window:
+              'Unpaid instalments due today, and those due fee.reminder.daysBefore days from today (IST business date)',
+            catchUp: 'A later run the same day sends what the missed run would have',
+            reRun:
+              'Each instalment is reminded once a day (reminded_on is set in the same transaction), so a re-run sends nothing twice',
+            money: false,
+            manualRunSubTask: 'jobs.run',
+            run: async (ctx: JobContext) => {
+              await deps.feeNotices!.run(ctx);
+            },
+          },
+        ]
+      : []),
     ...(deps.commReport
       ? [
           {

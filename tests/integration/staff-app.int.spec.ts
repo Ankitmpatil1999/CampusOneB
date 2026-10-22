@@ -1,9 +1,10 @@
 /**
- * The staff app's foundation on a real MySQL (client 2026-10-19; IDN-088/089, COM-032…035):
+ * The staff app's foundation on a real MySQL (client 2026-10-19; IDN-088/089, COM-034/037):
  * - a console session of the app, beside the web console's: signing in on the phone keeps the web
  *   session, and a second phone sign-in ends the first; tokens in the body, sent as Bearer;
  * - its renewal by body, which refuses another surface's token;
- * - device tokens for push, and a notification for the account pushed to them through the relay;
+ * - device tokens for push, and a console notification pushed to the staff app's phone through
+ *   the push relay (the member app's phones get member notices only);
  * - the new staff notifications: a school fee paid online reaches whoever collects fees.
  */
 import { randomUUID } from 'node:crypto';
@@ -14,8 +15,8 @@ import { codeOf } from './http-app';
 import { PASSWORD, inr, mobile, schoolFixture, type Auth, type Payer } from './school';
 import type { PushMessage, PushSender } from '../../integrations/push.provider';
 import { notify } from '../../services/notifications.service';
-import { pushRelay } from '../../services/push-relay';
-import { tokenHash } from '../../services/push-tokens.service';
+import { PushRelay } from '../../services/push-relay.service';
+import { tokenHash } from '../../services/push.service';
 import { uuidToBin } from '../../utils/idGenerator';
 
 describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications', () => {
@@ -68,7 +69,9 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
       .send({ refreshToken: app1.refreshToken });
     expect(renewed.status, JSON.stringify(renewed.body)).toBe(200);
     expect(renewed.body.sessionId).toBe(app1.sessionId);
-    expect((await request(f.app).get('/api/v1/console/session').set(bearer(renewed.body))).status).toBe(200);
+    expect(
+      (await request(f.app).get('/api/v1/console/session').set(bearer(renewed.body))).status,
+    ).toBe(200);
 
     // A second phone: the first phone's session ends, the web's still does not.
     const app2 = await appSignIn();
@@ -77,7 +80,9 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
       .send({ refreshToken: renewed.body.refreshToken });
     expect(old.status).toBe(401);
     expect(old.body.code).toBe('AUTH.SIGNED_IN_ELSEWHERE');
-    expect((await request(f.app).get('/api/v1/console/session').set(bearer(app2))).status).toBe(200);
+    expect((await request(f.app).get('/api/v1/console/session').set(bearer(app2))).status).toBe(
+      200,
+    );
     expect((await request(f.app).get('/api/v1/console/session').set(con)).status).toBe(200);
 
     // A member app's refresh token is not renewed here.
@@ -96,7 +101,13 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
     ).toBe(200);
   });
 
-  it('pushes a fee paid online to the staff app of whoever collects fees (COM-034/035, NTF.FEE_PAID_ONLINE)', async () => {
+  it('pushes a fee paid online to the staff app of whoever collects fees (COM-034/037, NTF.FEE_PAID_ONLINE)', async () => {
+    // The platform's push channel on (back office, INT-010): pushes are queued from now on.
+    await f.t.db
+      .updateTable('messaging_channels')
+      .set({ enabled: 1 })
+      .where('channel', '=', 'PUSH')
+      .execute();
     const tokenRow = (token: string) =>
       f.t.db
         .selectFrom('session_push_tokens as t')
@@ -182,28 +193,31 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
     expect(bell.status, JSON.stringify(bell.body)).toBe(200);
     expect(JSON.stringify(bell.body)).toContain('Term 1 paid online for Ravi Rao');
 
-    // The relay pushes it to the registered phone.
+    // The relay pushes it to the registered phone, with the staff app's unread count.
     const sent: PushMessage[] = [];
     let gone: string[] = [];
     const sender: PushSender = {
-      mode: 'log',
+      provider: 'log',
       async send(m) {
         sent.push(m);
-        return { invalid: m.tokens.filter((x) => gone.includes(x)) };
+        return gone.includes(m.token) ? 'GONE' : 'SENT';
       },
     };
-    const relay = pushRelay({ db: f.t.db, sender, loggers: capturingLoggers().loggers });
+    const relay = new PushRelay({ db: f.t.db, push: sender, loggers: capturingLoggers().loggers });
     const drain = async () => {
       sent.length = 0;
-      while ((await relay.relayOnce()) > 0) {
-        // Every push due now.
-      }
+      await relay.runOnce(100);
     };
     await drain();
-    expect(sent.find((m) => m.tokens.includes(token))).toMatchObject({
+    expect(sent.find((m) => m.token === token)).toMatchObject({
       title: 'Term 1 paid online for Ravi Rao',
-      data: { category: 'PAYMENT', link: '/console/feecollection' },
+      link: '/console/feecollection',
     });
+    expect(sent.find((m) => m.token === token)!.badge).toBeGreaterThan(0);
+    // The console notice never reaches the member app's phone.
+    expect(sent.filter((m) => m.token === memberToken).map((m) => m.title)).not.toContain(
+      'Term 1 paid online for Ravi Rao',
+    );
 
     // Signed in on another phone: the first phone's session ended, so it gets no more pushes; the
     // new phone's token Firebase no longer knows is forgotten.
@@ -232,7 +246,7 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
       link: null,
     });
     await drain();
-    expect(sent.flatMap((m) => m.tokens)).toEqual([otherToken]);
+    expect(sent.map((m) => m.token)).toEqual([otherToken]);
     expect(await tokenRow(otherToken)).toBeUndefined();
   });
 });

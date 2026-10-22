@@ -179,6 +179,7 @@ export async function allocateStudent(
     {
       institutionId: a.institutionId,
       accountIds: await familyAccountsOf(trx, a.profileRowId),
+      about: [a.profileRowId],
       surface: 'MEMBER',
       category: 'ACCOUNT',
       titleKey: 'NTF.TRANSPORT_ALLOCATED',

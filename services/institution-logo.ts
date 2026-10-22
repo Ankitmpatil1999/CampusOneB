@@ -1,7 +1,7 @@
 /**
  * An institution's logo at a stable public address (client 2026-10-15: "I have uploaded the logo,
  * but it is not reflecting anywhere"). The console's menu, the admission pages and the apps show it
- * from INS-043. A signed file link expires in minutes and isn't cached; this address changes only
+ * from INS-049. A signed file link expires in minutes and isn't cached; this address changes only
  * when the logo is replaced, so it can be.
  */
 import type { Kysely, Transaction } from 'kysely';
@@ -10,7 +10,7 @@ import { binToUuid, uuidToBin } from '../utils/idGenerator';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
-/** INS-043's path for an institution and its logo file (the file's id makes it a new address). */
+/** INS-049's path for an institution and its logo file (the file's id makes it a new address). */
 export const logoPath = (institutionPublicId: string, filePublicId: string) =>
   `/api/v1/public/institutions/${institutionPublicId}/logo?v=${filePublicId.replace(/-/g, '').slice(0, 12)}`;
 

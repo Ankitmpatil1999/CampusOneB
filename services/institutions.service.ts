@@ -49,6 +49,7 @@ import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenera
 import { hashSecret } from '../utils/password';
 import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
+import { setDefaultFromArrangement } from './corporate-codes.service';
 import type { FileService } from './file.service';
 import { logoFileOf, logoUrlOf } from './institution-logo';
 import { planDto } from './plans.service';
@@ -1039,9 +1040,11 @@ export class InstitutionsService {
     input: { corporateCode: string; poolAccountRef: string; shadowAccountRef?: string | null },
   ) {
     const code = input.corporateCode.trim().toUpperCase();
-    const len = await this.limit(LIMITS.corporateCodeLength);
-    if (!new RegExp(`^[A-Z0-9]{${len}}$`).test(code)) {
-      throw new ValidationError([{ field: 'corporateCode', code: 'INS.CORPORATE_CODE_FORMAT' }]);
+    const max = await this.limit(LIMITS.corporateCodeMaxLength);
+    if (!new RegExp(`^[A-Z0-9]{1,${max}}$`).test(code)) {
+      throw new ValidationError([
+        { field: 'corporateCode', code: 'INS.CORPORATE_CODE_FORMAT', params: { max } },
+      ]);
     }
     const at = this.now();
     const by = this.actor(p);
@@ -1066,6 +1069,8 @@ export class InstitutionsService {
         by,
       );
       if (!ok) throw new PreconditionFailedError();
+      // The arrangement's code is the school's default corporate code (client 2026-10-14).
+      await setDefaultFromArrangement(trx, String(row.id), code, input.poolAccountRef, by, at);
       await this.completeStep(trx, row, 'bank', by, `Corporate code ${code}`, at);
       await recordAudit(trx, {
         institutionId: row.id,
@@ -1491,14 +1496,14 @@ export class InstitutionsService {
       name: row.name,
       shortName: row.short_name,
       city: row.city,
-      // The stable address (INS-043), not a signed link that expires (client 2026-10-15).
+      // The stable address (INS-049), not a signed link that expires (client 2026-10-15).
       logoUrl: await logoUrlOf(this.deps.db, String(row.id)),
       colors: { brand: settings?.brand_color ?? null },
     };
   }
 
   /**
-   * INS-043: the institution's logo itself, public like its branding (sign-in, the admission pages,
+   * INS-049: the institution's logo itself, public like its branding (sign-in, the admission pages,
    * the console's menu, the apps). Only a picture scanned clean; anything else answers 404.
    */
   async logo(institutionId: string) {

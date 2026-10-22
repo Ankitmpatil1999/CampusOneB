@@ -23,6 +23,7 @@ import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import { toMoneyDto } from '../utils/money';
 import { PdfDocument, rupeesInWords } from '../utils/pdf';
 import type { Principal } from '../utils/principal';
+import { vansOf } from './vans';
 
 const titleCase = (s: string) =>
   s.toLowerCase().replace(/(^|[\s.'-])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
@@ -113,7 +114,6 @@ export class WalletsService {
     const rows = await db
       .selectFrom('wallets as w')
       .innerJoin('wallet_balances as b', 'b.wallet_id', 'w.id')
-      .leftJoin('virtual_accounts as v', 'v.wallet_id', 'w.id')
       .select([
         'w.id',
         'w.public_id',
@@ -122,7 +122,6 @@ export class WalletsService {
         'w.status',
         'b.available_paise',
         'b.held_paise',
-        'v.va_number',
       ])
       .where('w.owner_profile_id', '=', profileId)
       .orderBy('w.kind')
@@ -147,6 +146,10 @@ export class WalletsService {
           .groupBy('wallet_id')
           .execute()
       : [];
+    const vans = await vansOf(
+      db,
+      rows.map((r) => String(r.id)),
+    );
     return rows.map((w) => {
       const s = spend.find((x) => String(x.wallet_id) === String(w.id));
       return {
@@ -156,7 +159,7 @@ export class WalletsService {
         status: w.status,
         balance: toMoneyDto(Number(w.available_paise)),
         held: toMoneyDto(Number(w.held_paise)),
-        virtualAccount: w.va_number,
+        virtualAccount: vans.get(String(w.id))?.van ?? null,
         spentToday: toMoneyDto(Number(s?.today ?? 0)),
         spentThisMonth: toMoneyDto(Number(s?.month ?? 0)),
       };
@@ -202,7 +205,6 @@ export class WalletsService {
       .selectFrom('wallets as w')
       .innerJoin('member_profiles as m', 'm.id', 'w.owner_profile_id')
       .innerJoin('institutions as i', 'i.id', 'w.institution_id')
-      .leftJoin('virtual_accounts as v', 'v.wallet_id', 'w.id')
       .select([
         'w.id',
         'w.kind',
@@ -211,7 +213,6 @@ export class WalletsService {
         'm.first_name',
         'm.last_name',
         'i.name as institution_name',
-        'v.va_number',
       ])
       .where('w.public_id', '=', uuidToBin(walletId))
       .where('m.account_id', '=', accountId)
@@ -320,15 +321,22 @@ export class WalletsService {
   }
 
   // --- WAL-003 ------------------------------------------------------------------------------------
+  /**
+   * The wallet's VAN with the bank and IFSC of its code — the code of the holder's class, or the
+   * school's default (client 2026-10-14). A code whose bank or IFSC isn't filled in yet shows the
+   * platform's values (VA_BANK_NAME / VA_BANK_IFSC).
+   */
   async virtualAccount(p: Principal, walletId: string) {
     const w = await this.ownWallet(p, walletId);
-    if (!w.va_number) throw new NotFoundError();
+    const van = (await vansOf(this.deps.db, [String(w.id)])).get(String(w.id));
+    if (!van) throw new NotFoundError();
+    const filled = !!van.code.bankName && !!van.code.ifsc;
     return {
-      vaNumber: w.va_number,
+      vaNumber: van.van,
       beneficiary: `${name(w.first_name, w.last_name)} · ${w.institution_name}`,
-      bankName: this.deps.vaBank.name,
-      ifsc: this.deps.vaBank.ifsc,
-      example: this.deps.vaBank.example,
+      bankName: filled ? van.code.bankName! : this.deps.vaBank.name,
+      ifsc: filled ? van.code.ifsc! : this.deps.vaBank.ifsc,
+      example: filled ? false : this.deps.vaBank.example,
     };
   }
 

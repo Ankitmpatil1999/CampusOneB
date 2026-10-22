@@ -1,9 +1,10 @@
 /**
- * E-mail through SMTP (client 2026-10-16): the sender in the RingPe layout, its subjects, and its
- * configuration (the same as on the corporate-codes branch).
+ * E-mail (client 2026-10-16): the SMTP sender in the RingPe layout, its subjects, its configuration,
+ * and the notification events every in-app notice belongs to.
  */
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../config/config';
+import { COMM_EVENTS, allMessages, commEventOf } from '../config/registers';
 import { createEmailSender, smtpSender } from '../integrations/email.provider';
 import { emailHtml, subjectFor } from '../utils/email-layout';
 import { BASE_ENV, capturingLoggers } from './helpers';
@@ -126,5 +127,18 @@ describe('SMTP sender', () => {
         EMAIL_TLS_VERIFY: 'false',
       }),
     ).toThrow(/EMAIL_TLS_VERIFY: must be true in production/);
+  });
+});
+
+describe('notification events', () => {
+  it('every in-app notice belongs to one event, and every event is on by default', () => {
+    const notices = allMessages()
+      .map((m) => m.key)
+      .filter((k) => k.startsWith('NTF.'));
+    expect(notices.length).toBeGreaterThan(30);
+    expect(notices.filter((k) => !commEventOf(k))).toEqual([]);
+    const titles = COMM_EVENTS.flatMap((e) => e.titles);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(COMM_EVENTS.every((e) => e.emailByDefault && e.alertByDefault)).toBe(true);
   });
 });

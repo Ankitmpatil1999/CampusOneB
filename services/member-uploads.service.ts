@@ -350,6 +350,8 @@ export class MemberUploadsService {
     };
     const studentType = types.find((t) => t.category === 'STUDENT' && t.status === 'ACTIVE');
     const parentType = types.find((t) => t.category === 'PARENT' && t.status === 'ACTIVE');
+    // Client 2026-10-16: a new parent's e-mail (setting mem.parentEmail.required).
+    const parentEmailRequired = await this.deps.members.parentEmailRequired();
     const seenAdmission = new Map<string, number>();
     const report: RowReport[] = [];
     for (const [i, cells] of data.entries()) {
@@ -406,6 +408,7 @@ export class MemberUploadsService {
           ) {
             err(`${who[g.relation]} mobile`, 'IDN.MOBILE_IN_OTHER_INSTITUTION');
           }
+          if (!g.email && parentEmailRequired) err(`${who[g.relation]} e-mail`, 'VALIDATION.REQUIRED');
         }
       }
       // The member's own fields (a label the form has too is the same column).

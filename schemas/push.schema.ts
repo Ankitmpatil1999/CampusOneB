@@ -1,4 +1,4 @@
-/** The phone's push token for its signed-in session (COM-034/035; client 2026-10-19). */
+/** The phone's push token for its signed-in session (COM-034/037; client 2026-10-19). */
 import { z } from 'zod';
 
 export const pushTokenSchema = z

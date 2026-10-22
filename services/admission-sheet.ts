@@ -96,7 +96,7 @@ export const SHEET_COLUMNS: readonly SheetColumn[] = [
   req('Father PAN', 'parents.father.pan', 'ABCPS1234K'),
   req('Mother full name', 'parents.mother.name', 'Sunita Shetty'),
   req('Mother mobile', 'parents.mother.mobile', '9845012391'),
-  col('Mother e-mail', 'parents.mother.email'),
+  col('Mother e-mail', 'parents.mother.email', 'sunita.shetty@example.in'),
   col('Mother occupation', 'parents.mother.occupation'),
   col('Mother annual income', 'parents.mother.annualIncome'),
   req('Mother Aadhaar number', 'parents.mother.aadhaar', '3456 7890 1234'),

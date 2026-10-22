@@ -2987,6 +2987,7 @@ export class AdmissionsService {
     'Parent name',
     'Parent mobile',
     'Parent relation',
+    // A 'Parent e-mail' column may follow (client 2026-10-16): this prefix recognises both.
   ] as const;
 
   /**
@@ -3147,6 +3148,7 @@ export class AdmissionsService {
         )
       : undefined;
     const parentType = types.find((t) => t.category === 'PARENT' && t.status === 'ACTIVE');
+    const emailRequired = await this.deps.members.parentEmailRequired();
     const by = this.by(p);
     const seen = new Set<string>();
     const report: {
@@ -3276,6 +3278,11 @@ export class AdmissionsService {
           ) {
             err(`${who[g.relation]} mobile`, 'IDN.MOBILE_IN_OTHER_INSTITUTION');
           }
+        }
+        // Client 2026-10-16 (setting mem.parentEmail.required): the primary contact's e-mail.
+        const primary = guardians[0];
+        if (primary && !primary.email?.trim() && emailRequired) {
+          err(`${who[primary.relation]} e-mail`, 'VALIDATION.REQUIRED');
         }
       }
       const st = read.app.student as { firstName?: string; lastName?: string };

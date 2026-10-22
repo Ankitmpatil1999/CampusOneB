@@ -207,6 +207,10 @@ export const COMMUNICATION_MESSAGES = [
   n('RPT.PARAM_INVALID', 422, 'Choose a period of at most one year.', ['24', 'CR-13']),
   n('RPT.EXPORT_NOT_READY', 409, 'The export is still being prepared.', ['OI-GAS-17']),
   n('RPT.EXPORT_EXPIRED', 410, 'This export has expired. Export the report again.', ['OI-GAS-17']),
+  // Notification settings per event (client 2026-10-16; COM-032/033).
+  n('COM.EVENT_UNKNOWN', 422, 'There is no notification event {event}.', ['client 2026-10-16'], [
+    'event',
+  ]),
 ] as const satisfies readonly MessageDefinition[];
 
 export type CommunicationMessageKey = (typeof COMMUNICATION_MESSAGES)[number]['key'];

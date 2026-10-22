@@ -3,8 +3,7 @@
  * and tests; refused in production); `smtp` sends through the mail server in .env (client
  * 2026-10-16: the earlier application's server, mail.sabadotechnologies.com, 587 STARTTLS, with
  * EMAIL_USER / EMAIL_PASS). Every message goes out as HTML in the RingPe layout with the plain text
- * beside it; the sender's name is the school's when the caller gives it. (The same sender as on the
- * corporate-codes branch.)
+ * beside it; the sender's name is the school's when the caller gives it.
  */
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { Loggers } from '../controllers/logger';

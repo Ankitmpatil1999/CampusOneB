@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { schoolFixture, type Auth, type Payer } from './school';
+import { notify } from '../../services/notifications.service';
 
 const istToday = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
@@ -150,5 +151,46 @@ describe.skipIf(!adminUrl)('teachers on the web on real MySQL', () => {
       .set('If-Match', '"v1"')
       .send({ marks: [] });
     expect(r.status).toBe(403);
+  });
+
+  it('shows the teacher their app notices in the console bell, and marks them read there (client 2026-10-21)', async () => {
+    // A notice for Meena's app, as a student's leave request is (MEMBER).
+    await notify(
+      f.t.db,
+      {
+        institutionId: f.school.rowId,
+        accountIds: [meena.accountId],
+        surface: 'MEMBER',
+        category: 'APPROVAL',
+        titleKey: 'NTF.LEAVE_REQUESTED',
+        params: { name: 'Asha Rao', dates: '21 Oct 2026' },
+        body: 'Fever',
+        link: '/teacher/student-leaves',
+      },
+      new Date(),
+    );
+    const bell = await get('/console/notifications', meenaWeb);
+    expect(bell.status, JSON.stringify(bell.body)).toBe(200);
+    expect(bell.body.unread).toBeGreaterThanOrEqual(1);
+    expect(bell.body.items[0]).toMatchObject({
+      surface: 'MEMBER',
+      titleKey: 'NTF.LEAVE_REQUESTED',
+      link: '/teacher/student-leaves',
+      read: false,
+    });
+    // The administrator's bell is the console's own only.
+    expect(
+      ((await get('/console/notifications')).body.items as { surface: string }[]).every(
+        (n) => n.surface === 'CONSOLE',
+      ),
+    ).toBe(true);
+    const read = await request(f.app)
+      .post('/api/v1/console/notifications/read')
+      .set(meenaWeb)
+      .send({ ids: [bell.body.items[0].id] });
+    expect(read.status, JSON.stringify(read.body)).toBe(204);
+    expect((await get('/console/notifications', meenaWeb)).body.items[0].read).toBe(true);
+    // The same notice, read, in the app's list.
+    expect((await get('/me/notifications', meenaWeb)).body.items[0]).toMatchObject({ read: true });
   });
 });

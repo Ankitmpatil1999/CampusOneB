@@ -60,7 +60,7 @@ export function approvalsController(
     }),
   });
 
-  const bell = (surface: 'CONSOLE' | 'MEMBER') => ({
+  const bell = (surface: 'CONSOLE' | 'MEMBER' | 'OPS') => ({
     list: wrap(async (req, res) => {
       fresh(res);
       res.json(
@@ -90,6 +90,7 @@ export function approvalsController(
     }),
     consoleBell: bell('CONSOLE'),
     memberBell: bell('MEMBER'),
+    opsBell: bell('OPS'),
     audit: wrap(async (req, res) => {
       fresh(res);
       res.json(await audit.list(principal(req), auditQuerySchema.parse(req.query)));

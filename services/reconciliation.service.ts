@@ -531,14 +531,21 @@ export class ReconciliationService {
   ) {
     const out = new Map<string, string>();
     if (kind !== 'VA_CREDITS') return out;
-    const vas = [...new Set(rows.map((r) => r.va!).filter(Boolean))];
-    for (let k = 0; k < vas.length; k += 500) {
-      const found = await db
-        .selectFrom('virtual_accounts')
-        .select(['va_number', 'institution_id'])
-        .where('va_number', 'in', vas.slice(k, k + 500))
-        .execute();
-      for (const v of found) out.set(v.va_number.toUpperCase(), String(v.institution_id));
+    const vas = [...new Set(rows.map((r) => r.va!.toUpperCase()).filter(Boolean))];
+    if (!vas.length) return out;
+    // A VAN starts with one of a school's corporate codes (client 2026-10-14). The code, not the
+    // holder's current class, says whose it is: a statement may hold credits from before a change.
+    const codes = (
+      await db
+        .selectFrom('institution_corporate_codes')
+        .select(['corporate_code', 'institution_id'])
+        .execute()
+    ).sort((x, y) => y.corporate_code.length - x.corporate_code.length);
+    for (const va of vas) {
+      const c = codes.find(
+        (x) => va.startsWith(x.corporate_code) && va.length > x.corporate_code.length,
+      );
+      if (c) out.set(va, String(c.institution_id));
     }
     return out;
   }

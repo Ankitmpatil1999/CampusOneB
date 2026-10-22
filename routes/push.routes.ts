@@ -1,15 +1,15 @@
 /**
- * Phone pushes (client 2026-10-19): the member app (COM-034) and the staff app (COM-035, its Bearer
+ * Phone pushes (client 2026-10-19): the member app (COM-034) and the staff app (COM-037, its Bearer
  * console session) register their Firebase token for the signed-in session, so notices reach the
- * phone while the app is closed or the phone is locked. Signing out ends the session, and with it the
- * pushes.
+ * phone while the app is closed or the phone is locked. Signing out ends the session, and with it
+ * the pushes.
  */
 import { Router, type Request, type RequestHandler } from 'express';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { pushTokenSchema } from '../schemas/push.schema';
-import type { PushTokensService } from '../services/push-tokens.service';
+import type { PushTokensService } from '../services/push.service';
 import { AuthenticationError } from '../utils/CustomAPIError';
 
 defineRoute({
@@ -24,7 +24,7 @@ defineRoute({
   responses: { 204: { description: 'Registered' } },
 });
 defineRoute({
-  id: 'COM-035',
+  id: 'COM-037',
   method: 'put',
   path: '/api/v1/console/push-token',
   summary:

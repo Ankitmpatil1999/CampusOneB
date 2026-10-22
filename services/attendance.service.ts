@@ -217,12 +217,14 @@ export class AttendanceService {
       : member.accountId
         ? [member.accountId]
         : [];
-    if (!accounts.length) return;
+    // A student's parents are e-mailed even without the app (client 2026-10-16).
+    if (!accounts.length && !member.student) return;
     await notify(
       db,
       {
         institutionId,
         accountIds: accounts,
+        ...(member.student ? { about: [member.rowId] } : {}),
         surface: 'MEMBER',
         category: 'ACCOUNT',
         titleKey: 'NTF.ABSENT',

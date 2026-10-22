@@ -557,4 +557,37 @@ describe.skipIf(!adminUrl)('transport on real MySQL', () => {
       'TRN.NO_TRANSPORT_CHOICE',
     );
   });
+
+  it('shows the student an allocation that starts later, with the stop and the bus (client 2026-10-21)', async () => {
+    const esha = await f.student('Esha');
+    const tomorrow = new Intl.DateTimeFormat('en-CA', IST).format(
+      new Date(Date.now() + 86_400_000),
+    );
+    if (tomorrow > yearEnd) return; // the year ends today: nothing can start later
+    const made = await post('/console/passenger-allocations', con, {
+      memberIds: [esha.id],
+      routeId: ids['route'],
+      stopId: ids['Ashok Nagar'],
+      from: tomorrow,
+      to: yearEnd,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const mine = await get('/me/transport', esha.auth);
+    expect(mine.status, JSON.stringify(mine.body)).toBe(200);
+    expect(mine.body.allocation).toMatchObject({
+      route: { code: 'R3' },
+      stop: { name: 'Ashok Nagar' },
+      from: tomorrow,
+      upcoming: true,
+    });
+    // No trips before it starts, but the route's bus is known.
+    expect(mine.body.trips).toEqual([]);
+    expect(mine.body.schedule).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ vehicle: expect.objectContaining({ name: 'Bus 07' }) }),
+      ]),
+    );
+    // One already running is not upcoming.
+    expect((await get('/me/transport', asha.auth)).body.allocation.upcoming).toBe(false);
+  });
 });

@@ -2,7 +2,7 @@
  * The e-mail every RingPe message is sent in (client 2026-10-16): the subject as a heading, the text
  * (links made clickable), the school's name and a closing line, in the prototype's colours. Plain
  * text goes with it for mail apps that don't show HTML. Every value is escaped: names and bodies are
- * typed by people. (The same layout as on the corporate-codes branch.)
+ * typed by people.
  */
 const esc = (s: string) =>
   s

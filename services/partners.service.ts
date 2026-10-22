@@ -16,6 +16,7 @@
  * The header names and the signature scheme are an example contract until the sponsor bank's API is
  * known (C-11); they are documented in docs/05 and configurable here only, in one place.
  */
+import bcrypt from 'bcryptjs';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { Request } from 'express';
@@ -85,6 +86,10 @@ export function ipAllowed(ip: string | undefined, list: readonly string[]): bool
   });
 }
 
+/** An imported client's id, and a bcrypt hash ($2a$/$2b$/$2y$, cost, 53 characters). */
+const CLIENT_ID = /^[A-Za-z0-9_.-]{4,40}$/;
+const BCRYPT = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
 export class PartnersService {
   constructor(
     private readonly deps: {
@@ -137,6 +142,8 @@ export class PartnersService {
       statusReason: r.status_reason,
       secretRotatedAt: iso(r.secret_rotated_at)!,
       previousSecretValidUntil: iso(r.previous_valid_until),
+      /** HASH: imported with the earlier application's bcrypt hash (no signed calls). */
+      secretKind: r.secret_enc ? ('ENCRYPTED' as const) : ('HASH' as const),
       createdAt: iso(r.created_at)!,
       version: r.row_version,
     };
@@ -254,6 +261,81 @@ export class PartnersService {
     return { id: pub.id, clientId, secret };
   }
 
+  // --- INT-011 ------------------------------------------------------------------------------------
+  /**
+   * A client created elsewhere — the earlier application's Axis Bank client (client 2026-10-14) —
+   * imported with its client id and its secret's bcrypt hash, so the credentials the bank already
+   * holds keep working. RingPe never sees the secret: the token call checks it against the hash.
+   */
+  async importClient(
+    p: Principal,
+    input: {
+      name: string;
+      partner: string;
+      clientId: string;
+      secretHash: string;
+      scopes: readonly string[];
+      ipAllowlist: readonly string[];
+    },
+  ) {
+    this.checkInput(input.scopes, input.ipAllowlist);
+    const errors: FieldError[] = [];
+    const clientId = input.clientId.trim();
+    if (!CLIENT_ID.test(clientId)) errors.push({ field: 'clientId', code: 'VALIDATION.FORMAT' });
+    const hash = input.secretHash.trim();
+    if (!BCRYPT.test(hash)) errors.push({ field: 'secretHash', code: 'INT.SECRET_HASH_FORMAT' });
+    // An imported client calls the bank APIs; a POS partner's scopes need a school and a secret.
+    if (input.scopes.some((s) => (INSTITUTION_SCOPES as readonly string[]).includes(s))) {
+      errors.push({ field: 'scopes', code: 'VALIDATION.FORMAT' });
+    }
+    if (errors.length) throw new ValidationError(errors);
+    const name = input.name.trim();
+    const taken = await this.deps.db
+      .selectFrom('api_clients')
+      .select(['name', 'client_id'])
+      .where((eb) => eb.or([eb('name', '=', name), eb('client_id', '=', clientId)]))
+      .execute();
+    if (taken.some((t) => t.client_id === clientId)) {
+      throw new CustomAPIError(409, 'INT.CLIENT_ID_TAKEN');
+    }
+    if (taken.length) throw new CustomAPIError(409, 'INT.CLIENT_NAME_TAKEN');
+    const pub = newPublicIdPair();
+    const now = this.now();
+    await this.deps.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('api_clients')
+        .values({
+          public_id: pub.bin,
+          client_id: clientId,
+          name,
+          partner: input.partner,
+          institution_id: null,
+          scopes: JSON.stringify([...new Set(input.scopes)]),
+          ip_allowlist: JSON.stringify([...new Set(input.ipAllowlist)]),
+          secret_enc: null,
+          secret_hash: hash,
+          secret_rotated_at: now,
+          created_by: isUuid(p.subject) ? uuidToBin(p.subject) : null,
+          created_at: now,
+          updated_at: now,
+        })
+        .execute();
+      await recordAudit(trx, {
+        action: 'API_CLIENT_IMPORTED',
+        entityType: 'api_client',
+        entityRef: pub.id,
+        after: {
+          name,
+          clientId,
+          partner: input.partner,
+          scopes: input.scopes,
+          ipAllowlist: input.ipAllowlist,
+        },
+      });
+    });
+    return this.present(await this.row(pub.id));
+  }
+
   // --- INT-003 ------------------------------------------------------------------------------------
   async update(
     p: Principal,
@@ -317,6 +399,8 @@ export class PartnersService {
         .set({
           previous_secret_enc: overlap > 0 ? r.secret_enc : null,
           previous_valid_until: overlap > 0 ? until : null,
+          // An imported client's hash: still accepted during the overlap, then gone.
+          secret_hash: !r.secret_enc && overlap > 0 ? r.secret_hash : null,
           secret_enc: this.deps.cipher.encrypt(
             'partner_secret',
             secret,
@@ -450,12 +534,12 @@ export class PartnersService {
 
   private secretsOf(r: {
     public_id: Buffer;
-    secret_enc: Buffer;
+    secret_enc: Buffer | null;
     previous_secret_enc: Buffer | null;
     previous_valid_until: Date | null;
   }): string[] {
     const aad = this.aad(binToUuid(r.public_id));
-    const out = [this.deps.cipher.decrypt('partner_secret', r.secret_enc, aad)];
+    const out = r.secret_enc ? [this.deps.cipher.decrypt('partner_secret', r.secret_enc, aad)] : [];
     if (
       r.previous_secret_enc &&
       r.previous_valid_until &&
@@ -464,6 +548,26 @@ export class PartnersService {
       out.push(this.deps.cipher.decrypt('partner_secret', r.previous_secret_enc, aad));
     }
     return out;
+  }
+
+  /**
+   * An imported client's secret against its bcrypt hash: the current secret while it has no RingPe
+   * secret, otherwise only during a rotation's overlap.
+   */
+  private async hashAccepts(
+    r: { secret_enc: Buffer | null; secret_hash: string | null; previous_valid_until: Date | null },
+    secret: string,
+  ) {
+    if (!r.secret_hash) return false;
+    const current = !r.secret_enc;
+    const overlap =
+      !!r.previous_valid_until && new Date(r.previous_valid_until).getTime() > this.now().getTime();
+    if (!current && !overlap) return false;
+    try {
+      return await bcrypt.compare(secret, r.secret_hash);
+    } catch {
+      return false;
+    }
   }
 
   // --- IDN-043 ------------------------------------------------------------------------------------
@@ -524,10 +628,11 @@ export class PartnersService {
     const given = Buffer.from(input.clientSecret);
     const secretOk =
       !!c &&
-      this.secretsOf(c).some((s) => {
+      (this.secretsOf(c).some((s) => {
         const want = Buffer.from(s);
         return want.length === given.length && timingSafeEqual(want, given);
-      });
+      }) ||
+        (await this.hashAccepts(c, input.clientSecret)));
     if (!c || c.status !== 'ACTIVE' || !secretOk) {
       await log('REFUSED', 'invalid_client', null, null);
       return { ok: false, error: 'invalid_client' };

@@ -56,6 +56,9 @@ import { feeDuesRoutes } from './fee-dues.routes';
 import { financingRoutes } from './financing.routes';
 import { admissionsRoutes } from './admissions.routes';
 import { paymentGatewaysRoutes } from './payment-gateways.routes';
+import { corporateCodesRoutes } from './corporate-codes.routes';
+import { commEventsRoutes } from './comm-events.routes';
+import type { CorporateCodesService } from '../services/corporate-codes.service';
 import type { PaymentGatewaysService } from '../services/payment-gateways.service';
 import { settlementRoutes } from './settlement.routes';
 import { reconRoutes } from './recon.routes';
@@ -84,6 +87,10 @@ import type { PortalService } from '../services/portal.service';
 import type { ApprovalsService } from '../services/approvals.service';
 import type { AuditEventsService } from '../services/audit-events.service';
 import type { NotificationsService } from '../services/notifications.service';
+import type { CommEventsService } from '../services/comm-events.service';
+import type { EmailRelay } from '../services/email-relay.service';
+import type { PushRelay } from '../services/push-relay.service';
+import type { PushTokensService } from '../services/push.service';
 import type { MembersService } from '../services/members.service';
 import type { MemberUploadsService } from '../services/member-uploads.service';
 import type { AcademicsService } from '../services/academics.service';
@@ -140,7 +147,6 @@ import type { FeeRecordsService } from '../services/fee-records.service';
 import type { FeeUploadsService } from '../services/fee-uploads.service';
 import type { FeeDuesService } from '../services/fee-dues.service';
 import type { FeePaymentsService } from '../services/fee-payments.service';
-import type { PushTokensService } from '../services/push-tokens.service';
 import type { FinancingService } from '../services/financing.service';
 import type { AdmissionsService } from '../services/admissions.service';
 import type { AdmissionLinksService } from '../services/admission-links.service';
@@ -172,6 +178,10 @@ export interface ApiServices {
   readonly academics: AcademicsService;
   readonly approvals: ApprovalsService;
   readonly notifications: NotificationsService;
+  readonly commEvents: CommEventsService;
+  readonly emailRelay: EmailRelay;
+  readonly pushTokens: PushTokensService;
+  readonly pushRelay: PushRelay;
   readonly auditEvents: AuditEventsService;
   readonly portal: PortalService;
   readonly portalData: PortalDataService;
@@ -227,12 +237,11 @@ export interface ApiServices {
   readonly feeDues: FeeDuesService;
   /** Collect Fee: cash, a QR code or a payment link (client 2026-10-19). */
   readonly feePayments: FeePaymentsService;
-  /** The apps' device tokens for push notifications (client 2026-10-19). */
-  readonly pushTokens: PushTokensService;
   readonly financing: FinancingService;
   readonly admissions: AdmissionsService;
   readonly admissionLinks: AdmissionLinksService;
   readonly paymentGateways: PaymentGatewaysService;
+  readonly corporateCodes: CorporateCodesService;
   readonly settlement: SettlementService;
   readonly settings: SettingsService;
   /** Stricter rate limit for sign-in, code and refresh routes (RATE_LIMIT_AUTH_MAX). */
@@ -298,7 +307,6 @@ export function apiRouters(s: ApiServices): Router[] {
       academics: s.academics,
       loggers: s.loggers,
     }),
-    pushRoutes({ pushTokens: s.pushTokens, loggers: s.loggers }),
     approvalsRoutes({
       db: s.db,
       approvals: s.approvals,
@@ -406,6 +414,9 @@ export function apiRouters(s: ApiServices): Router[] {
       authLimiter: s.authLimiter,
     }),
     paymentGatewaysRoutes({ db: s.db, gateways: s.paymentGateways, loggers: s.loggers }),
+    corporateCodesRoutes({ db: s.db, corporateCodes: s.corporateCodes, loggers: s.loggers }),
+    commEventsRoutes({ commEvents: s.commEvents, loggers: s.loggers }),
+    pushRoutes({ pushTokens: s.pushTokens, loggers: s.loggers }),
     settlementRoutes({ db: s.db, settlement: s.settlement, loggers: s.loggers }),
     posRoutes({
       db: s.db,

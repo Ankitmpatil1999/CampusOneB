@@ -167,6 +167,66 @@ export interface DirectMessagesTable {
   read_at: NullableTimestamp;
 }
 
+/** Per school and event: e-mail and phone alert (migration 0078; no row = on). */
+export interface InstitutionCommEventsTable {
+  institution_id: Ref;
+  event_key: string;
+  email_enabled: ColumnType<number | boolean, boolean, boolean>;
+  alert_enabled: ColumnType<number | boolean, boolean, boolean>;
+  row_version: ColumnType<number, number | undefined, number>;
+  updated_by: Buffer | null;
+  updated_at: Timestamp;
+}
+
+/** E-mailed notices waiting to be sent (migration 0078). */
+export interface EmailOutboxTable {
+  id: Generated<string>;
+  institution_id: Ref | null;
+  account_id: Ref | null;
+  profile_id: Ref | null;
+  to_email: string;
+  event_key: string;
+  notification_ref: Buffer | null;
+  subject: string;
+  body: string;
+  status: ColumnType<'PENDING' | 'FAILED', 'PENDING' | 'FAILED' | undefined, 'PENDING' | 'FAILED'>;
+  attempts: ColumnType<number, number | undefined, number>;
+  next_attempt_at: Timestamp;
+  last_error: string | null;
+  created_at: Timestamp;
+}
+
+/** A signed-in member session's Firebase token (migration 0079). */
+export interface SessionPushTokensTable {
+  session_id: Ref;
+  account_id: Ref;
+  token: string;
+  token_hash: Buffer;
+  platform: 'ANDROID' | 'IOS';
+  lang_code: ColumnType<string, string | undefined, string>;
+  updated_at: Timestamp;
+}
+
+/** Pushed notices waiting to be sent (migration 0079). */
+export interface PushOutboxTable {
+  id: Generated<string>;
+  institution_id: Ref | null;
+  account_id: Ref;
+  /** Migration 0081: the member app's phones, or the staff app's for a console notice. */
+  surface: ColumnType<'MEMBER' | 'CONSOLE', 'MEMBER' | 'CONSOLE' | undefined, 'MEMBER' | 'CONSOLE'>;
+  event_key: string | null;
+  notification_ref: Buffer;
+  title_key: string;
+  params: ColumnType<unknown, string | null, string | null>;
+  body: string;
+  link: string | null;
+  status: ColumnType<'PENDING' | 'FAILED', 'PENDING' | 'FAILED' | undefined, 'PENDING' | 'FAILED'>;
+  attempts: ColumnType<number, number | undefined, number>;
+  next_attempt_at: Timestamp;
+  last_error: string | null;
+  created_at: Timestamp;
+}
+
 export interface CommunicationTables {
   announcement_categories: AnnouncementCategoriesTable;
   announcements: AnnouncementsTable;
@@ -179,4 +239,8 @@ export interface CommunicationTables {
   conversations: ConversationsTable;
   conversation_participants: ConversationParticipantsTable;
   direct_messages: DirectMessagesTable;
+  institution_comm_events: InstitutionCommEventsTable;
+  email_outbox: EmailOutboxTable;
+  session_push_tokens: SessionPushTokensTable;
+  push_outbox: PushOutboxTable;
 }

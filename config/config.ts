@@ -134,9 +134,6 @@ export const envSchema = z
     // Kept for reference with Razorpay support; not sent to the API.
     RAZORPAY_MERCHANT_ID: z.string().trim().max(64).optional(),
     ACCOUNTING_MODE: z.enum(['test', 'off']).default('test'),
-    // Push notifications to the apps (client 2026-10-19): the Firebase project's service-account
-    // JSON file (Firebase console › Project settings › Service accounts). Unset: pushes are logged.
-    FCM_SERVICE_ACCOUNT_FILE: z.string().trim().max(400).optional(),
     FINANCING_PARTNER_NAME: z.string().trim().min(2).max(120).default('Example Finance (example)'),
     // Address of the web application, for links sent by e-mail (staff password reset).
     // The web app's development server is HTTPS (npm start, client 2026-10-12).
@@ -157,6 +154,11 @@ export const envSchema = z
     EMAIL_FROM: z.string().trim().max(200).optional(),
     EMAIL_FROM_NAME: z.string().trim().min(1).max(100).default('RingPe'),
     EMAIL_TLS_VERIFY: bool(true),
+    // Phone pushes (client 2026-10-19; integrations/push.provider.ts): `fcm` = Firebase Cloud
+    // Messaging with the project's service-account key file (kept out of the repository, like the
+    // keys in keys/); `log` writes them to the app log (refused in production); `off` sends none.
+    PUSH_PROVIDER: z.enum(['off', 'log', 'fcm']).default('off'),
+    PUSH_FCM_SERVICE_ACCOUNT_FILE: z.string().trim().max(500).optional(),
 
     // Uploads (CR-07): private storage and antivirus scan.
     STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
@@ -200,7 +202,11 @@ export const envSchema = z
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))
         problem('EMAIL_FROM', 'must be an e-mail address (default: EMAIL_USER)');
     }
+    if (env.PUSH_PROVIDER === 'fcm' && !env.PUSH_FCM_SERVICE_ACCOUNT_FILE)
+      problem('PUSH_FCM_SERVICE_ACCOUNT_FILE', 'is required with PUSH_PROVIDER=fcm');
     if (env.NODE_ENV !== 'production') return;
+    if (env.PUSH_PROVIDER === 'log')
+      problem('PUSH_PROVIDER', 'must be fcm or off in production (log only writes the app log)');
     if (env.API_DOCS_ENABLED) problem('API_DOCS_ENABLED', 'must be false in production');
     if (!env.REDIS_URL) problem('REDIS_URL', 'is required in production (several instances)');
     if (env.CORS_ORIGINS.length === 0) problem('CORS_ORIGINS', 'is required in production');
@@ -324,8 +330,6 @@ export interface Config {
   /** The online payment gateway (Q17): test, or live (Razorpay); test refused in production. */
   readonly paymentGatewayMode: Env['PAYMENT_GATEWAY_MODE'];
   /** Razorpay keys for the live gateway (never logged); null without them. */
-  /** Firebase Cloud Messaging service account file; null: pushes are only logged. */
-  readonly fcmServiceAccountFile: string | null;
   readonly razorpay: {
     readonly keyId: string;
     readonly keySecret: string;
@@ -353,6 +357,9 @@ export interface Config {
       readonly fromName: string;
       readonly tlsVerify: boolean;
     };
+    readonly push: Env['PUSH_PROVIDER'];
+    /** Firebase service-account key file (PUSH_PROVIDER=fcm). */
+    readonly pushServiceAccountFile: string | null;
   };
   readonly files: {
     readonly storage: Env['STORAGE_PROVIDER'];
@@ -440,7 +447,6 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
     },
     financing: { mode: e.FINANCING_PARTNER_MODE, partnerName: e.FINANCING_PARTNER_NAME },
     paymentGatewayMode: e.PAYMENT_GATEWAY_MODE,
-    fcmServiceAccountFile: e.FCM_SERVICE_ACCOUNT_FILE || null,
     razorpay:
       e.RAZORPAY_KEY_ID && e.RAZORPAY_SECRET
         ? {
@@ -472,6 +478,8 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
         fromName: e.EMAIL_FROM_NAME,
         tlsVerify: e.EMAIL_TLS_VERIFY,
       },
+      push: e.PUSH_PROVIDER,
+      pushServiceAccountFile: e.PUSH_FCM_SERVICE_ACCOUNT_FILE || null,
     },
     files: {
       storage: e.STORAGE_PROVIDER,

@@ -645,6 +645,7 @@ export class LeaveService {
         {
           institutionId: me.institutionId,
           accountIds: await this.familyAccounts(trx, String(l.student_profile_id)),
+          about: [String(l.student_profile_id)],
           surface: 'MEMBER',
           category: 'ACCOUNT',
           titleKey: 'NTF.LEAVE_DECIDED',

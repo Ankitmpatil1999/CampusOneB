@@ -106,7 +106,8 @@ doc({
   id: 'COM-009',
   method: 'get',
   path: '/api/v1/console/notifications',
-  summary: 'Console bell: approvals and their decisions, newest first, with the unread count',
+  summary:
+    'Console bell, newest first, with the unread count: approvals and their decisions, and for a teacher, principal or merchant on the web their member-app notices from this school too (client 2026-10-21)',
   tags: com,
   auth: 'console',
   responses: { 200: { description: 'Notifications', schema: notificationListSchema } },
@@ -118,6 +119,26 @@ doc({
   summary: 'Mark console notifications read (ids, or all)',
   tags: com,
   auth: 'console',
+  request: markReadSchema,
+  responses: { 204: { description: 'Marked' } },
+});
+doc({
+  id: 'COM-035',
+  method: 'get',
+  path: '/api/v1/ops/notifications',
+  summary:
+    'Back-office bell (client 2026-10-21): platform requests waiting for a checker and the answers to the operator’s own, newest first, with the unread count',
+  tags: com,
+  auth: 'session (ops)',
+  responses: { 200: { description: 'Notifications', schema: notificationListSchema } },
+});
+doc({
+  id: 'COM-036',
+  method: 'post',
+  path: '/api/v1/ops/notifications/read',
+  summary: 'Mark back-office notifications read (ids, or all)',
+  tags: com,
+  auth: 'session (ops)',
   request: markReadSchema,
   responses: { 204: { description: 'Marked' } },
 });
@@ -191,6 +212,8 @@ export function approvalsRoutes(deps: {
   );
   router.get('/console/notifications', ...con, c.consoleBell.list);
   router.post('/console/notifications/read', ...con, c.consoleBell.read);
+  router.get('/ops/notifications', op, c.opsBell.list);
+  router.post('/ops/notifications/read', op, c.opsBell.read);
   router.get('/me/notifications', teacherOrMember, c.memberBell.list);
   router.post('/me/notifications/read', teacherOrMember, c.memberBell.read);
   router.get('/console/audit-events', ...con, can('config.view'), c.audit);

@@ -27,6 +27,7 @@ import { raiseApproval } from './approvals.service';
 import { recordAudit } from './audit.service';
 import type { LedgerService } from './ledger.service';
 import { notify } from './notifications.service';
+import { resolveVan } from './vans';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -83,16 +84,17 @@ export class BankCreditsService {
     return this.deps.now?.() ?? new Date();
   }
 
-  /** The virtual account's wallet, holder and institution (the corporate code must match). */
+  /**
+   * The VAN's wallet, holder and institution (services/vans.ts: the code must be the one the
+   * wallet's VAN uses now, and the corporate code given must be that code).
+   */
   private async account(db: Db, corporateCode: string, vaNumber: string) {
-    return db
-      .selectFrom('virtual_accounts as v')
-      .innerJoin('wallets as w', 'w.id', 'v.wallet_id')
+    const van = await resolveVan(db, vaNumber);
+    if (!van || van.code.code !== corporateCode.trim().toUpperCase()) return undefined;
+    const w = await db
+      .selectFrom('wallets as w')
       .innerJoin('member_profiles as m', 'm.id', 'w.owner_profile_id')
       .select([
-        'v.institution_id',
-        'v.corporate_code',
-        'v.status as va_status',
         'w.id as wallet_id',
         'w.status as wallet_status',
         'm.id as profile_id',
@@ -100,9 +102,16 @@ export class BankCreditsService {
         'm.last_name',
         'm.account_id',
       ])
-      .where('v.va_number', '=', vaNumber.trim().toUpperCase())
-      .where('v.corporate_code', '=', corporateCode.trim().toUpperCase())
+      .where('w.id', '=', van.walletId)
       .executeTakeFirst();
+    if (!w) return undefined;
+    return {
+      ...w,
+      institution_id: van.institutionId,
+      corporate_code: van.code.code,
+      corporate_code_id: van.code.id,
+      va_status: 'ACTIVE' as const,
+    };
   }
 
   private amountOf(text: string) {
@@ -165,6 +174,7 @@ export class BankCreditsService {
       const base = {
         public_id: pub.bin,
         va_number: input.vaNumber.trim().toUpperCase(),
+        corporate_code_id: acc?.corporate_code_id ?? null,
         utr: input.utr,
         bank_txn_id: input.bankTxnId,
         mode: input.mode ?? 'OTHER',

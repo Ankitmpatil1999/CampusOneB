@@ -414,7 +414,8 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
         .set(ops)
         .set('If-Match', `"v${version}"`)
         .send({ corporateCode: cc, poolAccountRef: 'POOLHPS0134' });
-    expect((await bank('TOOLONG', v)).body.errors[0].code).toBe('INS.CORPORATE_CODE_FORMAT');
+    // Up to 10 capital letters or digits (client 2026-10-14).
+    expect((await bank('TOO-LONG', v)).body.errors[0].code).toBe('INS.CORPORATE_CODE_FORMAT');
     expect((await bank(code, v - 1)).status).toBe(412);
     expect((await bank(code, v)).status).toBe(200);
 

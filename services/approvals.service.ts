@@ -204,6 +204,31 @@ export async function raiseApproval(
       v.at,
     );
   }
+  // A platform request waits for an operator who decides (client 2026-10-21: the back-office bell).
+  if (!v.appliedDirectly && !v.institutionId) {
+    const maker = await trx
+      .selectFrom('platform_accounts')
+      .select('id')
+      .where('public_id', '=', v.makerRef)
+      .executeTakeFirst();
+    const checkers = (await notificationsRepository.operatorCheckers(trx)).filter(
+      (a) => a !== (maker ? String(maker.id) : null),
+    );
+    await notify(
+      trx,
+      {
+        institutionId: null,
+        accountIds: checkers,
+        surface: 'OPS',
+        category: 'APPROVAL',
+        titleKey: 'NTF.APPROVAL_RAISED',
+        params: { no },
+        body: v.summary,
+        link: `/backoffice/approvals?open=${pub.id}`,
+      },
+      v.at,
+    );
+  }
   if (!v.appliedDirectly) {
     await emit(trx, {
       institutionId: v.institutionId,
@@ -922,7 +947,23 @@ export class ApprovalsService {
         ? await institutionsRepository.byPublicId(trx, a.subject_ref)
         : undefined;
     const bellInst = a.institution_id ?? (subjectInst ? subjectInst.id : null);
-    if (bellInst) {
+    if (a.maker_type === 'operator') {
+      // An operator's own request is answered in the back office (client 2026-10-21).
+      await notify(
+        trx,
+        {
+          institutionId: null,
+          accountIds: [String(maker.id)],
+          surface: 'OPS',
+          category: 'APPROVAL',
+          titleKey: approved ? 'NTF.APPROVAL_APPROVED' : 'NTF.APPROVAL_REJECTED',
+          params: { no },
+          body: `${action}: ${remarks}`,
+          link: `/backoffice/approvals?open=${binToUuid(a.public_id)}`,
+        },
+        at,
+      );
+    } else if (bellInst) {
       await notify(
         trx,
         {
