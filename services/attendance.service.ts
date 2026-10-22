@@ -15,6 +15,9 @@
  *   by the start, Late after), or the period's teacher marking it.
  * - **Reports** are computed on the server for a date range (OI-ATT-12, OI-ATT-15/16) with the year
  *   taken from each record.
+ * - **Staff at the front desk** (client 2026-10-22): a staff card on the desk's reader, or the desk
+ *   checking a staff member in or out by name, records the day as the gate does; the principal, the
+ *   console and the staff member's app read the same records.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
@@ -36,6 +39,8 @@ type Db = Kysely<Database> | Transaction<Database>;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = ['PRESENT', 'LATE', 'HALF_DAY', 'ABSENT'] as const;
+/** Teachers, the principal and non-teaching staff (the front desk's staff attendance). */
+const STAFF_CATEGORIES = ['TEACHER', 'PRINCIPAL', 'STAFF'] as const;
 const nameOf = (first: string | null | undefined, last: string | null | undefined) =>
   [first, last].filter(Boolean).join(' ');
 const ymd = (d: Date | string) => (typeof d === 'string' ? d.slice(0, 10) : istBusinessDate(d));
@@ -1628,6 +1633,324 @@ export class AttendanceService {
         onApprovedLeave: !!r.leave_id,
       })),
     };
+  }
+
+  // --- staff attendance at the front desk (client 2026-10-22; ATT-029…031) ----------------------------------
+  /**
+   * ATT-029: teachers, the principal and non-teaching staff on a date — each one's status, check-in
+   * and check-out times, how it was recorded and approved leave — for the front desk and the
+   * console. The same records the gate readers, the principal and the staff member's own app read.
+   */
+  async staffRoster(
+    p: Principal,
+    f: { date?: string | undefined; type?: 'ALL' | 'TEACHERS' | 'STAFF' | undefined },
+  ) {
+    const inst = await institutionOf(this.deps.db, p);
+    const date = f.date && DAY.test(f.date) ? f.date : istBusinessDate(this.now());
+    const type = f.type ?? 'ALL';
+    const cats =
+      type === 'TEACHERS'
+        ? ['TEACHER', 'PRINCIPAL']
+        : type === 'STAFF'
+          ? ['STAFF']
+          : [...STAFF_CATEGORIES];
+    const rows = await this.deps.db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .leftJoin('attendance_days as d', (j) =>
+        j.onRef('d.profile_id', '=', 'm.id').on('d.att_date', '=', date),
+      )
+      .select([
+        'm.public_id',
+        'm.first_name',
+        'm.last_name',
+        'ut.name as type_name',
+        'ut.category',
+        'd.status',
+        'd.check_in_at',
+        'd.check_out_at',
+        'd.method',
+        'd.remark',
+        (eb) =>
+          eb
+            .selectFrom('staff_leaves as l')
+            .select('l.id')
+            .whereRef('l.profile_id', '=', 'm.id')
+            .where('l.final_status', '=', 'APPROVED')
+            .where('l.from_date', '<=', date)
+            .where('l.to_date', '>=', date)
+            .limit(1)
+            .as('leave_id'),
+        (eb) =>
+          eb
+            .selectFrom('cards as c')
+            .select('c.id')
+            .whereRef('c.profile_id', '=', 'm.id')
+            .where('c.status', '=', 'ACTIVE')
+            .limit(1)
+            .as('card_id'),
+      ])
+      .where('m.institution_id', '=', inst.id)
+      .where('m.status', '!=', 'INACTIVE')
+      .where('ut.category', 'in', cats as never[])
+      .orderBy('m.first_name')
+      .orderBy('m.last_name')
+      .execute();
+    const items = rows.map((r) => ({
+      member: {
+        id: binToUuid(r.public_id),
+        name: nameOf(r.first_name, r.last_name),
+        type: r.type_name,
+        teaching: r.category !== 'STAFF',
+        hasCard: !!r.card_id,
+      },
+      status: r.status ?? null,
+      checkInAt: iso(r.check_in_at),
+      checkOutAt: iso(r.check_out_at),
+      method: r.method ?? null,
+      remark: r.remark ?? null,
+      onApprovedLeave: !!r.leave_id,
+    }));
+    const n = (s: string) => items.filter((i) => i.status === s).length;
+    return {
+      date,
+      today: date === istBusinessDate(this.now()),
+      counts: {
+        total: items.length,
+        present: n('PRESENT'),
+        late: n('LATE'),
+        halfDay: n('HALF_DAY'),
+        absent: n('ABSENT'),
+        onCampus: items.filter((i) => i.checkInAt && !i.checkOutAt).length,
+        notMarked: items.filter((i) => !i.status).length,
+      },
+      items,
+    };
+  }
+
+  /** The staff member a card or an id names, for the front desk (staff only). */
+  private async staffMember(db: Db, institutionId: string, profileRowId: string, date: string) {
+    const m = await this.who(db, institutionId, profileRowId, date);
+    if (!STAFF_CATEGORIES.includes(m.category as (typeof STAFF_CATEGORIES)[number])) {
+      throw new CustomAPIError(422, 'ATT.NOT_STAFF', { params: { name: m.name } });
+    }
+    return m;
+  }
+
+  /**
+   * A staff member checked in or out today as at the gate (27.3): the first check-in is Present up to
+   * the late cut-off and Late after it; the check-out is Present after the half-day time, Half day
+   * before it. At the front desk a day marked Absent (auto-absent, or by hand) without a check-in can
+   * still be checked in — the person is here; old → new is kept. `AUTO` (a card) checks in, else out.
+   */
+  private async staffCheck(
+    trx: Transaction<Database>,
+    institutionId: string,
+    m: Awaited<ReturnType<AttendanceService['who']>>,
+    date: string,
+    at: Date,
+    o: {
+      action: 'AUTO' | 'IN' | 'OUT';
+      method: 'NFC' | 'MANUAL';
+      actor: Buffer | null;
+      remark: string;
+    },
+  ) {
+    const day = await trx
+      .selectFrom('attendance_days')
+      .selectAll()
+      .where('profile_id', '=', m.rowId)
+      .where('att_date', '=', date)
+      .forUpdate()
+      .executeTakeFirst();
+    const member = { id: m.publicId, name: m.name };
+    const canCheckIn = !day || !day.check_in_at;
+    const canCheckOut =
+      !!day?.check_in_at &&
+      !day.check_out_at &&
+      day.status !== 'ABSENT' &&
+      day.status !== 'HALF_DAY';
+    const action = o.action === 'AUTO' ? (canCheckIn ? 'IN' : 'OUT') : o.action;
+    if (action === 'IN') {
+      if (!canCheckIn) throw new CustomAPIError(409, 'ATT.ALREADY_CHECKED_IN');
+      const cutoff = await this.limit(LIMITS.attendanceLateCutoffMinutes);
+      const status: DailyStatus = istMinutes(at) <= cutoff ? 'PRESENT' : 'LATE';
+      let dayId: string;
+      if (!day) {
+        const ins = await trx
+          .insertInto('attendance_days')
+          .values({
+            institution_id: institutionId,
+            year_id: m.year?.id ?? null,
+            profile_id: m.rowId,
+            section_id: null,
+            att_date: date,
+            checkin_status: status,
+            status,
+            method: o.method,
+            check_in_at: at,
+            updated_by: o.actor,
+            created_at: at,
+            updated_at: at,
+          })
+          .executeTakeFirstOrThrow();
+        dayId = String(ins.insertId);
+      } else {
+        await trx
+          .updateTable('attendance_days')
+          .set({
+            status,
+            checkin_status: status,
+            method: o.method,
+            check_in_at: at,
+            updated_by: o.actor,
+            updated_at: at,
+            row_version: sql<number>`row_version + 1`,
+          })
+          .where('id', '=', day.id)
+          .execute();
+        dayId = day.id;
+      }
+      await trx
+        .insertInto('attendance_events')
+        .values({
+          institution_id: institutionId,
+          day_id: dayId,
+          action: 'CHECK-IN',
+          old_status: day?.status ?? null,
+          new_status: status,
+          actor: o.actor,
+          remark: o.remark,
+          at,
+        })
+        .execute();
+      await this.changed(trx, institutionId, date);
+      return { result: 'CHECKED_IN' as const, status, member, at: at.toISOString() };
+    }
+    if (!canCheckOut) {
+      if (o.action === 'AUTO') {
+        // A card tapped again after the day is complete: said, not refused.
+        return {
+          result: 'COMPLETE' as const,
+          status: day!.status,
+          member,
+          at: at.toISOString(),
+        };
+      }
+      throw new CustomAPIError(
+        409,
+        day?.check_in_at ? 'ATT.ALREADY_COMPLETED' : 'ATT.NOT_CHECKED_IN',
+      );
+    }
+    const half = await this.limit(LIMITS.attendanceHalfDayMinutes);
+    const minutes = (at.getTime() - new Date(day!.check_in_at!).getTime()) / 60_000;
+    const status: DailyStatus = minutes >= half ? 'PRESENT' : 'HALF_DAY';
+    await trx
+      .updateTable('attendance_days')
+      .set({
+        status,
+        check_out_at: at,
+        updated_by: o.actor,
+        updated_at: at,
+        row_version: sql<number>`row_version + 1`,
+      })
+      .where('id', '=', day!.id)
+      .execute();
+    await trx
+      .insertInto('attendance_events')
+      .values({
+        institution_id: institutionId,
+        day_id: day!.id,
+        action: 'CHECK-OUT',
+        old_status: day!.status,
+        new_status: status,
+        actor: o.actor,
+        remark: o.remark,
+        at,
+      })
+      .execute();
+    await this.changed(trx, institutionId, date);
+    return { result: 'CHECKED_OUT' as const, status, member, at: at.toISOString() };
+  }
+
+  /**
+   * ATT-030: a staff member taps their card on the front desk's USB reader (RingPe Card Reader): the
+   * first tap of the day checks them in, the next checks them out; a tap after that says the day is
+   * complete. Students are refused (they tap at the gate or in class).
+   */
+  async deskTap(p: Principal, input: { cardToken: string }) {
+    const inst = await institutionOf(this.deps.db, p);
+    const card = await this.deps.cards.activeCard(inst.id, input.cardToken);
+    const at = this.now();
+    await this.notTooSoon(String(card.id), at);
+    const date = istBusinessDate(at);
+    const profileRowId = String(card.profile_id);
+    const out = await this.deps.db.transaction().execute(async (trx) => {
+      await trx
+        .selectFrom('member_profiles')
+        .select('id')
+        .where('id', '=', profileRowId)
+        .forUpdate()
+        .execute();
+      const m = await this.staffMember(trx, inst.id, profileRowId, date);
+      return this.staffCheck(trx, inst.id, m, date, at, {
+        action: 'AUTO',
+        method: 'NFC',
+        actor: this.by(p),
+        remark: 'Card tapped at the front desk',
+      });
+    });
+    await this.deps.cards.touch(String(card.id));
+    return out;
+  }
+
+  /**
+   * ATT-031: the front desk checks a staff member in or out by name (no card with them, or the
+   * reader down), now; the reason is kept with the record. Back-dated corrections use manual
+   * marking (ATT-010).
+   */
+  async deskCheck(
+    p: Principal,
+    input: { memberId: string; action: 'IN' | 'OUT'; remark?: string | null | undefined },
+  ) {
+    const inst = await institutionOf(this.deps.db, p);
+    const remark = input.remark?.trim() || null;
+    if (remark && remark.length > 200)
+      throw new ValidationError([{ field: 'remark', code: 'ATT.REMARK' }]);
+    const row = isUuid(input.memberId)
+      ? await this.deps.db
+          .selectFrom('member_profiles')
+          .select('id')
+          .where('public_id', '=', uuidToBin(input.memberId))
+          .where('institution_id', '=', inst.id)
+          .executeTakeFirst()
+      : undefined;
+    if (!row) throw new NotFoundError();
+    const at = this.now();
+    const date = istBusinessDate(at);
+    return this.deps.db.transaction().execute(async (trx) => {
+      await trx
+        .selectFrom('member_profiles')
+        .select('id')
+        .where('id', '=', String(row.id))
+        .forUpdate()
+        .execute();
+      const m = await this.staffMember(trx, inst.id, String(row.id), date);
+      const out = await this.staffCheck(trx, inst.id, m, date, at, {
+        action: input.action,
+        method: 'MANUAL',
+        actor: this.by(p),
+        remark: remark ?? `Checked ${input.action === 'IN' ? 'in' : 'out'} at the front desk`,
+      });
+      await recordAudit(trx, {
+        institutionId: inst.id,
+        action: input.action === 'IN' ? 'STAFF_CHECKED_IN' : 'STAFF_CHECKED_OUT',
+        entityType: 'attendance',
+        entityRef: m.publicId,
+        after: { date, status: out.status, remark },
+      });
+      return out;
+    });
   }
 
   /** For the teacher's roster and day, and the principal's overview: one date's statuses. */

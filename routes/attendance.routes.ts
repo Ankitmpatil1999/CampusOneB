@@ -127,6 +127,21 @@ const reportQuery = z.object({
   cursor: z.string().max(40).optional(),
 });
 const dateQuery = z.object({ date: date.optional() });
+// Staff attendance at the front desk (client 2026-10-22).
+const staffQuery = z.object({
+  date: date.optional(),
+  type: z.enum(['ALL', 'TEACHERS', 'STAFF']).optional(),
+});
+export const deskTapSchema = z
+  .strictObject({ cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(32) })
+  .meta({ id: 'StaffCardTap' });
+export const deskCheckSchema = z
+  .strictObject({
+    memberId: uuid,
+    action: z.enum(['IN', 'OUT'], { message: 'VALIDATION.FORMAT' }),
+    remark: z.string().max(200, { message: 'ATT.REMARK' }).nullable().optional(),
+  })
+  .meta({ id: 'StaffCheck' });
 const registerQuery = z.object({ classSectionId: uuid.optional(), date: date.optional() });
 const monthQuery = z.object({ for: uuid.optional(), month: z.string().max(7).optional() });
 const principalQuery = z.object({
@@ -323,6 +338,41 @@ doc({
   responses: { 200: { description: 'Attendance' } },
 });
 
+doc({
+  id: 'ATT-029',
+  method: 'get',
+  path: '/api/v1/console/attendance/staff',
+  summary:
+    'Teachers, the principal and non-teaching staff on a date (default today; type ALL, TEACHERS or STAFF): each one’s status, check-in and check-out times, how it was recorded, approved leave and whether they hold a card, with counts (client 2026-10-22)',
+  auth: 'attendance.view',
+  query: staffQuery,
+  responses: { 200: { description: 'Staff' } },
+});
+doc({
+  id: 'ATT-030',
+  method: 'post',
+  path: '/api/v1/console/attendance/staff/card-taps',
+  summary:
+    'A staff member taps their card on the front desk’s USB reader (RingPe Card Reader): the first tap of the day checks them in (Present up to the late cut-off, Late after), the next checks them out (Present after the half-day time, Half day before); a later tap answers COMPLETE. A day marked Absent without a check-in is checked in. Students are refused (ATT.NOT_STAFF)',
+  auth: 'attendance.mark',
+  idempotent: 'required',
+  request: deskTapSchema,
+  responses: {
+    200: { description: 'CHECKED_IN, CHECKED_OUT or COMPLETE, with the member and status' },
+  },
+});
+doc({
+  id: 'ATT-031',
+  method: 'post',
+  path: '/api/v1/console/attendance/staff/checks',
+  summary:
+    'The front desk checks a staff member in or out by name, now (no card with them); the reason is kept. Back-dated changes use ATT-010',
+  auth: 'attendance.mark',
+  idempotent: 'required',
+  request: deskCheckSchema,
+  responses: { 200: { description: 'CHECKED_IN or CHECKED_OUT, with the member and status' } },
+});
+
 export function attendanceRoutes(deps: {
   db: Kysely<Database>;
   attendance: AttendanceService;
@@ -391,6 +441,27 @@ export function attendanceRoutes(deps: {
     ...console,
     authorize('attendance.mark', L),
     json((req) => deps.attendance.markDaily(principal(req), dailySchema.parse(req.body ?? {}))),
+  );
+  // staff attendance at the front desk (client 2026-10-22)
+  router.get(
+    '/console/attendance/staff',
+    ...console,
+    authorize('attendance.view', L),
+    json((req) => deps.attendance.staffRoster(principal(req), staffQuery.parse(req.query))),
+  );
+  router.post(
+    '/console/attendance/staff/card-taps',
+    ...console,
+    authorize('attendance.mark', L),
+    once,
+    json((req) => deps.attendance.deskTap(principal(req), deskTapSchema.parse(req.body ?? {}))),
+  );
+  router.post(
+    '/console/attendance/staff/checks',
+    ...console,
+    authorize('attendance.mark', L),
+    once,
+    json((req) => deps.attendance.deskCheck(principal(req), deskCheckSchema.parse(req.body ?? {}))),
   );
   router.get(
     '/console/attendance/auto-absent',
