@@ -52,7 +52,7 @@ import {
   PreconditionFailedError,
   ValidationError,
 } from '../utils/CustomAPIError';
-import { parseCsv, toCsv } from '../utils/csv';
+import { detectDelimiter, parseCsv, toCsv } from '../utils/csv';
 import { type FieldCipher, maskIdNumber, maskPan } from '../utils/fieldEncryption';
 import type { FlowTokens } from '../utils/flow-tokens';
 import { formatDate, formatDateTime, formatInr, istBusinessDate } from '../utils/format';
@@ -66,10 +66,26 @@ import { PATTERNS, toFieldErrors } from '../utils/validators';
 import type { AdmissionLinksService } from './admission-links.service';
 import { classOrder } from './admission-links.service';
 import { recordAudit } from './audit.service';
+import { notify } from './notifications.service';
+import { notificationsRepository } from '../repositories/notifications.repository';
 import { admissionFormPdf } from './admission-form-pdf';
 import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
 import type { FeePaymentsService } from './fee-payments.service';
-import { activeFields, parseValues } from './custom-values.service';
+import { activeFields, parseValues, type CfField } from './custom-values.service';
+import {
+  columnOf,
+  headerKey,
+  headerOf,
+  IMPORT_COLUMNS,
+  readSheetRow,
+  sameHeader,
+  SHEET_COLUMNS,
+  sheetDate,
+} from './admission-sheet';
+import { allocateStudent } from './student-transport';
+import { academicsRepository } from '../repositories/academics.repository';
+import { userTypesRepository } from '../repositories/institution-setup.repository';
+import { membersRepository } from '../repositories/members.repository';
 import { logoFileOf } from './institution-logo';
 import type { FileService } from './file.service';
 import type { MembersService, OnboardInput } from './members.service';
@@ -1107,11 +1123,78 @@ export class AdmissionsService {
    * send is in the communication log. The reason for a rejection stays with the school. A failed
    * send never undoes the action.
    */
+  /**
+   * The staff an application waits for (client 2026-10-19), in the console bell and the staff app:
+   * a new application (whoever sees admissions), a fee paid (Accounts, to confirm it), both fees
+   * confirmed (the Co-ordinator, to approve).
+   */
+  private async tellStaff(
+    db: Db,
+    institutionId: string,
+    appRowId: string,
+    what: 'SUBMITTED' | 'FEE_PAID' | 'READY',
+    fee?: AdmissionFeeType,
+  ) {
+    const a = await db
+      .selectFrom('admission_applications as a')
+      .leftJoin('classes as c', 'c.id', 'a.class_id')
+      .select(['a.public_id', 'a.application_no', 'a.first_name', 'a.last_name', 'c.name as cls'])
+      .where('a.id', '=', appRowId)
+      .executeTakeFirst();
+    if (!a) return;
+    const subTask =
+      what === 'SUBMITTED'
+        ? 'admissions.view'
+        : what === 'FEE_PAID'
+          ? 'admfees.verify'
+          : 'admissions.approve';
+    const to = await notificationsRepository.holdersOf(db, institutionId, subTask);
+    const child = fullName(a.first_name, a.last_name) || 'A child';
+    const open = `/console/applications?open=${binToUuid(a.public_id)}`;
+    await notify(db, {
+      institutionId,
+      accountIds: to,
+      surface: 'CONSOLE',
+      category: what === 'FEE_PAID' ? 'PAYMENT' : 'APPROVAL',
+      ...(what === 'SUBMITTED'
+        ? {
+            titleKey: 'NTF.ADMISSION_SUBMITTED' as const,
+            params: { no: a.application_no },
+            body: `${child} applied${a.cls ? ` for ${a.cls}` : ''}.`,
+            link: open,
+          }
+        : what === 'FEE_PAID'
+          ? {
+              titleKey: 'NTF.ADMISSION_FEE_PAID' as const,
+              params: {
+                fee: fee === 'APPLICATION' ? 'Application fee' : 'Admission fee',
+                no: a.application_no,
+              },
+              body: `${child}: confirm the receipt on Admission fees.`,
+              link: '/console/admfees',
+            }
+          : {
+              titleKey: 'NTF.ADMISSION_READY' as const,
+              params: { no: a.application_no },
+              body: `${child}: both fees are confirmed — assign the admission number and section.`,
+              link: open,
+            }),
+    });
+  }
+
   private async tellFamily(
     institutionId: string,
     id: string,
     event: 'SUBMITTED' | 'APPROVED' | 'REJECTED',
   ) {
+    if (event === 'SUBMITTED') {
+      try {
+        const row = await this.lockless(institutionId, id);
+        await this.tellStaff(this.deps.db, institutionId, String(row.id), 'SUBMITTED');
+      } catch {
+        // Best effort, like the family's notice: the application is submitted either way.
+      }
+    }
     try {
       const r = await this.lockless(institutionId, id);
       const inst = await this.deps.db
@@ -1976,6 +2059,13 @@ export class AdmissionsService {
       entityRef: String(pay.id),
       after: { feeType: pay.fee_type, mode: set.mode, receipt },
     });
+    await this.tellStaff(
+      trx,
+      String(pay.institution_id),
+      String(pay.application_id),
+      'FEE_PAID',
+      pay.fee_type,
+    );
     return receipt;
   }
 
@@ -2883,8 +2973,9 @@ export class AdmissionsService {
     return this.detail(p, id);
   }
 
-  // --- ADM-020 -----------------------------------------------------------------------------------------
-  static readonly IMPORT_COLUMNS = [
+  // --- ADM-020/029: existing students ------------------------------------------------------------------
+  /** The existing-students template's columns before it was the admission form (refused now). */
+  private static readonly OLD_IMPORT_COLUMNS = [
     'Student first name',
     'Student last name',
     'Gender',
@@ -2898,66 +2989,166 @@ export class AdmissionsService {
     'Parent relation',
   ] as const;
 
-  importTemplate() {
+  /**
+   * The institution's own admission-form fields (CR-12): `form` all of them (a field named as one of
+   * the sheet's columns is read from that column), `extra` the columns they add after the form's.
+   */
+  private async importFields(institutionId: string) {
+    const form = await activeFields(this.deps.db, institutionId, 'ADMISSION_APPLICATION');
+    const extra = form.filter((f) => !IMPORT_COLUMNS.some((c) => sameHeader(c.label, f.label)));
+    return { form, extra };
+  }
+
+  /**
+   * ADM-029: the existing-students template (client 2026-10-21: the public admission form's fields) —
+   * the form's sections in its order with the section and admission number the student already has,
+   * required columns marked " *", one example row, and the school's own form fields at the end.
+   */
+  async importTemplate(p: Principal) {
+    const i = await this.consoleInst(p);
+    const { extra } = await this.importFields(i.id);
+    const example = (f: CfField) =>
+      f.type === 'DROPDOWN' || f.type === 'MULTI_SELECT'
+        ? (f.options[0]?.label ?? '')
+        : f.type === 'YES_NO'
+          ? 'No'
+          : '';
     return {
       fileName: 'ringpe-existing-students-template.csv',
       csv: toCsv([
-        [...AdmissionsService.IMPORT_COLUMNS],
         [
-          'Aarav',
-          'Shetty',
-          'Male',
-          '2014-05-21',
-          'Grade 6',
-          'A',
-          'TV-2026-0101',
-          '2026-06-01',
-          'Ramesh Shetty',
-          '9845012390',
-          'Father',
+          ...IMPORT_COLUMNS.map(headerOf),
+          ...extra.map((f) => (f.required ? `${f.label} *` : f.label)),
         ],
+        [...IMPORT_COLUMNS.map((c) => c.example), ...extra.map(example)],
       ]),
     };
   }
 
   /**
-   * Existing students (FR-ADM-10): each row is checked like the form and, when it passes, creates the
-   * member, wallets, guardian link and enrolment with an Approved application, in its own
-   * transaction — a refused row leaves nothing and is reported.
+   * Where each column is in the file. The form's columns come first, in order, as written (case,
+   * spacing and the required mark aside); the school's own fields may follow in any order, and one
+   * missing (a template from before it was added) is read as empty. A refusal says what is wrong:
+   * the earlier template, the first column that differs, or a column no one knows.
+   */
+  private importColumns(first: readonly string[], extra: readonly CfField[]) {
+    const base = IMPORT_COLUMNS.map((c) => c.label);
+    const same = (cols: readonly string[]) => cols.every((h, k) => sameHeader(first[k] ?? '', h));
+    if (!same(base)) {
+      // The first template, or the one with the whole form (both client 2026-10-21).
+      if (same(AdmissionsService.OLD_IMPORT_COLUMNS) || same(SHEET_COLUMNS.map((c) => c.label))) {
+        throw new CustomAPIError(422, 'ADM.IMPORT_OLD_TEMPLATE');
+      }
+      const k = base.findIndex((h, n) => !sameHeader(first[n] ?? '', h));
+      throw new CustomAPIError(422, 'UPL.HEADER_COLUMN', {
+        params: {
+          n: k + 1,
+          expected: headerOf(IMPORT_COLUMNS[k]!),
+          found: first[k]?.trim() || '(empty)',
+        },
+      });
+    }
+    const index = new Map<string, number>(base.map((h, k) => [headerKey(h), k]));
+    for (let k = base.length; k < first.length; k++) {
+      if (!first[k]?.trim()) continue;
+      const f = extra.find((x) => sameHeader(x.label, first[k]!));
+      if (!f) {
+        throw new CustomAPIError(422, 'UPL.HEADER_UNKNOWN', {
+          params: { found: first[k]!.trim() },
+        });
+      }
+      index.set(headerKey(f.label), k);
+    }
+    return index;
+  }
+
+  /**
+   * ADM-020: existing students (FR-ADM-10; client 2026-10-21: the admission form's fields). Each row
+   * is checked as the form checks it (sheetState) with what enrolment needs — the student type, the
+   * class and section, an admission number not used in the file or at the school, the parents'
+   * mobiles not at another school — and, when it passes, onboards the student as an approval does
+   * (the parents with accounts, wallets, the enrolment) with the approved application holding the
+   * form, in its own transaction: a refused row leaves nothing and is reported.
    */
   async import(p: Principal, input: { fileName: string; content: string }) {
     const i = await this.consoleInst(p);
-    const rows = parseCsv(input.content.trimStart());
-    const cols = AdmissionsService.IMPORT_COLUMNS;
-    const got = (rows[0] ?? []).map((c) => c.trim().toLowerCase());
-    if (!rows.length || cols.some((h, k) => got[k] !== h.toLowerCase())) {
-      throw new CustomAPIError(422, 'UPL.HEADER_MISMATCH');
-    }
+    const db = this.deps.db;
+    // An Excel workbook (a zip) instead of the CSV the template is.
+    if (input.content.startsWith('PK\u0003\u0004')) throw new CustomAPIError(422, 'UPL.NOT_CSV');
+    const text = input.content.trimStart();
+    const rows = parseCsv(text, detectDelimiter(text));
+    if (!rows.length) throw new CustomAPIError(422, 'UPL.HEADER_MISMATCH');
+    const { form, extra } = await this.importFields(i.id);
+    const index = this.importColumns(rows[0]!, extra);
+    // Excel leaves rows it once had as empty lines.
     const data = rows.slice(1).filter((r) => r.some((c) => c.trim()));
     if (!data.length) throw new CustomAPIError(422, 'UPL.NO_ROWS');
     const max = await this.limit(LIMITS.uploadMaxRows);
     if (data.length > max) throw new CustomAPIError(422, 'UPL.TOO_MANY_ROWS', { params: { max } });
-    const year = await this.deps.db
-      .selectFrom('academic_years')
-      .select(['id', 'public_id', 'starts_on'])
-      .where('institution_id', '=', i.id)
-      .where('is_current', '=', 1)
-      .executeTakeFirst();
-    if (!year) throw new CustomAPIError(409, 'ACA.NO_CURRENT_YEAR');
-    const studentType = await this.deps.db
-      .selectFrom('user_types')
-      .select('public_id')
-      .where('institution_id', '=', i.id)
-      .where('category', '=', 'STUDENT')
-      .where('status', '=', 'ACTIVE')
-      .orderBy('id')
-      .executeTakeFirst();
-    const sections = await this.deps.db
-      .selectFrom('sections as s')
-      .innerJoin('classes as c', 'c.id', 's.class_id')
-      .select(['s.public_id', 's.name as section', 'c.id as class_id', 'c.name as class'])
-      .where('s.institution_id', '=', i.id)
-      .execute();
+
+    const [types, departments, classes, sections, years, stops, routes, routeStops] =
+      await Promise.all([
+        userTypesRepository.list(db, i.id),
+        db
+          .selectFrom('departments')
+          .select(['public_id', 'user_type_id', 'name'])
+          .where('institution_id', '=', i.id)
+          .execute(),
+        academicsRepository.classes(db, i.id),
+        academicsRepository.sections(db, i.id),
+        db
+          .selectFrom('academic_years')
+          .select(['id', 'public_id', 'label', 'is_current', 'starts_on', 'ends_on', 'status'])
+          .where('institution_id', '=', i.id)
+          .execute(),
+        db
+          .selectFrom('transport_stops')
+          .select(['public_id', 'name'])
+          .where('institution_id', '=', i.id)
+          .where('active', '=', 1)
+          .execute(),
+        db
+          .selectFrom('transport_routes')
+          .select(['id', 'code', 'name', 'active'])
+          .where('institution_id', '=', i.id)
+          .execute(),
+        db
+          .selectFrom('transport_route_stops as rs')
+          .innerJoin('transport_routes as r', 'r.id', 'rs.route_id')
+          .innerJoin('transport_stops as st', 'st.id', 'rs.stop_id')
+          .select(['rs.route_id', 'st.id as stop_id', 'st.public_id', 'st.name', 'st.active'])
+          .where('r.institution_id', '=', i.id)
+          .execute(),
+      ]);
+    const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    const look = {
+      year: (label: string) => {
+        const y = label
+          ? years.find((x) => same(x.label, label))
+          : years.find((x) => Number(x.is_current));
+        return y ? binToUuid(y.public_id) : null;
+      },
+      classId: (name: string) => {
+        const c = classes.find((x) => same(x.name, name));
+        return c ? binToUuid(c.public_id) : null;
+      },
+      stop: (name: string) => {
+        const s = stops.find((x) => same(x.name, name));
+        return s ? binToUuid(s.public_id) : null;
+      },
+    };
+    // Students only (client 2026-10-21): the type named Student (else the first student type) and its
+    // Academics department — none when the school has no such department.
+    const studentTypes = types.filter((t) => t.category === 'STUDENT' && t.status === 'ACTIVE');
+    const ut = studentTypes.find((t) => same(t.name, 'Student')) ?? studentTypes[0];
+    const dep = ut
+      ? departments.find(
+          (d) => String(d.user_type_id) === String(ut.id) && /^academics?$/i.test(d.name.trim()),
+        )
+      : undefined;
+    const parentType = types.find((t) => t.category === 'PARENT' && t.status === 'ACTIVE');
+    const by = this.by(p);
+    const seen = new Set<string>();
     const report: {
       row: number;
       name: string;
@@ -2965,127 +3156,222 @@ export class AdmissionsService {
       applicationNo?: string;
       errors: { column: string; message: string }[];
     }[] = [];
-    const genders: Record<string, 'MALE' | 'FEMALE' | 'OTHER'> = {
-      male: 'MALE',
-      m: 'MALE',
-      female: 'FEMALE',
-      f: 'FEMALE',
-      other: 'OTHER',
-    };
-    const relations: Record<string, 'FATHER' | 'MOTHER' | 'GUARDIAN'> = {
-      father: 'FATHER',
-      mother: 'MOTHER',
-      guardian: 'GUARDIAN',
-    };
+
     for (const [k, cells] of data.entries()) {
-      const cell = (n: (typeof cols)[number]) => (cells[cols.indexOf(n)] ?? '').trim();
+      const cell = (name: string) => {
+        const at = index.get(headerKey(name));
+        return at === undefined ? '' : (cells[at] ?? '').trim();
+      };
       const errors: { column: string; message: string }[] = [];
-      const err = (column: string, code: MessageKey, params?: Record<string, string | number>) =>
-        errors.push({ column, message: renderMessage(code, params) });
-      const first = cell('Student first name');
-      const last = cell('Student last name');
-      if (!first || !PATTERNS.personName.test(first))
-        err('Student first name', 'VALIDATION.REQUIRED');
-      const gender = genders[cell('Gender').toLowerCase()];
-      if (!gender) err('Gender', 'VALIDATION.FORMAT');
-      const dob = cell('Date of birth');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(Date.parse(dob)))
-        err('Date of birth', 'VALIDATION.DATE');
-      const sec = sections.find(
-        (s) =>
-          s.class.toLowerCase() === cell('Class').toLowerCase() &&
-          s.section.toLowerCase() === cell('Section').toLowerCase(),
-      );
-      if (!sec) err('Section', 'ADM.CLASS_INVALID');
+      // One error a column: the first says what to fix.
+      const err = (
+        column: string,
+        code: MessageKey,
+        params?: Readonly<Record<string, string | number>>,
+      ) => {
+        if (!errors.some((e) => e.column === column)) {
+          errors.push({ column, message: renderMessage(code, params) });
+        }
+      };
+      if (!ut) err('—', 'IDN.USER_TYPE_UNKNOWN', { t: 'Student' });
       const admissionNo = cell('Admission number');
       if (!admissionNo) err('Admission number', 'IDN.ADMISSION_NO_REQUIRED');
-      const joining = cell('Joining date') || day(year.starts_on);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(joining)) err('Joining date', 'VALIDATION.DATE');
-      const parent = cell('Parent name');
-      const mobile = cell('Parent mobile');
-      const relation = relations[cell('Parent relation').toLowerCase()];
-      if (!parent) err('Parent name', 'VALIDATION.REQUIRED');
-      if (!PATTERNS.mobile.test(mobile)) err('Parent mobile', 'ADM.MOBILE_INVALID');
-      if (!relation) err('Parent relation', 'VALIDATION.FORMAT');
-      if (!studentType) err('Class', 'IDN.USER_TYPE_UNKNOWN', { t: 'Student' });
-      const name = fullName(first, last) || '—';
-      if (errors.length) {
+      else {
+        if (seen.has(admissionNo.toLowerCase())) {
+          err('Admission number', 'IDN.ADMISSION_NO_REPEATED', { n: admissionNo });
+        }
+        seen.add(admissionNo.toLowerCase());
+        if (await membersRepository.admissionTaken(db, i.id, admissionNo)) {
+          err('Admission number', 'IDN.ADMISSION_NO_TAKEN', { n: admissionNo });
+        }
+      }
+      const c = classes.find((x) => same(x.name, cell('Class')));
+      const sec = c
+        ? sections.find((x) => String(x.class_id) === String(c.id) && same(x.name, cell('Section')))
+        : undefined;
+      if (!c) err('Class', cell('Class') ? 'ADM.CLASS_INVALID' : 'VALIDATION.REQUIRED');
+      else if (!sec) err('Section', cell('Section') ? 'VALIDATION.FORMAT' : 'VALIDATION.REQUIRED');
+
+      // The admission form.
+      const read = readSheetRow(cell, form, look);
+      for (const x of read.problems) err(x.column, x.code, x.params);
+      // School transport (client 2026-10-21): a route and a stop on it allocate the student, as
+      // the transport office allocates a student who opted for it.
+      let transport: {
+        yearRowId: string;
+        route: { id: string; code: string; name: string };
+        stop: { id: string; name: string };
+        from: string;
+        to: string;
+      } | null = null;
+      const routeName = cell('Transport route');
+      const stopName = cell('Transport stop');
+      const fromCell = cell('Transport from');
+      const toCell = cell('Transport to');
+      if (routeName || stopName || fromCell || toCell) {
+        const parents = read.app.parents as {
+          transport?: boolean;
+          transportStopId?: string | null;
+        };
+        if (['no', 'n', 'false', '0'].includes(cell('Opt for school transport').toLowerCase())) {
+          err('Opt for school transport', 'ADM.IMPORT_TRANSPORT_NOT_OPTED');
+        } else parents.transport = true;
+        const route = routes.find((r) => same(r.code, routeName) || same(r.name, routeName));
+        if (!routeName) err('Transport route', 'VALIDATION.REQUIRED');
+        else if (!route) err('Transport route', 'TRN.ROUTE_NOT_FOUND');
+        else if (!Number(route.active)) err('Transport route', 'TRN.ROUTE_INACTIVE');
+        const stop = route
+          ? routeStops.find(
+              (x) => String(x.route_id) === String(route.id) && same(x.name, stopName),
+            )
+          : undefined;
+        if (!stopName) err('Transport stop', 'VALIDATION.REQUIRED');
+        else if (route && !stop) err('Transport stop', 'TRN.STOP_NOT_ON_ROUTE');
+        // The family's preferred pick-up point on the application, as on the form.
+        if (stop && Number(stop.active)) parents.transportStopId = binToUuid(stop.public_id);
+        const y = years.find((x) => binToUuid(x.public_id) === read.app.yearId);
+        if (y) {
+          const startsOn = day(y.starts_on);
+          const endsOn = day(y.ends_on);
+          if (y.status === 'CLOSED') err('Transport route', 'ACA.YEAR_CLOSED', { label: y.label });
+          const joining = read.app.joiningDate && sheetDate(read.app.joiningDate);
+          const from = fromCell
+            ? sheetDate(fromCell)
+            : joining && joining > startsOn
+              ? joining
+              : startsOn;
+          const to = toCell ? sheetDate(toCell) : endsOn;
+          const span = { label: y.label, from: formatDate(startsOn), to: formatDate(endsOn) };
+          if (!from) err('Transport from', 'VALIDATION.DATE');
+          else if (from < startsOn || from > endsOn) {
+            err('Transport from', 'ACA.DATE_OUTSIDE_YEAR', span);
+          }
+          if (!to) err('Transport to', 'VALIDATION.DATE');
+          else if (to < startsOn || to > endsOn) err('Transport to', 'ACA.DATE_OUTSIDE_YEAR', span);
+          if (from && to && to < from) err('Transport to', 'TRN.DATES');
+          if (route && stop && from && to) {
+            transport = {
+              yearRowId: String(y.id),
+              route: { id: String(route.id), code: route.code, name: route.name },
+              stop: { id: String(stop.stop_id), name: stop.name },
+              from,
+              to,
+            };
+          }
+        }
+      }
+      const checked = await this.sheetState(db, i.id, read.app, { childrenOptional: true });
+      for (const e of checked.errors) err(columnOf(e.field, form), e.code as MessageKey, e.params);
+      if (checked.state) {
+        // The parents who get a RingPe account with the student, as on an approval.
+        const guardians = this.guardiansOf(checked.state.data.parents);
+        if (guardians.length && !parentType) err('Primary contact', 'ADM.PARENT_TYPE_MISSING');
+        const who = { FATHER: 'Father', MOTHER: 'Mother', GUARDIAN: 'Guardian' } as const;
+        for (const g of guardians) {
+          if (
+            g.mobile &&
+            (await membersRepository.profilesOfMobile(db, g.mobile)).some(
+              (x) => String(x.institution_id) !== String(i.id),
+            )
+          ) {
+            err(`${who[g.relation]} mobile`, 'IDN.MOBILE_IN_OTHER_INSTITUTION');
+          }
+        }
+      }
+      const st = read.app.student as { firstName?: string; lastName?: string };
+      const name = fullName(st.firstName, st.lastName) || '—';
+      if (errors.length || !ut || !sec) {
         report.push({ row: k + 2, name, outcome: 'REJECTED', errors });
         continue;
       }
       try {
-        const no = await this.deps.db.transaction().execute(async (trx) => {
+        const done = await db.transaction().execute(async (trx) => {
+          // Checked again inside: another import or an onboarding may have come between.
+          const again = await this.sheetState(trx, i.id, read.app, { childrenOptional: true });
+          const s = again.state;
+          if (!s) {
+            const e = again.errors[0]!;
+            throw new CustomAPIError(
+              422,
+              e.code as MessageKey,
+              e.params ? { params: e.params } : {},
+            );
+          }
           const inst = await institutionsRepository.byPublicId(
             trx as unknown as Kysely<Database>,
             i.public_id,
             true,
           );
           const pub = newPublicIdPair();
-          const n = splitName(title(parent));
           await this.deps.members.createMember(
             trx as unknown as Kysely<Database>,
             inst!,
             pub,
             {
-              userTypeId: binToUuid(studentType!.public_id),
-              firstName: title(first),
-              lastName: title(last) || null,
-              gender,
-              dateOfBirth: dob,
-              joinedOn: joining,
+              userTypeId: binToUuid(ut.public_id),
+              departmentId: dep ? binToUuid(dep.public_id) : null,
+              firstName: title(s.firstName ?? ''),
+              lastName: title([s.middleName, s.lastName].filter(Boolean).join(' ')) || null,
+              gender: s.gender,
+              dateOfBirth: s.dob,
+              mobile: null,
+              email: null,
+              joinedOn: s.joiningDate,
               admissionNo,
-              sectionId: binToUuid(sec!.public_id),
-              guardians: [
-                { firstName: n.firstName, lastName: n.lastName, mobile, relation: relation! },
-              ],
+              sectionId: binToUuid(sec.public_id),
+              guardians: this.guardiansOf(s.data.parents),
+              enrolYearId: read.app.yearId,
             },
-            this.by(p),
+            by,
           );
           const m = await trx
             .selectFrom('member_profiles')
             .select('id')
             .where('public_id', '=', pub.bin)
             .executeTakeFirstOrThrow();
-          const appPub = newPublicIdPair();
-          const appNo = await this.nextNo(
-            trx,
-            i.id,
-            this.prefixOf(i),
-            Number(day(year.starts_on).slice(0, 4)),
-          );
-          const at = this.now();
-          await trx
-            .insertInto('admission_applications')
-            .values({
-              public_id: appPub.bin,
-              institution_id: i.id,
-              application_no: appNo,
+          const app = await this.insertFromSheet(trx, i.id, s, again.reference ?? null, {
+            sectionId: binToUuid(sec.public_id),
+            admissionNo,
+            memberRowId: String(m.id),
+            by,
+          });
+          if (transport) {
+            await allocateStudent(trx, {
+              institutionId: i.id,
+              yearId: transport.yearRowId,
+              profileRowId: String(m.id),
+              route: transport.route,
+              stop: transport.stop,
+              from: transport.from,
+              to: transport.to,
+              by,
+              at: this.now(),
+            });
+          }
+          await recordAudit(trx, {
+            institutionId: i.id,
+            action: 'ADMISSION_APPROVED',
+            entityType: 'admission_application',
+            entityRef: app.id,
+            after: {
+              member: pub.id,
+              admissionNo,
+              section: binToUuid(sec.public_id),
               source: 'IMPORT',
-              status: 'APPROVED',
-              year_id: String(year.id),
-              class_id: String(sec!.class_id),
-              first_name: title(first),
-              last_name: title(last) || null,
-              gender,
-              dob,
-              joining_date: joining,
-              primary_name: title(parent),
-              primary_relation: relation!,
-              primary_mobile: mobile,
-              data: JSON.stringify({}),
-              admission_no: admissionNo,
-              member_profile_id: String(m.id),
-              submitted_at: at,
-              decided_at: at,
-              decided_by: this.by(p),
-              created_by: this.by(p),
-              created_at: at,
-              updated_at: at,
-            })
-            .execute();
-          return appNo;
+              ...(transport ? { route: transport.route.code, stop: transport.stop.name } : {}),
+            },
+          });
+          return app;
         });
-        report.push({ row: k + 2, name, outcome: 'IMPORTED', applicationNo: no, errors: [] });
+        // No approval message to the family: the student is already at the school (client
+        // 2026-10-21).
+        report.push({
+          row: k + 2,
+          name,
+          outcome: 'IMPORTED',
+          applicationNo: done.applicationNo,
+          errors: [],
+        });
       } catch (e) {
         if (!(e instanceof CustomAPIError)) throw e;
         const fieldErrors = (e as { errors?: readonly FieldError[] }).errors ?? [];
@@ -3095,7 +3381,7 @@ export class AdmissionsService {
           outcome: 'REJECTED',
           errors: fieldErrors.length
             ? fieldErrors.map((f) => ({
-                column: f.field,
+                column: columnOf(f.field, form),
                 message: renderMessage(f.code as MessageKey, f.params),
               }))
             : [{ column: '—', message: renderMessage(e.code as MessageKey, e.params) }],
@@ -3180,7 +3466,13 @@ export class AdmissionsService {
    * admission, the age band, the mid-term papers) — these students are already at the school.
    * Returns the application to write, or the field errors (paths as on the form).
    */
-  async sheetState(db: Db, institutionId: string, a: SheetApplication) {
+  async sheetState(
+    db: Db,
+    institutionId: string,
+    a: SheetApplication,
+    /** The existing-students upload leaves the children question optional (client 2026-10-21). */
+    opts: { childrenOptional?: boolean } = {},
+  ) {
     const errors: FieldError[] = [];
     const caught = (e: unknown, section: string) => {
       if (e instanceof ZodError) {
@@ -3237,12 +3529,23 @@ export class AdmissionsService {
       step: 7,
     };
     const before = errors.length;
+    // The children question left empty where it is optional: the form's own check is passed with an
+    // answer, and none is kept.
+    const sentParents = a.parents as { children?: unknown } | null | undefined;
+    const noChildren =
+      !!opts.childrenOptional &&
+      !!sentParents &&
+      (sentParents.children === undefined || sentParents.children === '');
+    const sections = noChildren ? { ...a, parents: { ...sentParents, children: 'SINGLE' } } : a;
     for (const k of ['student', 'addresses', 'previous', 'parents', 'customFields'] as const) {
       try {
-        await this.apply(db, institutionId, s, k, a[k]);
+        await this.apply(db, institutionId, s, k, sections[k]);
       } catch (e) {
         caught(e, k);
       }
+    }
+    if (noChildren && s.data.parents) {
+      s.data.parents = { ...s.data.parents, children: null } as unknown as Parents;
     }
     const addresses = s.data.addresses;
     if (addresses && !addresses.sameAsResidential && !addresses.correspondence) {
@@ -3362,7 +3665,7 @@ export class AdmissionsService {
         })
         .execute();
     }
-    return no;
+    return { applicationNo: no, id: pub.id };
   }
 
   // --- ADM-021…024 ---------------------------------------------------------------------------------------
@@ -3585,6 +3888,20 @@ export class AdmissionsService {
         entityRef: paymentId,
         after: { feeType: f.fee_type, receipt: f.receipt_no },
       });
+      // The last fee confirmed: the application waits for the Co-ordinator now.
+      const app = await trx
+        .selectFrom('admission_applications')
+        .select(['id', 'institution_id', 'year_id', 'status'])
+        .where('id', '=', String(f.application_id))
+        .executeTakeFirstOrThrow();
+      const states = await this.feeStates(trx, {
+        id: String(app.id),
+        institution_id: String(app.institution_id),
+        year_id: String(app.year_id),
+      });
+      if (app.status === 'SUBMITTED' && states.every((x) => x.confirmed)) {
+        await this.tellStaff(trx, i.id, String(app.id), 'READY');
+      }
       return binToUuid(f.app_public_id);
     });
     return { paymentId, confirmedAt: at.toISOString(), application: await this.detail(p, appId) };

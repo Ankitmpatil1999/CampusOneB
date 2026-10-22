@@ -597,6 +597,27 @@ export class InstitutionsService {
           name: 'Administration',
         })
         .executeTakeFirstOrThrow();
+      // The students' user type and its department (client 2026-10-21): students are onboarded,
+      // admitted and uploaded under it from the first day.
+      const student = await trx
+        .insertInto('user_types')
+        .values({
+          public_id: newPublicIdPair().bin,
+          institution_id: id,
+          name: 'Student',
+          category: 'STUDENT',
+          created_by: by,
+        })
+        .executeTakeFirstOrThrow();
+      await trx
+        .insertInto('departments')
+        .values({
+          public_id: newPublicIdPair().bin,
+          institution_id: id,
+          user_type_id: String(student.insertId),
+          name: 'Academics',
+        })
+        .execute();
       let accountId = admin ? String(admin.id) : null;
       if (newAdmin && temporaryHash) {
         const acc = newPublicIdPair();

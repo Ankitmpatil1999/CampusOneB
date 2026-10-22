@@ -905,6 +905,25 @@ export const LIMITS = {
     srsValue: 'none',
     refs: ['OQ-25', 'Q13'],
   }),
+  /** The staff app's console session (client 2026-10-19): its whole life, and unused before it ends. */
+  sessionStaffAppDays: def({
+    key: 'auth.session.staffAppDays',
+    value: 30,
+    unit: 'days',
+    adjustable: { min: 1, max: 90 },
+    scope: 'P',
+    basis: 'proposed',
+    refs: ['client 2026-10-19'],
+  }),
+  idleStaffAppDays: def({
+    key: 'auth.idle.staffAppDays',
+    value: 7,
+    unit: 'days',
+    adjustable: { min: 1, max: 30 },
+    scope: 'P',
+    basis: 'proposed',
+    refs: ['client 2026-10-19'],
+  }),
   appLockMinutes: def({
     key: 'auth.idle.memberAppLockMinutes',
     value: 5,

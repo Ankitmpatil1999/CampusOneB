@@ -7,6 +7,8 @@
 import type { Kysely, Transaction } from 'kysely';
 import type { Database } from '../models/ringpe_models';
 import { istBusinessDate } from '../utils/format';
+import { newPublicIdPair } from '../utils/idGenerator';
+import { notify } from './notifications.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -119,4 +121,72 @@ export async function studentTransport(
       attendant: t.attendant_first ? nameOf(t.attendant_first, t.attendant_last) : null,
     })),
   };
+}
+
+/** The accounts of a student and their guardians: who hears of the student's transport. */
+export async function familyAccountsOf(db: Db, profileRowId: string) {
+  const rows = await db
+    .selectFrom('member_profiles as m')
+    .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
+    .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
+    .select(['m.account_id', 'gm.account_id as guardian_account'])
+    .where('m.id', '=', profileRowId)
+    .execute();
+  return rows
+    .flatMap((r) => [r.account_id, r.guardian_account])
+    .filter((a): a is string => a !== null && a !== undefined)
+    .map(String);
+}
+
+/**
+ * A student allocated to a route and stop for a period (TRN-021): the allocation, and the family
+ * told in the app (NTF.TRANSPORT_ALLOCATED). The caller has checked the route, the stop on it, the
+ * dates in an open year and that no allocation overlaps. Used by the transport office's allocation
+ * and by the existing-students upload (client 2026-10-21), so both do the same.
+ */
+export async function allocateStudent(
+  trx: Transaction<Database>,
+  a: {
+    readonly institutionId: string;
+    readonly yearId: string;
+    readonly profileRowId: string;
+    readonly route: { readonly id: string; readonly code: string; readonly name: string };
+    readonly stop: { readonly id: string; readonly name: string };
+    readonly from: string;
+    readonly to: string;
+    readonly by: Buffer | null;
+    readonly at: Date;
+  },
+) {
+  const pub = newPublicIdPair();
+  await trx
+    .insertInto('transport_allocations')
+    .values({
+      public_id: pub.bin,
+      institution_id: a.institutionId,
+      year_id: a.yearId,
+      profile_id: a.profileRowId,
+      route_id: a.route.id,
+      stop_id: a.stop.id,
+      effective_from: a.from,
+      effective_to: a.to,
+      created_by: a.by,
+      created_at: a.at,
+    })
+    .execute();
+  await notify(
+    trx,
+    {
+      institutionId: a.institutionId,
+      accountIds: await familyAccountsOf(trx, a.profileRowId),
+      surface: 'MEMBER',
+      category: 'ACCOUNT',
+      titleKey: 'NTF.TRANSPORT_ALLOCATED',
+      params: { route: `${a.route.code} · ${a.route.name}` },
+      body: `Stop: ${a.stop.name} · from ${a.from}`,
+      link: '/transport',
+    },
+    a.at,
+  );
+  return pub.id;
 }

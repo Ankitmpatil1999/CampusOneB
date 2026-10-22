@@ -30,6 +30,8 @@ import { toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { qrSvg } from '../utils/qr';
 import { recordAudit } from './audit.service';
+import { notify } from './notifications.service';
+import { notificationsRepository } from '../repositories/notifications.repository';
 import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
 import { outstandingOf } from './payment-engine.service';
 import type { PaymentGatewaysService } from './payment-gateways.service';
@@ -684,6 +686,25 @@ export class FeePaymentsService {
         })
         .where('id', '=', req.id)
         .execute();
+      // Accounts hear of it in the console bell and the staff app (client 2026-10-19).
+      const student = await trx
+        .selectFrom('member_profiles')
+        .select(['first_name', 'last_name'])
+        .where('id', '=', r.student_profile_id)
+        .executeTakeFirst();
+      await notify(trx, {
+        institutionId: r.institution_id,
+        accountIds: await notificationsRepository.holdersOf(trx, r.institution_id, 'fees.collect'),
+        surface: 'CONSOLE',
+        category: 'PAYMENT',
+        titleKey: 'NTF.FEE_PAID_ONLINE',
+        params: {
+          label: r.label,
+          name: nameOf(student?.first_name ?? null, student?.last_name ?? null) || 'a student',
+        },
+        body: `${formatInr(Math.min(amountPaise, outstandingOf(r) || amountPaise))} · receipt ${s.receiptNo}`,
+        link: '/console/feecollection',
+      });
       return 'PAID';
     });
   }

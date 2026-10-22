@@ -129,6 +129,47 @@ export const SHEET_COLUMNS: readonly SheetColumn[] = [
   col('Department', 'departmentId'),
 ];
 
+/**
+ * The existing-students upload's columns (ADM-020/029; client 2026-10-21): the form's, without what
+ * the school doesn't collect for a student already enrolled — the mid-year reason, the previous
+ * schooling, the pick-up point, the reference, the user type and department (always the Student type
+ * and its Academics department) — and the children question optional.
+ */
+const NOT_IMPORTED = new Set([
+  'Reason for joining mid-year',
+  'Last school attended',
+  'Last class studied',
+  'Last result',
+  'Board',
+  'Name of the board',
+  'Preferred pick-up point',
+  'Reference full name',
+  'Reference: how they know the student',
+  'Reference phone',
+  'Reference e-mail',
+  // Students only (client 2026-10-21): the Student type and its Academics department.
+  'User type',
+  'Department',
+]);
+const OPTIONAL_IN_IMPORT = new Set(['Children in the family']);
+/**
+ * The student's school transport (client 2026-10-21), after the transport question: the route (its
+ * code or name) and the stop on it allocate the student as the transport office does; the dates
+ * default to the student's joining date (or the year's start) and the year's end.
+ */
+export const TRANSPORT_COLUMNS: readonly SheetColumn[] = [
+  col('Transport route', 'transport.route'),
+  col('Transport stop', 'transport.stop'),
+  col('Transport from', 'transport.from'),
+  col('Transport to', 'transport.to'),
+];
+export const IMPORT_COLUMNS: readonly SheetColumn[] = SHEET_COLUMNS.filter(
+  (c) => !NOT_IMPORTED.has(c.label),
+).flatMap((c) => [
+  OPTIONAL_IN_IMPORT.has(c.label) ? { ...c, required: false } : c,
+  ...(c.label === 'Opt for school transport' ? TRANSPORT_COLUMNS : []),
+]);
+
 /** The template's header of a column: " *" after a required one. */
 export const headerOf = (c: SheetColumn) => (c.required ? `${c.label} *` : c.label);
 

@@ -223,7 +223,12 @@ export async function schoolFixture(name: string) {
     .select('id')
     .where('public_id', '=', uuidToBin(id))
     .executeTakeFirstOrThrow();
-  const school = { id, rowId: String(row.id), con: await signedIn('console', admin.email) };
+  const school = {
+    id,
+    rowId: String(row.id),
+    adminEmail: admin.email,
+    con: await signedIn('console', admin.email),
+  };
   for (const [typeName, category, departments] of [
     ['Teacher', 'TEACHER', ['Primary']],
     ['Merchant', 'MERCHANT', ['Canteen']],
@@ -290,14 +295,9 @@ export async function schoolFixture(name: string) {
 
   let studentSetup: { typeId: string; sectionId: string } | null = null;
   let admissionSeq = 0;
-  /** The Student user type and a Grade 6 A, once. */
+  /** The Parent user type and a Grade 6 A, once (onboarding made the Student type). */
   async function ensureStudents() {
     if (!studentSetup) {
-      await request(app)
-        .post('/api/v1/console/user-types')
-        .set(school.con)
-        .set('Idempotency-Key', randomUUID())
-        .send({ name: 'Student', category: 'STUDENT', departments: ['Middle school'] });
       await request(app)
         .post('/api/v1/console/user-types')
         .set(school.con)

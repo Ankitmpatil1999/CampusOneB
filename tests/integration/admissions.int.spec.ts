@@ -18,7 +18,8 @@ import type { GatewayPayment, PaymentGateway } from '../../integrations/payment-
 import type { SchoolGatewayFactory } from '../../services/payment-gateways.service';
 import { aadhaar, inr, schoolFixture, type Auth } from './school';
 import { PERSON_CARDS } from '../../schemas/admissions.schema';
-import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
+import { SHEET_COLUMNS } from '../../services/admission-sheet';
+import { binToUuid, newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { pngOf } from '../png';
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
@@ -1504,6 +1505,14 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(
       c2.body.application.fees.map((x: { confirmedAt: string | null }) => !!x.confirmedAt),
     ).toEqual([true, true]);
+    // Accounts heard of the fee paid online, and the Co-ordinator that the application is ready
+    // (client 2026-10-19): the console bell, and the staff app's push.
+    const no = c2.body.application.applicationNo as string;
+    const bell = JSON.stringify(
+      (await request(f.app).get('/api/v1/console/notifications?limit=50').set(con)).body,
+    );
+    expect(bell).toContain(`Admission fee paid for ${no}`);
+    expect(bell).toContain(`${no} is ready for approval`);
     const fees = await request(f.app)
       .get(`/api/v1/console/admission-fees?yearId=${currentYear.id}`)
       .set(con);
@@ -1652,29 +1661,270 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const counts = (await request(f.app).get('/api/v1/console/applications').set(con)).body.counts;
     expect(counts).toMatchObject({ APPROVED: 1, REJECTED: 1 });
 
+    // Existing students: the template is the public admission form (client 2026-10-21).
     const tpl = await request(f.app).get('/api/v1/console/applications/imports/template').set(con);
-    const header = tpl.text.trimStart().split(/\r?\n/)[0]!;
-    const csv = [
-      header,
-      'Neha,Kamath,Female,2014-03-03,Grade 6,A,ADM/OLD/0001,,Suresh Kamath,9845055501,Father',
-      'Bad,Row,Unknown,2014-03-03,Grade 9,Z,,,X,123,Uncle',
-    ].join('\n');
-    const imp = await request(f.app)
-      .post('/api/v1/console/applications/imports')
-      .set(con)
-      .set('Idempotency-Key', randomUUID())
-      .attach('file', Buffer.from(csv), { filename: 'old.csv', contentType: 'text/csv' });
-    expect(imp.status, JSON.stringify(imp.body)).toBe(201);
-    expect(imp.body).toMatchObject({ total: 2, imported: 1, rejected: 1 });
-    expect(imp.body.rows[1].errors.map((e: { column: string }) => e.column)).toEqual(
+    expect(tpl.status).toBe(200);
+    expect(tpl.headers['content-disposition']).toContain('ringpe-existing-students-template.csv');
+    const lines = tpl.text.replace(String.fromCharCode(0xfeff), '').split(/\r?\n/);
+    const cols = lines[0]!.split(',');
+    expect(
+      lines[0]!.startsWith('Academic year,Class *,Section *,Admission number *,Joining date'),
+    ).toBe(true);
+    expect(cols).toEqual(
       expect.arrayContaining([
-        'Gender',
-        'Section',
-        'Admission number',
-        'Parent mobile',
-        'Parent relation',
+        'First name *',
+        'Date of birth *',
+        'Residential PIN code *',
+        'Father Aadhaar number *',
+        'Mother PAN *',
+        'Primary contact *',
+        'Children in the family',
+        'Opt for school transport',
       ]),
     );
+    // Not what an enrolled student's sheet takes (client 2026-10-21).
+    for (const old of [
+      'Student first name',
+      'Parent name',
+      'Parent mobile',
+      'Parent relation',
+      'Reason for joining mid-year',
+      'Last school attended',
+      'Last class studied',
+      'Last result',
+      'Board',
+      'Name of the board',
+      'Preferred pick-up point',
+      'Reference full name',
+      'Reference: how they know the student',
+      'Reference phone',
+      'Reference e-mail',
+      'Children in the family *',
+      // Students only: always the Student type and its Academics department.
+      'User type',
+      'Department',
+    ]) {
+      expect(cols).not.toContain(old);
+    }
+    // Onboarding made the Student type with its Academics department (client 2026-10-21).
+    const studentType = (
+      (await request(f.app).get('/api/v1/console/user-types').set(con)).body.items as {
+        name: string;
+        category: string;
+        departments: { name: string }[];
+      }[]
+    ).find((t) => t.name === 'Student');
+    expect(studentType).toMatchObject({
+      category: 'STUDENT',
+      departments: [expect.objectContaining({ name: 'Academics' })],
+    });
+    // The student's transport (client 2026-10-21), after the transport question.
+    const tq = cols.indexOf('Opt for school transport');
+    expect(cols.slice(tq, tq + 5)).toEqual([
+      'Opt for school transport',
+      'Transport route',
+      'Transport stop',
+      'Transport from',
+      'Transport to',
+    ]);
+    // A bus route with a stop on it.
+    const stopMade = await request(f.app)
+      .post('/api/v1/console/stops')
+      .set(con)
+      .set('Idempotency-Key', randomUUID())
+      .send({ name: 'Vinoba Nagar Circle' });
+    expect(stopMade.status, JSON.stringify(stopMade.body)).toBe(201);
+    const routeMade = await request(f.app)
+      .post('/api/v1/console/routes')
+      .set(con)
+      .set('Idempotency-Key', randomUUID())
+      .send({ code: 'R7', name: 'Vinoba Nagar' });
+    expect(routeMade.status, JSON.stringify(routeMade.body)).toBe(201);
+    const mapped = await request(f.app)
+      .put(`/api/v1/console/routes/${routeMade.body.id}/stops`)
+      .set(con)
+      .set('If-Match', `"v${routeMade.body.version}"`)
+      .send({
+        stops: [{ stopId: stopMade.body.id, seq: 0, arrival: '07:30', departure: '07:32' }],
+      });
+    expect(mapped.status, JSON.stringify(mapped.body)).toBe(200);
+    /** A row: each column's value by its name (without the required mark). */
+    const row = (v: Record<string, string>) =>
+      cols.map((c) => v[c.replace(/ \*$/, '')] ?? '').join(',');
+    const no = `ADM/OLD/${Date.now() % 1_000_000}`;
+    const fatherMobile = `98${String(Date.now()).slice(-8)}`;
+    const good = {
+      Class: 'Grade 6',
+      Section: 'A',
+      'Admission number': no,
+      'First name': 'Neha',
+      'Last name': 'Kamath',
+      Gender: 'Female',
+      'Date of birth': '03/03/2014',
+      'Residential house number and street': '12 4th Cross',
+      'Residential area or locality': 'Vinoba Nagar',
+      'Residential city or town': 'Shivamogga',
+      'Residential state': 'Karnataka',
+      'Residential PIN code': '577204',
+      'Father full name': 'Suresh Kamath',
+      'Father mobile': fatherMobile,
+      'Father e-mail': `suresh.${Date.now()}@example.in`,
+      'Father Aadhaar number': aadhaar(),
+      'Father PAN': 'ABCPK1234F',
+      'Mother full name': 'Rekha Kamath',
+      'Mother mobile': `97${String(Date.now()).slice(-8)}`,
+      'Mother Aadhaar number': aadhaar(),
+      'Mother PAN': 'ABCPK5678G',
+      'Primary contact': 'Father',
+      // Optional here (client 2026-10-21).
+      'Blood group': 'B+',
+      'Opt for school transport': 'Yes',
+      'Transport route': 'R7',
+      'Transport stop': 'Vinoba Nagar Circle',
+    };
+    const bad = {
+      Class: 'Grade 9',
+      Section: 'Z',
+      'First name': 'Bad',
+      'Last name': 'Row',
+      Gender: 'Unknown',
+      'Date of birth': '2014-03-03',
+      'Father full name': 'X',
+      'Father mobile': '123',
+      'Primary contact': 'Uncle',
+      'Opt for school transport': 'No',
+      'Transport route': 'R99',
+    };
+    const send = (csv: string) =>
+      request(f.app)
+        .post('/api/v1/console/applications/imports')
+        .set(con)
+        .set('Idempotency-Key', randomUUID())
+        .attach('file', Buffer.from(csv), { filename: 'students.csv', contentType: 'text/csv' });
+    const imp = await send([lines[0], row(good), row(bad)].join('\n'));
+    expect(imp.status, JSON.stringify(imp.body)).toBe(201);
+    expect(imp.body).toMatchObject({ total: 2, imported: 1, rejected: 1 });
+    expect(imp.body.rows[0]).toMatchObject({ name: 'Neha Kamath', outcome: 'IMPORTED' });
+    expect(imp.body.rows[1].errors.map((e: { column: string }) => e.column)).toEqual(
+      expect.arrayContaining([
+        'Class',
+        'Admission number',
+        'Gender',
+        'Father mobile',
+        'Primary contact',
+        'Opt for school transport',
+        'Transport route',
+      ]),
+    );
+    // Enrolled with the form's details on an approved application.
+    const imported = await f.t.db
+      .selectFrom('admission_applications')
+      .select(['public_id', 'source', 'status', 'admission_no'])
+      .where('application_no', '=', imp.body.rows[0].applicationNo)
+      .executeTakeFirstOrThrow();
+    expect(imported).toMatchObject({ source: 'IMPORT', status: 'APPROVED', admission_no: no });
+    expect(
+      await f.t.db
+        .selectFrom('admission_applications as a')
+        .innerJoin('member_profiles as m', 'm.id', 'a.member_profile_id')
+        .innerJoin('user_types as t', 't.id', 'm.user_type_id')
+        .leftJoin('departments as d', 'd.id', 'm.department_id')
+        .select(['t.name as type', 'd.name as department'])
+        .where('a.application_no', '=', imp.body.rows[0].applicationNo)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ type: 'Student', department: 'Academics' });
+    // Set up as an approved admission is (client 2026-10-21): in the class and section of the
+    // sheet, a wallet with its VAN, the transport allocated, the approval audited.
+    const member = await f.t.db
+      .selectFrom('admission_applications')
+      .select('member_profile_id')
+      .where('application_no', '=', imp.body.rows[0].applicationNo)
+      .executeTakeFirstOrThrow();
+    const profileId = String(member.member_profile_id);
+    expect(
+      await f.t.db
+        .selectFrom('enrolments as e')
+        .innerJoin('sections as s', 's.id', 'e.section_id')
+        .innerJoin('classes as c', 'c.id', 's.class_id')
+        .select(['c.name as class', 's.name as section'])
+        .where('e.student_profile_id', '=', profileId)
+        .execute(),
+    ).toEqual([{ class: 'Grade 6', section: 'A' }]);
+    const van = await f.t.db
+      .selectFrom('wallets as w')
+      .innerJoin('virtual_accounts as v', 'v.wallet_id', 'w.id')
+      .select(['w.wallet_no', 'v.va_number', 'v.corporate_code'])
+      .where('w.owner_profile_id', '=', profileId)
+      .where('w.kind', '=', 'CAMPUS')
+      .executeTakeFirstOrThrow();
+    expect(van.va_number).toBe(`${van.corporate_code}${van.wallet_no}`);
+    const thisYear = await f.t.db
+      .selectFrom('academic_years')
+      .select(['starts_on', 'ends_on'])
+      .where('institution_id', '=', f.school.rowId)
+      .where('is_current', '=', 1)
+      .executeTakeFirstOrThrow();
+    const ymdOf = (d: unknown) =>
+      d instanceof Date
+        ? new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+        : String(d).slice(0, 10);
+    const allocation = await f.t.db
+      .selectFrom('transport_allocations as al')
+      .innerJoin('transport_routes as r', 'r.id', 'al.route_id')
+      .innerJoin('transport_stops as st', 'st.id', 'al.stop_id')
+      .select(['r.code', 'st.name', 'al.effective_from', 'al.effective_to', 'al.active'])
+      .where('al.profile_id', '=', profileId)
+      .executeTakeFirstOrThrow();
+    expect({
+      ...allocation,
+      effective_from: ymdOf(allocation.effective_from),
+      effective_to: ymdOf(allocation.effective_to),
+      active: Number(allocation.active),
+    }).toEqual({
+      code: 'R7',
+      name: 'Vinoba Nagar Circle',
+      effective_from: ymdOf(thisYear.starts_on),
+      effective_to: ymdOf(thisYear.ends_on),
+      active: 1,
+    });
+    // (The family's app accounts hear of the allocation in the app; this family has none yet.)
+    expect(
+      await f.t.db
+        .selectFrom('audit_log')
+        .select('action')
+        .where('action', '=', 'ADMISSION_APPROVED')
+        .where('entity_ref', '=', imported.public_id)
+        .execute(),
+    ).toHaveLength(1);
+    // No approval message to the family: the student is already at the school.
+    expect(f.h.sms.sent.some((m) => m.to === fatherMobile)).toBe(false);
+    expect(
+      f.h.email.sent.some((m) => m.purpose === 'admission.approved' && m.text.includes(no)),
+    ).toBe(false);
+    const shown = await request(f.app)
+      .get(`/api/v1/console/applications/${binToUuid(imported.public_id)}`)
+      .set(con);
+    expect(shown.body).toMatchObject({
+      student: { firstName: 'Neha', lastName: 'Kamath', gender: 'FEMALE', dob: '2014-03-03' },
+      section: { name: 'A' },
+      parents: {
+        father: { name: 'Suresh Kamath', mobile: fatherMobile },
+        primary: 'FATHER',
+        children: null,
+      },
+    });
+    // The same admission number again, and the earlier template: refused.
+    const again = await send([lines[0], row(good)].join('\n'));
+    expect(again.body.rows[0].errors[0]).toMatchObject({ column: 'Admission number' });
+    const old = await send(
+      'Student first name,Student last name,Gender,Date of birth,Class,Section,Admission number,Joining date,Parent name,Parent mobile,Parent relation\nA,B,Male,2014-01-01,Grade 6,A,X1,,P Q,9845055501,Father',
+    );
+    expect(old.status).toBe(422);
+    expect(old.body.code).toBe('ADM.IMPORT_OLD_TEMPLATE');
+    const wholeForm = await send(
+      [SHEET_COLUMNS.map((c) => c.label).join(','), 'Grade 6,A'].join('\n'),
+    );
+    expect(wholeForm.body.code).toBe('ADM.IMPORT_OLD_TEMPLATE');
   });
 
   it('pays the admission fee with the application fee in one order when the family chooses it', async () => {

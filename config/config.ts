@@ -134,6 +134,9 @@ export const envSchema = z
     // Kept for reference with Razorpay support; not sent to the API.
     RAZORPAY_MERCHANT_ID: z.string().trim().max(64).optional(),
     ACCOUNTING_MODE: z.enum(['test', 'off']).default('test'),
+    // Push notifications to the apps (client 2026-10-19): the Firebase project's service-account
+    // JSON file (Firebase console › Project settings › Service accounts). Unset: pushes are logged.
+    FCM_SERVICE_ACCOUNT_FILE: z.string().trim().max(400).optional(),
     FINANCING_PARTNER_NAME: z.string().trim().min(2).max(120).default('Example Finance (example)'),
     // Address of the web application, for links sent by e-mail (staff password reset).
     // The web app's development server is HTTPS (npm start, client 2026-10-12).
@@ -142,6 +145,18 @@ export const envSchema = z
     }),
     SOCIAL_PROVIDERS: z.string().default('google,apple'),
     EMAIL_PROVIDER: z.enum(['log', 'smtp']).default('log'),
+    // SMTP (client 2026-10-16: the earlier application's mail server). 587 = STARTTLS (secure
+    // false), 465 = TLS from the start (secure true). EMAIL_USER / EMAIL_PASS keep the earlier
+    // application's names. The certificate is always checked; EMAIL_TLS_VERIFY=false is for a
+    // test server only and is refused in production.
+    EMAIL_SMTP_HOST: z.string().trim().max(200).default('mail.sabadotechnologies.com'),
+    EMAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    EMAIL_SMTP_SECURE: bool(false),
+    EMAIL_USER: z.string().trim().max(200).optional(),
+    EMAIL_PASS: z.string().max(200).optional(),
+    EMAIL_FROM: z.string().trim().max(200).optional(),
+    EMAIL_FROM_NAME: z.string().trim().min(1).max(100).default('RingPe'),
+    EMAIL_TLS_VERIFY: bool(true),
 
     // Uploads (CR-07): private storage and antivirus scan.
     STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
@@ -177,6 +192,13 @@ export const envSchema = z
       }
     } else if (env.HTTP_REDIRECT_PORT) {
       problem('HTTP_REDIRECT_PORT', 'needs USE_HTTPS=true');
+    }
+    if (env.EMAIL_PROVIDER === 'smtp') {
+      if (!env.EMAIL_USER || !env.EMAIL_PASS)
+        problem('EMAIL_USER', 'and EMAIL_PASS are required with EMAIL_PROVIDER=smtp');
+      const from = env.EMAIL_FROM || env.EMAIL_USER || '';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))
+        problem('EMAIL_FROM', 'must be an e-mail address (default: EMAIL_USER)');
     }
     if (env.NODE_ENV !== 'production') return;
     if (env.API_DOCS_ENABLED) problem('API_DOCS_ENABLED', 'must be false in production');
@@ -230,6 +252,9 @@ export const envSchema = z
       problem('SMS_PROVIDER', 'must be a real provider in production');
     if (env.EMAIL_PROVIDER === 'log') {
       problem('EMAIL_PROVIDER', 'must be a real provider in production');
+    }
+    if (!env.EMAIL_TLS_VERIFY) {
+      problem('EMAIL_TLS_VERIFY', "must be true in production (the mail server's certificate)");
     }
     if (env.STORAGE_PROVIDER === 'local') {
       problem('STORAGE_PROVIDER', 'must be object storage in production');
@@ -299,6 +324,8 @@ export interface Config {
   /** The online payment gateway (Q17): test, or live (Razorpay); test refused in production. */
   readonly paymentGatewayMode: Env['PAYMENT_GATEWAY_MODE'];
   /** Razorpay keys for the live gateway (never logged); null without them. */
+  /** Firebase Cloud Messaging service account file; null: pushes are only logged. */
+  readonly fcmServiceAccountFile: string | null;
   readonly razorpay: {
     readonly keyId: string;
     readonly keySecret: string;
@@ -315,6 +342,17 @@ export interface Config {
     readonly otpTestShowCode: boolean;
     readonly sms: Env['SMS_PROVIDER'];
     readonly email: Env['EMAIL_PROVIDER'];
+    /** SMTP settings (EMAIL_PROVIDER=smtp); the password is never logged. */
+    readonly smtp: {
+      readonly host: string;
+      readonly port: number;
+      readonly secure: boolean;
+      readonly user: string | null;
+      readonly pass: string | null;
+      readonly from: string | null;
+      readonly fromName: string;
+      readonly tlsVerify: boolean;
+    };
   };
   readonly files: {
     readonly storage: Env['STORAGE_PROVIDER'];
@@ -402,6 +440,7 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
     },
     financing: { mode: e.FINANCING_PARTNER_MODE, partnerName: e.FINANCING_PARTNER_NAME },
     paymentGatewayMode: e.PAYMENT_GATEWAY_MODE,
+    fcmServiceAccountFile: e.FCM_SERVICE_ACCOUNT_FILE || null,
     razorpay:
       e.RAZORPAY_KEY_ID && e.RAZORPAY_SECRET
         ? {
@@ -423,6 +462,16 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
       otpTestShowCode: e.OTP_TEST_SHOW_CODE ?? e.NODE_ENV === 'development',
       sms: e.SMS_PROVIDER,
       email: e.EMAIL_PROVIDER,
+      smtp: {
+        host: e.EMAIL_SMTP_HOST,
+        port: e.EMAIL_SMTP_PORT,
+        secure: e.EMAIL_SMTP_SECURE,
+        user: e.EMAIL_USER || null,
+        pass: e.EMAIL_PASS || null,
+        from: e.EMAIL_FROM || e.EMAIL_USER || null,
+        fromName: e.EMAIL_FROM_NAME,
+        tlsVerify: e.EMAIL_TLS_VERIFY,
+      },
     },
     files: {
       storage: e.STORAGE_PROVIDER,

@@ -214,6 +214,19 @@ export const FEE_MESSAGES = [
     '13.3',
     'OI-FEE-04',
   ]),
+  // Staff notifications, in the console and the staff app (client 2026-10-19).
+  {
+    key: 'NTF.FEE_PAID_ONLINE',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: '{label} paid online for {name}',
+    placeholders: ['label', 'name'],
+    approval: 'approved',
+    batch: 7,
+    refs: ['client 2026-10-19'],
+  },
 ] as const satisfies readonly MessageDefinition[];
 
 export type FeeMessageKey = (typeof FEE_MESSAGES)[number]['key'];

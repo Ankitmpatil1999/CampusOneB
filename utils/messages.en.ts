@@ -138,6 +138,10 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.GATEWAY_NOT_CONFIGURED':
     'Online payment isn’t available yet. Please pay at the school’s accounts desk.',
   'ADM.ID_INVALID': 'Enter a valid 12-digit Aadhaar number.',
+  'ADM.IMPORT_OLD_TEMPLATE':
+    'This file is an earlier existing-students template. Download the template again and copy your rows into it.',
+  'ADM.IMPORT_TRANSPORT_NOT_OPTED':
+    'Write Yes in “Opt for school transport” to give the student a transport route, or leave the transport columns empty.',
   'ADM.INCOME_INVALID': 'Enter the annual income in rupees, in digits only.',
   'ADM.JOINING_DATE': 'For this academic year, choose a joining date from today to {to}.',
   'ADM.LINK_EXPIRED':
@@ -626,6 +630,9 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'MKR.OWN_REJECT': 'You cannot reject your own request',
   'MKR.REMARKS_TOO_SHORT': 'Write your remarks — at least {min} characters.',
   'NTF.ABSENT': '{name} was marked absent on {date}',
+  'NTF.ADMISSION_FEE_PAID': '{fee} paid for {no}',
+  'NTF.ADMISSION_READY': '{no} is ready for approval',
+  'NTF.ADMISSION_SUBMITTED': 'New application {no}',
   'NTF.ALLOWANCE_CREDITED': "{amount} allowance credited to {name}'s allowance wallet",
   'NTF.ALLOWANCE_EXPIRED': "{name}'s allowance ended today; {amount} unspent lapsed",
   'NTF.ANNOUNCEMENT': '{title}',
@@ -640,6 +647,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'NTF.CORRECTION_REJECTED': 'Your correction was rejected',
   'NTF.CREDIT_HELD': '{amount} arrived for {name} and is held while the wallet is suspended',
   'NTF.DIRECT_MESSAGE': 'Message from {name}',
+  'NTF.FEE_PAID_ONLINE': '{label} paid online for {name}',
   'NTF.HOMEWORK_REMINDER': 'Reminder: {title}',
   'NTF.HOMEWORK_REVIEWED': 'Homework reviewed: {title}',
   'NTF.HOMEWORK_SET': 'New {type}: {title}',

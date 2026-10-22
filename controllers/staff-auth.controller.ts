@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express';
 import {
+  staffAppRefreshSchema,
   staffForgotSchema,
   staffPasswordResetSchema,
   staffResendSchema,
@@ -82,6 +83,53 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
       });
     });
 
+  /** Tokens for the staff app, in the body (never cookies): the app sends them as Bearer. */
+  const appTokens = (t: {
+    sessionId: string;
+    accessToken: string;
+    accessTokenExpiresAt: Date;
+    refreshToken: string;
+    refreshTokenExpiresAt: Date;
+  }) => ({
+    sessionId: t.sessionId,
+    accessToken: t.accessToken,
+    accessTokenExpiresAt: iso(t.accessTokenExpiresAt),
+    refreshToken: t.refreshToken,
+    refreshTokenExpiresAt: iso(t.refreshTokenExpiresAt),
+  });
+
+  /** IDN-088: the staff app's step 2 (client 2026-10-19) — a console session of its own. */
+  const appVerify = wrap(async (req, res) => {
+    const body = staffVerifySchema.parse(req.body ?? {});
+    const out = await service.verify(
+      'console',
+      body,
+      { ip: req.ip, userAgent: req.get('user-agent') },
+      { staffApp: true },
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    if ('passwordChange' in out) {
+      res.json({
+        passwordChangeRequired: true,
+        resetToken: out.passwordChange.resetToken,
+        name: out.name,
+      });
+      return;
+    }
+    res.json({ ...appTokens(out.tokens), name: out.name });
+  });
+
+  /** IDN-089. */
+  const appRefresh = wrap(async (req, res) => {
+    const body = staffAppRefreshSchema.parse(req.body ?? {});
+    const t = await service.refreshStaffApp(body.refreshToken, {
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(appTokens(t));
+  });
+
   /** Same answer whether or not the account exists (enumeration-safe). */
   const forgot = (surface: StaffSurface) =>
     wrap(async (req, res) => {
@@ -116,6 +164,8 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
     signIn,
     resend,
     verify,
+    appVerify,
+    appRefresh,
     forgot,
     passwordReset,
     consoleSession,

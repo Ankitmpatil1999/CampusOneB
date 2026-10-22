@@ -5,7 +5,7 @@
  * language (the response carries the key, its parameters and the English text); the body is the
  * request's own text.
  */
-import { emit, rooms } from '../utils/outbox';
+import { emit, enqueuePush, rooms } from '../utils/outbox';
 import type { Kysely, Transaction } from 'kysely';
 import { renderMessage, type MessageKey } from '../config/registers';
 import type { Database } from '../models/ringpe_models';
@@ -62,6 +62,17 @@ export async function notify(db: Db, n: NotifyInput, at: Date = new Date()) {
     type: 'notification.created',
     rooms: accounts.map((a) => rooms.account(a, surface)),
     data: { category: n.category },
+  });
+  // And to the accounts' phones, once committed (client 2026-10-19).
+  await enqueuePush(db, {
+    institutionId: n.institutionId,
+    accountIds: accounts,
+    surface: n.surface,
+    titleKey: n.titleKey,
+    params: n.params ?? {},
+    body: n.body,
+    link: n.link ?? null,
+    category: n.category,
   });
   if (n.log === false || !accounts.length) return;
   // Every in-app notification is in the communication log (CR-16, RNG-COM-181).

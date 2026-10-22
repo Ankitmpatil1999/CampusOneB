@@ -159,6 +159,19 @@ export const ADMISSION_MESSAGES = [
     '19.2',
     'OI-ADM-03',
   ]),
+  // The existing-students template follows the admission form (client 2026-10-21).
+  n(
+    'ADM.IMPORT_OLD_TEMPLATE',
+    422,
+    'This file is an earlier existing-students template. Download the template again and copy your rows into it.',
+    ['FR-ADM-10', 'client 2026-10-21'],
+  ),
+  n(
+    'ADM.IMPORT_TRANSPORT_NOT_OPTED',
+    422,
+    'Write Yes in “Opt for school transport” to give the student a transport route, or leave the transport columns empty.',
+    ['FR-ADM-10', 'client 2026-10-21'],
+  ),
   n(
     'ADM.MOBILE_INTL_INVALID',
     422,
@@ -342,6 +355,43 @@ export const ADMISSION_MESSAGES = [
     'No application matches these details. Check the application number on your confirmation SMS or e-mail.',
     ['19.2', 'RNG-GOV-007'],
   ),
+  // Staff notifications, in the console and the staff app (client 2026-10-19).
+  {
+    key: 'NTF.ADMISSION_SUBMITTED',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: 'New application {no}',
+    placeholders: ['no'],
+    approval: 'approved',
+    batch: 7,
+    refs: ['client 2026-10-19'],
+  },
+  {
+    key: 'NTF.ADMISSION_FEE_PAID',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: '{fee} paid for {no}',
+    placeholders: ['fee', 'no'],
+    approval: 'approved',
+    batch: 7,
+    refs: ['client 2026-10-19'],
+  },
+  {
+    key: 'NTF.ADMISSION_READY',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: '{no} is ready for approval',
+    placeholders: ['no'],
+    approval: 'approved',
+    batch: 7,
+    refs: ['client 2026-10-19'],
+  },
 ] as const satisfies readonly MessageDefinition[];
 
 export type AdmissionMessageKey = (typeof ADMISSION_MESSAGES)[number]['key'];

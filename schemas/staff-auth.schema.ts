@@ -49,6 +49,20 @@ export const staffResendSchema = z
   })
   .meta({ id: 'StaffCodeResend' });
 
+/** IDN-089: the staff app's refresh token, in the body. */
+export const staffAppRefreshSchema = z
+  .strictObject({ refreshToken: z.string().min(20).max(200) })
+  .meta({ id: 'StaffAppRefresh' });
+export const staffAppTokensSchema = z
+  .object({
+    sessionId: z.uuid(),
+    accessToken: z.string(),
+    accessTokenExpiresAt: z.string(),
+    refreshToken: z.string(),
+    refreshTokenExpiresAt: z.string(),
+  })
+  .meta({ id: 'StaffAppTokens' });
+
 export const staffVerifySchema = z
   .strictObject({ challengeId: z.uuid({ message: 'AUTH.OTP_INVALID' }), otp: req(6) })
   .meta({ id: 'StaffCodeVerify' });

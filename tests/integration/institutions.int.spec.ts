@@ -238,7 +238,7 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
     ]);
     expect(d.body.history.at(-1)).toMatchObject({ action: 'REGISTERED', to: 'PENDING_ACTIVATION' });
 
-    // The default user type, department, administrator role; features off; channels by default.
+    // The default user types and departments, administrator role; features off; channels by default.
     const inst = await t.db
       .selectFrom('institutions')
       .select('id')
@@ -249,8 +249,13 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
       .innerJoin('user_types as u', 'u.id', 'd.user_type_id')
       .select(['u.name as type', 'u.category', 'd.name'])
       .where('d.institution_id', '=', inst.id)
+      .orderBy('d.id')
       .execute();
-    expect(dept).toEqual([{ type: 'Staff', category: 'STAFF', name: 'Administration' }]);
+    // And the students' (client 2026-10-21).
+    expect(dept).toEqual([
+      { type: 'Staff', category: 'STAFF', name: 'Administration' },
+      { type: 'Student', category: 'STUDENT', name: 'Academics' },
+    ]);
     const role = await t.db
       .selectFrom('profile_roles as pr')
       .innerJoin('roles as r', 'r.id', 'pr.role_id')

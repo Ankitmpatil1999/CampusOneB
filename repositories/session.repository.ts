@@ -11,6 +11,8 @@ export interface NewSession {
   readonly publicId: Buffer;
   readonly accountId: string;
   readonly surface: SurfaceCode;
+  /** A console session of the staff app (migration 0076). */
+  readonly staffApp: boolean;
   readonly institutionId: string | null;
   readonly profileId: string | null;
   readonly deviceId: string | null;
@@ -28,6 +30,7 @@ export interface RefreshTokenRow {
   readonly sessionId: string;
   readonly sessionPublicId: Buffer;
   readonly surface: SurfaceCode;
+  readonly staffApp: number;
   readonly endedAt: Date | null;
   readonly endReason: string | null;
   readonly absoluteExpiresAt: Date;
@@ -41,13 +44,17 @@ export interface RefreshTokenRow {
 }
 
 export const sessionRepository = {
-  /** Active sessions of an account on a surface, locked for the ending update. */
-  async lockActive(db: Db, accountId: string, surface: SurfaceCode) {
+  /**
+   * Active sessions of an account on a surface — the staff app's or the others' (migration 0076) —
+   * locked for the ending update.
+   */
+  async lockActive(db: Db, accountId: string, surface: SurfaceCode, staffApp = false) {
     return db
       .selectFrom('sessions')
       .select(['id', 'public_id'])
       .where('account_id', '=', accountId)
       .where('surface', '=', surface)
+      .where('staff_app', '=', staffApp ? 1 : 0)
       .where('ended_at', 'is', null)
       .forUpdate()
       .execute();
@@ -76,6 +83,7 @@ export const sessionRepository = {
         public_id: s.publicId,
         account_id: s.accountId,
         surface: s.surface,
+        staff_app: s.staffApp ? 1 : 0,
         institution_id: s.institutionId,
         profile_id: s.profileId,
         device_id: s.deviceId,
@@ -120,6 +128,7 @@ export const sessionRepository = {
         's.id as sessionId',
         's.public_id as sessionPublicId',
         's.surface as surface',
+        's.staff_app as staffApp',
         's.ended_at as endedAt',
         's.end_reason as endReason',
         's.absolute_expires_at as absoluteExpiresAt',

@@ -73,7 +73,10 @@ function main(): void {
   // The services the jobs use (the same classes as the API).
   const settings = new SettingsService(db);
   const email = loggedSender(
-    createEmailSender(config.notify.email, loggers, { echo: config.notify.otpDevEcho }),
+    createEmailSender(config.notify.email, loggers, {
+      echo: config.notify.otpDevEcho,
+      smtp: config.notify.smtp,
+    }),
     db,
   );
   const billing = new BillingService({ db, loggers, settings, email });

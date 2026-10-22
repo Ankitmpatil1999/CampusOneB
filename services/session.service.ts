@@ -60,9 +60,17 @@ const fromCode = (s: SurfaceCode) => s.toLowerCase() as SessionSurface;
 export function sessionLimits(
   surface: SessionSurface,
   v: SettingValues = defaultValues(),
+  staffApp = false,
 ): { absoluteMs: number; idleMs?: number } {
   const n = (l: { key: string; value: number }) => v[l.key] ?? l.value;
   const hours = (h: number) => h * 3_600_000;
+  // The staff app's console session (client 2026-10-19): days, not the web's hours and minutes.
+  if (staffApp && surface === 'console') {
+    return {
+      absoluteMs: hours(n(LIMITS.sessionStaffAppDays) * 24),
+      idleMs: hours(n(LIMITS.idleStaffAppDays) * 24),
+    };
+  }
   switch (surface) {
     case 'member':
       return { absoluteMs: n(LIMITS.sessionMemberMobileDays) * 24 * 3_600_000 };
@@ -85,6 +93,8 @@ export interface SessionSubject {
   readonly institution?: { readonly id: string; readonly publicId: string };
   readonly profile?: { readonly id: string; readonly publicId: string };
   readonly deviceId?: string;
+  /** A console session of the staff app, beside the web console's (client 2026-10-19). */
+  readonly staffApp?: boolean;
 }
 
 export interface ClientContext {
@@ -135,7 +145,8 @@ export class SessionService {
   async start(subject: SessionSubject, client: ClientContext = {}): Promise<SessionTokens> {
     const now = this.now();
     const settings = await this.settingValues();
-    const limits = sessionLimits(subject.surface, settings);
+    const staffApp = !!subject.staffApp && subject.surface === 'console';
+    const limits = sessionLimits(subject.surface, settings, staffApp);
     const absoluteExpiresAt = new Date(now.getTime() + limits.absoluteMs);
     const refreshExpiresAt = limits.idleMs
       ? new Date(Math.min(now.getTime() + limits.idleMs, absoluteExpiresAt.getTime()))
@@ -146,10 +157,12 @@ export class SessionService {
     // parallel sign-in of another account can share before both insert (retryOnLock).
     const ended = await retryOnLock(() =>
       this.deps.db.transaction().execute(async (trx) => {
+        // One session per surface — and, on the console, per client: the web's and the app's.
         const previous = await sessionRepository.lockActive(
           trx,
           subject.accountId,
           toCode(subject.surface),
+          staffApp,
         );
         await sessionRepository.endSessions(
           trx,
@@ -161,6 +174,7 @@ export class SessionService {
           publicId: session.bin,
           accountId: subject.accountId,
           surface: toCode(subject.surface),
+          staffApp,
           institutionId: subject.institution?.id ?? null,
           profileId: subject.profile?.id ?? null,
           deviceId: subject.deviceId ?? null,
@@ -213,6 +227,8 @@ export class SessionService {
     refreshToken: string,
     client: ClientContext = {},
     expectedSurface?: SessionSurface,
+    /** true: only a staff-app session (its refresh by body); false: never one (cookies). */
+    expectedStaffApp?: boolean,
   ): Promise<SessionTokens> {
     const now = this.now();
     const settings = await this.settingValues();
@@ -222,6 +238,9 @@ export class SessionService {
       if (!row) return { kind: 'unknown' as const };
       const surface = fromCode(row.surface);
       if (expectedSurface && surface !== expectedSurface) return { kind: 'unknown' as const };
+      if (expectedStaffApp !== undefined && !!Number(row.staffApp) !== expectedStaffApp) {
+        return { kind: 'unknown' as const };
+      }
       let recovered = false;
       if (row.status !== 'ACTIVE') {
         if (row.endedAt !== null) return { kind: 'ended' as const, reason: row.endReason };
@@ -251,7 +270,7 @@ export class SessionService {
           return { kind: 'superseded' as const };
         }
       }
-      const limits = sessionLimits(surface, settings);
+      const limits = sessionLimits(surface, settings, !!Number(row.staffApp));
       const absolute = new Date(row.absoluteExpiresAt);
       const expiresAt = limits.idleMs
         ? new Date(Math.min(now.getTime() + limits.idleMs, absolute.getTime()))

@@ -12,6 +12,8 @@ import { createRateLimiter } from './middlewares/rate-limit.middleware';
 import { createSecurity } from './config/security';
 import { buildApiServices } from './config/services';
 import { startRealtime } from './services/realtime.service';
+import { startPushRelay } from './services/push-relay';
+import { fcmPushSender, logPushSender } from './integrations/push.provider';
 import { createApiServer, createRedirectServer } from './utils/https-server';
 import {
   createRuntime,
@@ -116,10 +118,22 @@ async function main(): Promise<void> {
     corsOrigins: config.http.corsOrigins,
   });
 
+  // Push notifications to the apps (client 2026-10-19): Firebase when its service account is set,
+  // else logged.
+  const pushSender = config.fcmServiceAccountFile
+    ? await fcmPushSender(config.fcmServiceAccountFile, loggers).catch((e: unknown) => {
+        loggers.app.error('push.fcm_unavailable', { error: e instanceof Error ? e.message : e });
+        return logPushSender(loggers);
+      })
+    : logPushSender(loggers);
+  const push = startPushRelay({ db: runtime.database.db, sender: pushSender, loggers });
+  loggers.app.info('push relay started', { mode: pushSender.mode });
+
   const stopSchemaWatch = waitForSchema(runtime, () => health.markStarted());
 
   installShutdown(runtime, async () => {
     stopSchemaWatch();
+    push.close();
     await realtime.close();
     await requestLog.close();
     redirect?.close();

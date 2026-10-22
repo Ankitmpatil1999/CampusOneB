@@ -113,6 +113,8 @@ export interface SessionsTable {
   public_id: Buffer;
   account_id: Ref;
   surface: SurfaceCode;
+  /** A console session of the staff app, beside the web console’s (migration 0076). */
+  staff_app: ColumnType<number, number | undefined, number>;
   institution_id: Ref | null;
   profile_id: Ref | null;
   device_id: Ref | null;
@@ -124,6 +126,17 @@ export interface SessionsTable {
   ended_at: NullableTimestamp;
   end_reason: string | null;
   active_key: ColumnType<string | null, never, never>;
+}
+
+/** A signed-in session's phone token from Firebase Cloud Messaging (migration 0076). */
+export interface SessionPushTokensTable {
+  session_id: Ref;
+  account_id: Ref;
+  token: string;
+  token_hash: Buffer;
+  platform: 'ANDROID' | 'IOS';
+  lang_code: Generated<string>;
+  updated_at: Timestamp;
 }
 
 export interface RefreshTokensTable {
@@ -191,6 +204,7 @@ export interface IdentityTables {
   consents: ConsentsTable;
   devices: DevicesTable;
   sessions: SessionsTable;
+  session_push_tokens: SessionPushTokensTable;
   refresh_tokens: RefreshTokensTable;
   otp_challenges: OtpChallengesTable;
   ref_security_questions: RefSecurityQuestionsTable;

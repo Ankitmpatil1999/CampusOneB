@@ -511,7 +511,8 @@ doc({
   id: 'ADM-029',
   method: 'get',
   path: '/api/v1/console/applications/imports/template',
-  summary: 'The existing-students sheet template (CSV)',
+  summary:
+    "The existing-students sheet template (CSV): the public admission form's fields in its order, with the section and admission number, then the school's own form fields (client 2026-10-21)",
   auth: 'admissions.edit',
   responses: { 200: { description: 'Template', contentType: 'text/csv' } },
 });
@@ -867,8 +868,8 @@ export function admissionsRoutes(deps: {
     '/console/applications/imports/template',
     ...console,
     authorize('admissions.edit', L),
-    wrap(async (_req, res) => {
-      const out = A.importTemplate();
+    wrap(async (req, res) => {
+      const out = await A.importTemplate(principal(req));
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);

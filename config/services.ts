@@ -106,6 +106,7 @@ import {
   type SchoolGatewayFactory,
 } from '../services/payment-gateways.service';
 import { FeePaymentsService } from '../services/fee-payments.service';
+import { PushTokensService } from '../services/push-tokens.service';
 import { AdmissionsService } from '../services/admissions.service';
 import { AdmissionLinksService } from '../services/admission-links.service';
 import { SettlementService } from '../services/settlement.service';
@@ -154,7 +155,8 @@ export function buildApiServices(args: {
     ...(now ? { now } : {}),
   });
   const emailSender = loggedSender(
-    o.email ?? createEmailSender(config.notify.email, loggers, echo),
+    o.email ??
+      createEmailSender(config.notify.email, loggers, { ...echo, smtp: config.notify.smtp }),
     db,
     now,
   );
@@ -527,6 +529,7 @@ export function buildApiServices(args: {
     settlement,
     admissions,
     feePayments,
+    pushTokens: new PushTokensService({ db }),
     settings,
     sessions,
     otp,

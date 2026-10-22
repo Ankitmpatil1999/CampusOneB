@@ -153,7 +153,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     Parent: ['PARENT', ['Parents']],
     Teacher: ['TEACHER', ['Primary', 'Secondary']],
   };
-  /** The user type (created the first time it is needed; new schools start with "Staff"). */
+  /** The user type (created the first time it is needed; new schools start with Staff and Student). */
   const userType = async (con: Record<string, string>, name: string) => {
     const list = async () =>
       (await request(app).get('/api/v1/console/user-types').set(con)).body.items as {
@@ -221,7 +221,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     const parentMobile = mobile();
     const r = await onboard(a.con, {
       userTypeId: student.id,
-      departmentId: student.departments.find((d) => d.name === 'Middle school')?.id ?? null,
+      departmentId: student.departments.find((d) => d.name === 'Academics')?.id ?? null,
       firstName: 'Aarav',
       lastName: 'Hegde',
       gender: 'MALE',

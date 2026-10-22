@@ -60,3 +60,47 @@ export async function emit(
     })
     .execute();
 }
+
+/**
+ * A push to accounts' devices on a surface (client 2026-10-19), sent by the push relay only if the
+ * business transaction commits. The accounts are internal ids; the payload never leaves the server
+ * except as the notification's title and body.
+ */
+export async function enqueuePush(
+  db: Db,
+  p: {
+    readonly institutionId: string | null;
+    readonly accountIds: readonly string[];
+    readonly surface: 'MEMBER' | 'CONSOLE';
+    /** The title's message key and parameters: the relay words it in each phone's language. */
+    readonly titleKey: string;
+    readonly params: Readonly<Record<string, string | number>>;
+    readonly body: string;
+    readonly link: string | null;
+    readonly category: string;
+  },
+) {
+  const accounts = [...new Set(p.accountIds)];
+  if (!accounts.length) return;
+  const correlation = getContext()?.correlationId;
+  await db
+    .insertInto('outbox_events')
+    .values({
+      event_id: newPublicIdPair().bin,
+      institution_id: p.institutionId,
+      aggregate_type: 'push',
+      event_type: 'notification',
+      rooms: null,
+      payload: JSON.stringify({
+        accounts,
+        surface: p.surface,
+        titleKey: p.titleKey,
+        params: p.params,
+        body: p.body.slice(0, 300),
+        link: p.link,
+        category: p.category,
+      }),
+      correlation_id: isUuid(correlation ?? '') ? uuidToBin(correlation!) : NIL_UUID_BIN,
+    })
+    .execute();
+}

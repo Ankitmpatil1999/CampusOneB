@@ -241,6 +241,8 @@ export class StaffAuthService {
     surface: StaffSurface,
     input: { challengeId: string; otp: string },
     client: ClientContext = {},
+    /** The staff app's console session (IDN-088), beside the web's. */
+    opts: { staffApp?: boolean } = {},
   ): Promise<StaffSignedIn> {
     let accountId: string | null;
     try {
@@ -275,6 +277,7 @@ export class StaffAuthService {
         accountId: account.id,
         accountPublicId: binToUuid(account.public_id),
         surface,
+        ...(opts.staffApp && surface === 'console' ? { staffApp: true } : {}),
         ...(access.surface === 'console' || access.surface === 'portal'
           ? {
               institution: {
@@ -290,8 +293,16 @@ export class StaffAuthService {
       },
       client,
     );
-    this.deps.loggers.security.info('auth.staff_signed_in', { surface });
+    this.deps.loggers.security.info('auth.staff_signed_in', {
+      surface,
+      ...(opts.staffApp ? { client: 'staff-app' } : {}),
+    });
     return { tokens, name: fullName(account) };
+  }
+
+  /** IDN-089: the staff app renews its console session with the refresh token in the body. */
+  refreshStaffApp(refreshToken: string, client: ClientContext = {}) {
+    return this.deps.sessions.refresh(refreshToken, client, 'console', true);
   }
 
   /** A failed code: tries left, or the attempt ends (and may lock the account). */

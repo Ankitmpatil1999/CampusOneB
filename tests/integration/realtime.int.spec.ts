@@ -159,9 +159,18 @@ describe.skipIf(!adminUrl)('realtime channel on real MySQL', () => {
     const row = await t.db
       .selectFrom('outbox_events')
       .select(['status', 'dispatched_at'])
+      .where('aggregate_type', '=', 'realtime')
       .orderBy('id', 'desc')
       .executeTakeFirstOrThrow();
     expect(row.status).toBe('DISPATCHED');
+    // The phone push of the same notification waits for the push relay (client 2026-10-19).
+    const push = await t.db
+      .selectFrom('outbox_events')
+      .select('status')
+      .where('aggregate_type', '=', 'push')
+      .orderBy('id', 'desc')
+      .executeTakeFirstOrThrow();
+    expect(push.status).toBe('PENDING');
     expect(await rt.relayOnce()).toBe(0);
     void uuidToBin;
   });

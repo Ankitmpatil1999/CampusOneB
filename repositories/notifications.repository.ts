@@ -138,4 +138,28 @@ export const notificationsRepository = {
       .execute();
     return rows.map((r) => String(r.account_id));
   },
+
+  /**
+   * Accounts whose roles at this institution grant the sub-task (client 2026-10-19): the staff a
+   * piece of work waits for — Accounts for a fee to confirm, the Co-ordinator for an application to
+   * approve. A role grants a sub-task when it has it and its task is assigned (as the session does).
+   */
+  async holdersOf(db: Db, institutionId: string, subTask: string) {
+    const rows = await db
+      .selectFrom('profile_roles as pr')
+      .innerJoin('member_profiles as m', 'm.id', 'pr.profile_id')
+      .innerJoin('role_tasks as rt', 'rt.role_id', 'pr.role_id')
+      .innerJoin('sub_tasks as st', 'st.id', 'rt.sub_task_id')
+      .innerJoin('role_task_assignments as a', (j) =>
+        j.onRef('a.role_id', '=', 'rt.role_id').onRef('a.task_id', '=', 'st.task_id'),
+      )
+      .select('m.account_id')
+      .distinct()
+      .where('pr.institution_id', '=', institutionId)
+      .where('st.code', '=', subTask)
+      .where('m.status', '=', 'ACTIVE')
+      .where('m.account_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.account_id));
+  },
 };

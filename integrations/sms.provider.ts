@@ -11,6 +11,11 @@ export interface OutboundMessage {
   /** What the message is for (`otp.signup`, `otp.console_2fa`, …) — logged, never the content. */
   readonly purpose: string;
   readonly text: string;
+  /** E-mail only: the subject (default: from the purpose) and the sender's name (a school's). */
+  readonly subject?: string;
+  readonly fromName?: string;
+  /** E-mail only: where replies go (the school's office address). */
+  readonly replyTo?: string | null;
   /**
    * Whom it concerns, for the communication log (CR-16) — never the content. `false`: the caller
    * logs the send itself (announcements).

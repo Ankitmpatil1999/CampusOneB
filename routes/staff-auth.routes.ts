@@ -12,6 +12,8 @@ import {
   staffForgotSchema,
   staffPasswordResetSchema,
   staffResendSchema,
+  staffAppRefreshSchema,
+  staffAppTokensSchema,
   staffPasswordChangeSchema,
   staffSignedInSchema,
   staffSignInSchema,
@@ -64,6 +66,36 @@ const verifyDoc = (id: string, path: string, who: string) =>
 signInDoc('IDN-031', '/api/v1/auth/console/signin', 'Institution console');
 resendDoc('IDN-032', '/api/v1/auth/console/otp/resend');
 verifyDoc('IDN-033', '/api/v1/auth/console/otp/verify', 'Institution console');
+defineRoute({
+  id: 'IDN-088',
+  method: 'post',
+  path: '/api/v1/auth/staff-app/otp/verify',
+  summary:
+    'Staff app step 2 (client 2026-10-19; step 1 and the resend are IDN-031/032): the code opens a console session of the app, beside the web console’s — signing in on the phone ends only the account’s earlier phone session. Tokens in the body, sent as Bearer (auth.session.staffAppDays, idle auth.idle.staffAppDays)',
+  tags,
+  auth: 'public',
+  request: staffVerifySchema,
+  responses: {
+    200: {
+      description: 'Signed in, or a temporary password to change first',
+      schema: z.union([
+        staffAppTokensSchema.extend({ name: z.string() }),
+        staffPasswordChangeSchema,
+      ]),
+    },
+  },
+});
+defineRoute({
+  id: 'IDN-089',
+  method: 'post',
+  path: '/api/v1/auth/staff-app/token/refresh',
+  summary:
+    'The staff app renews its console session: the refresh token in the body is rotated (a web console session’s token is refused here)',
+  tags,
+  auth: 'public',
+  request: staffAppRefreshSchema,
+  responses: { 200: { description: 'New tokens', schema: staffAppTokensSchema } },
+});
 signInDoc('IDN-035', '/api/v1/ops/auth/signin', 'Back office');
 verifyDoc('IDN-036', '/api/v1/ops/auth/otp/verify', 'Back office');
 resendDoc('IDN-037', '/api/v1/ops/auth/otp/resend');
@@ -142,6 +174,10 @@ export function staffAuthRoutes(deps: {
   router.post('/auth/console/signin', limit, c.signIn('console'));
   router.post('/auth/console/otp/resend', limit, c.resend('console'));
   router.post('/auth/console/otp/verify', limit, c.verify('console'));
+  // The staff app (client 2026-10-19): step 1 and the resend are the console's; step 2 and the
+  // renewal answer with tokens.
+  router.post('/auth/staff-app/otp/verify', limit, c.appVerify);
+  router.post('/auth/staff-app/token/refresh', limit, c.appRefresh);
   router.post('/ops/auth/signin', limit, c.signIn('ops'));
   router.post('/ops/auth/otp/resend', limit, c.resend('ops'));
   router.post('/ops/auth/otp/verify', limit, c.verify('ops'));

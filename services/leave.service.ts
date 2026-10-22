@@ -34,6 +34,7 @@ import { recordAudit } from './audit.service';
 import { occurrences } from './calendar.service';
 import { memberOf, teacherOf, type Member } from './member-roles';
 import { notify } from './notifications.service';
+import { notificationsRepository } from '../repositories/notifications.repository';
 import type { SettingsService } from './settings.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -933,7 +934,11 @@ export class LeaveService {
         })
         .execute();
       const to = needsCoordinator
-        ? await this.coordinatorsOf(trx, me.rowId, year.id)
+        ? [
+            ...(await this.coordinatorsOf(trx, me.rowId, year.id)),
+            // And whoever decides teacher leave in the console (client 2026-10-19).
+            ...(await notificationsRepository.holdersOf(trx, me.institutionId, 'leave.decide')),
+          ]
         : await this.principalsOf(trx, me.institutionId);
       await notify(
         trx,

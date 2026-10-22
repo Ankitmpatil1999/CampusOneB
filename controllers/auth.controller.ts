@@ -64,7 +64,8 @@ export function authController(deps: {
         throw new CustomAPIError(403, 'AUTH.CSRF');
       }
       try {
-        sendWeb(res, surface, await deps.sessions.refresh(token, client, surface));
+        // A cookie never carries a staff-app session's token (those are renewed by body, IDN-089).
+        sendWeb(res, surface, await deps.sessions.refresh(token, client, surface, false));
       } catch (e) {
         // A renewal that lost to a parallel one (another tab) leaves the winner's cookies alone:
         // clearing them here signed every tab out (client 2026-10-13).

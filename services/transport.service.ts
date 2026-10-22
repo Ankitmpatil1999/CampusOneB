@@ -29,6 +29,7 @@ import { istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
 import { assertInYear, assertOpen, institutionOf, yearFor, yearView } from './academic-year';
+import { allocateStudent, familyAccountsOf } from './student-transport';
 import { recordAudit } from './audit.service';
 import { notify } from './notifications.service';
 
@@ -1425,18 +1426,8 @@ export class TransportService {
     return out;
   }
 
-  private async familyAccounts(db: Db, profileRowId: string) {
-    const rows = await db
-      .selectFrom('member_profiles as m')
-      .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
-      .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
-      .select(['m.account_id', 'gm.account_id as guardian_account'])
-      .where('m.id', '=', profileRowId)
-      .execute();
-    return rows
-      .flatMap((r) => [r.account_id, r.guardian_account])
-      .filter((a): a is string => a !== null && a !== undefined)
-      .map(String);
+  private familyAccounts(db: Db, profileRowId: string) {
+    return familyAccountsOf(db, profileRowId);
   }
 
   /** TRN-021: allocate members to a route and stop; each one never twice over the same dates. */
@@ -1521,36 +1512,18 @@ export class TransportService {
           .where('effective_to', '>=', input.from)
           .executeTakeFirst();
         if (clash) throw new CustomAPIError(409, 'TRN.ALREADY_ALLOCATED');
-        const pub = newPublicIdPair();
-        await trx
-          .insertInto('transport_allocations')
-          .values({
-            public_id: pub.bin,
-            institution_id: inst.id,
-            year_id: year.id,
-            profile_id: String(m.id),
-            route_id: route.id,
-            stop_id: stop.id,
-            effective_from: input.from,
-            effective_to: input.to,
-            created_by: this.by(p),
-            created_at: at,
-          })
-          .execute();
-        made.push(pub.id);
-        await notify(
-          trx,
-          {
+        made.push(
+          await allocateStudent(trx, {
             institutionId: inst.id,
-            accountIds: await this.familyAccounts(trx, String(m.id)),
-            surface: 'MEMBER',
-            category: 'ACCOUNT',
-            titleKey: 'NTF.TRANSPORT_ALLOCATED',
-            params: { route: `${String(route['code'])} · ${String(route['name'])}` },
-            body: `Stop: ${String(stop['name'])} · from ${input.from}`,
-            link: '/transport',
-          },
-          at,
+            yearId: year.id,
+            profileRowId: String(m.id),
+            route: { id: route.id, code: String(route['code']), name: String(route['name']) },
+            stop: { id: stop.id, name: String(stop['name']) },
+            from: input.from,
+            to: input.to,
+            by: this.by(p),
+            at,
+          }),
         );
       }
       await recordAudit(trx, {

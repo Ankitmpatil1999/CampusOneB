@@ -51,6 +51,7 @@ import { couponsRoutes } from './coupons.routes';
 import { eventsRoutes } from './events.routes';
 import { posRoutes } from './pos.routes';
 import { feesRoutes } from './fees.routes';
+import { pushRoutes } from './push.routes';
 import { feeDuesRoutes } from './fee-dues.routes';
 import { financingRoutes } from './financing.routes';
 import { admissionsRoutes } from './admissions.routes';
@@ -139,6 +140,7 @@ import type { FeeRecordsService } from '../services/fee-records.service';
 import type { FeeUploadsService } from '../services/fee-uploads.service';
 import type { FeeDuesService } from '../services/fee-dues.service';
 import type { FeePaymentsService } from '../services/fee-payments.service';
+import type { PushTokensService } from '../services/push-tokens.service';
 import type { FinancingService } from '../services/financing.service';
 import type { AdmissionsService } from '../services/admissions.service';
 import type { AdmissionLinksService } from '../services/admission-links.service';
@@ -225,6 +227,8 @@ export interface ApiServices {
   readonly feeDues: FeeDuesService;
   /** Collect Fee: cash, a QR code or a payment link (client 2026-10-19). */
   readonly feePayments: FeePaymentsService;
+  /** The apps' device tokens for push notifications (client 2026-10-19). */
+  readonly pushTokens: PushTokensService;
   readonly financing: FinancingService;
   readonly admissions: AdmissionsService;
   readonly admissionLinks: AdmissionLinksService;
@@ -294,6 +298,7 @@ export function apiRouters(s: ApiServices): Router[] {
       academics: s.academics,
       loggers: s.loggers,
     }),
+    pushRoutes({ pushTokens: s.pushTokens, loggers: s.loggers }),
     approvalsRoutes({
       db: s.db,
       approvals: s.approvals,
