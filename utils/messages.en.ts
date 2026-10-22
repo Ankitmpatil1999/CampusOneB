@@ -201,6 +201,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ALW.TRANSITION_INVALID': "Only an allowance that hasn't been credited yet can be cancelled.",
   'ALW.WALLET_INACTIVE':
     "Your allowance wallet isn't active yet. The school credits it on the allowance's start date.",
+  'ATT.ALREADY_CHECKED_IN': 'Already checked in today.',
   'ATT.ALREADY_COMPLETED': 'Attendance already completed',
   'ATT.CARD_ACTIVE_EXISTS':
     '{name} already has an active card. Re-issue it in the console with a reason first.',
@@ -213,7 +214,10 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ATT.FUTURE_DATE': 'Attendance can’t be marked for a future date.',
   'ATT.LOCATION_WAIT': 'Attendance already recorded. Please try again after {seconds} seconds.',
   'ATT.MEMBER_NOT_FOUND': 'Row {n}: this member isn’t in your school.',
+  'ATT.NOT_CHECKED_IN': 'Not checked in today yet.',
   'ATT.NOT_IN_CLASS': '{name} isn’t in this class.',
+  'ATT.NOT_STAFF':
+    '{name} isn’t a staff member. Students are marked at the gate or by their teacher.',
   'ATT.NOT_YOUR_PERIOD': 'This period isn’t yours.',
   'ATT.NO_CLASSES': 'No classes assigned to you.',
   'ATT.NO_PERIOD_NOW': 'There’s no period for this class right now.',

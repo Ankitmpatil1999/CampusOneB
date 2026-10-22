@@ -2613,6 +2613,106 @@ paths:
           schema:
             type: string
             maxLength: 40
+  /api/v1/console/attendance/staff:
+    get:
+      operationId: ATT-029
+      summary: "Teachers, the principal and non-teaching staff on a date (default today; type ALL, TEACHERS or STAFF): each one’s status, check-in and check-out times, how it was recorded, approved leave and whether they hold a card, with counts (client 2026-10-22)"
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.view
+      responses:
+        "200":
+          description: Staff
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))$
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - ALL
+              - TEACHERS
+              - STAFF
+  /api/v1/console/attendance/staff/card-taps:
+    post:
+      operationId: ATT-030
+      summary: "A staff member taps their card on the front desk’s USB reader (RingPe Card Reader): the first tap of the day checks them in (Present up to the late cut-off, Late after), the next checks them out (Present after the half-day time, Half day before); a later tap answers COMPLETE. A day marked Absent without a check-in is checked in. Students are refused (ATT.NOT_STAFF)"
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.mark
+      responses:
+        "200":
+          description: CHECKED_IN, CHECKED_OUT or COMPLETE, with the member and status
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffCardTap"
+  /api/v1/console/attendance/staff/checks:
+    post:
+      operationId: ATT-031
+      summary: The front desk checks a staff member in or out by name, now (no card with them); the reason is kept. Back-dated changes use ATT-010
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.mark
+      responses:
+        "200":
+          description: CHECKED_IN or CHECKED_OUT, with the member and status
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffCheck"
   /api/v1/console/audit-events:
     get:
       operationId: GOV-005
@@ -48030,6 +48130,35 @@ components:
         - accessTokenExpiresAt
         - refreshToken
         - refreshTokenExpiresAt
+      additionalProperties: false
+    StaffCardTap:
+      type: object
+      properties:
+        cardToken:
+          type: string
+          maxLength: 32
+      required:
+        - cardToken
+      additionalProperties: false
+    StaffCheck:
+      type: object
+      properties:
+        memberId:
+          type: string
+          maxLength: 40
+        action:
+          type: string
+          enum:
+            - IN
+            - OUT
+        remark:
+          anyOf:
+            - type: string
+              maxLength: 200
+            - type: "null"
+      required:
+        - memberId
+        - action
       additionalProperties: false
     StaffCodeChallenge:
       type: object

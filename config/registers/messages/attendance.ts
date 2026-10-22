@@ -87,6 +87,16 @@ export const ATTENDANCE_MESSAGES = [
   ]),
   n('ATT.MEMBER_NOT_FOUND', 422, 'Row {n}: this member isn’t in your school.', ['21.10'], ['n']),
   n('ATT.REMARK', 422, 'Keep the remark within 200 characters.', ['OI-ATT-23']),
+  // Staff attendance at the front desk (client 2026-10-22).
+  n(
+    'ATT.NOT_STAFF',
+    422,
+    '{name} isn’t a staff member. Students are marked at the gate or by their teacher.',
+    ['client 2026-10-22'],
+    ['name'],
+  ),
+  n('ATT.ALREADY_CHECKED_IN', 409, 'Already checked in today.', ['client 2026-10-22']),
+  n('ATT.NOT_CHECKED_IN', 409, 'Not checked in today yet.', ['client 2026-10-22']),
   n('ATT.TYPE_TAKEN', 409, '{name} already exists.', ['OI-IDN-22'], ['name']),
   n('ATT.TYPE_NAME', 422, 'Enter a name of 2 to 40 characters.', ['OI-ATT-23']),
   n('ATT.VISITOR_NOT_FOUND', 404, 'Visitor not found.', ['21.8']),
