@@ -18,6 +18,7 @@ export type CommEventKey =
   | 'RESULTS'
   | 'CLASS'
   | 'TRANSPORT'
+  | 'BUS_NEAR'
   | 'LEAVE'
   | 'ANNOUNCEMENT'
   | 'MESSAGE'
@@ -60,9 +61,14 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     'A student’s fee for the year is set: the student and parents',
     ['NTF.FEE_ASSIGNED'],
   ),
-  ev('FEE_DUE', 'Fee due reminder', 'An unpaid instalment is due soon: the student and parents', [
-    'NTF.FEE_DUE',
-  ]),
+  // The payment link of "Collect fees · Send link" (client 2026-10-22) is a call to pay a fee due: it
+  // goes by SMS and e-mail from the desk's action itself; the event switches its phone alert.
+  ev(
+    'FEE_DUE',
+    'Fee due reminder',
+    'A fee is due — a reminder before the due date, or a payment link from the school: the student and parents',
+    ['NTF.FEE_DUE', 'NTF.FEE_PAY_LINK', 'NTF.ADMISSION_PAY_LINK'],
+  ),
   ev('ATTENDANCE', 'Absent', 'A student is marked absent: the student and parents', ['NTF.ABSENT']),
   ev(
     'HOMEWORK',
@@ -87,6 +93,17 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     'Bus allocated or ended, trip started or cancelled: the passengers and parents',
     ['NTF.TRANSPORT_ALLOCATED', 'NTF.TRANSPORT_ENDED', 'NTF.TRIP_STARTED', 'NTF.TRIP_CANCELLED'],
   ),
+  // Live tracking (client 2026-10-21): an e-mail would arrive after the bus has gone, so it is off
+  // by default (the school can turn it on); the phone alert is on.
+  {
+    ...ev(
+      'BUS_NEAR',
+      'Bus near the stop',
+      'The bus is close to a passenger’s stop: the passengers and parents',
+      ['NTF.BUS_NEAR_STOP'],
+    ),
+    emailByDefault: false,
+  },
   ev('LEAVE', 'Leave', 'Leave requested, reviewed or decided: the people concerned', [
     'NTF.LEAVE_REQUESTED',
     'NTF.LEAVE_FOR_DECISION',

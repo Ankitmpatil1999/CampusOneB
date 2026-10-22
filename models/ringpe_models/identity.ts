@@ -113,7 +113,7 @@ export interface SessionsTable {
   public_id: Buffer;
   account_id: Ref;
   surface: SurfaceCode;
-  /** A console session of the staff app, beside the web console’s (migration 0081). */
+  /** A console session of the staff app, beside the web console’s (migration 0084). */
   staff_app: ColumnType<number, number | undefined, number>;
   institution_id: Ref | null;
   profile_id: Ref | null;

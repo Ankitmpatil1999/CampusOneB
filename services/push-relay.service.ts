@@ -1,5 +1,5 @@
 /**
- * Sends the pushed notices (client 2026-10-19; migrations 0079, 0081 push_outbox), as the e-mail relay:
+ * Sends the pushed notices (client 2026-10-19; migrations 0079, 0084 push_outbox), as the e-mail relay:
  *
  * - The rows are claimed with SKIP LOCKED and leased for five minutes, so several API instances never
  *   send one twice.

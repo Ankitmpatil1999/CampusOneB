@@ -159,6 +159,13 @@ export const envSchema = z
     // keys in keys/); `log` writes them to the app log (refused in production); `off` sends none.
     PUSH_PROVIDER: z.enum(['off', 'log', 'fcm']).default('off'),
     PUSH_FCM_SERVICE_ACCOUNT_FILE: z.string().trim().max(500).optional(),
+    // Google Maps for transport (client 2026-10-21; integrations/maps.provider.ts): `google` =
+    // road distances through the Routes API with GOOGLE_MAPS_SERVER_KEY; `test` = straight-line
+    // estimates, shown as such (refused in production); `off` = none. GOOGLE_MAPS_BROWSER_KEY is
+    // the key the console's map loads with (restrict it to the server's address in Google Cloud).
+    MAPS_PROVIDER: z.enum(['off', 'test', 'google']).default('off'),
+    GOOGLE_MAPS_SERVER_KEY: z.string().trim().max(200).optional(),
+    GOOGLE_MAPS_BROWSER_KEY: z.string().trim().max(200).optional(),
 
     // Uploads (CR-07): private storage and antivirus scan.
     STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
@@ -204,9 +211,16 @@ export const envSchema = z
     }
     if (env.PUSH_PROVIDER === 'fcm' && !env.PUSH_FCM_SERVICE_ACCOUNT_FILE)
       problem('PUSH_FCM_SERVICE_ACCOUNT_FILE', 'is required with PUSH_PROVIDER=fcm');
+    if (env.MAPS_PROVIDER === 'google' && !env.GOOGLE_MAPS_SERVER_KEY)
+      problem('GOOGLE_MAPS_SERVER_KEY', 'is required with MAPS_PROVIDER=google');
     if (env.NODE_ENV !== 'production') return;
     if (env.PUSH_PROVIDER === 'log')
       problem('PUSH_PROVIDER', 'must be fcm or off in production (log only writes the app log)');
+    if (env.MAPS_PROVIDER === 'test')
+      problem(
+        'MAPS_PROVIDER',
+        'must be google or off in production (test only estimates distances)',
+      );
     if (env.API_DOCS_ENABLED) problem('API_DOCS_ENABLED', 'must be false in production');
     if (!env.REDIS_URL) problem('REDIS_URL', 'is required in production (several instances)');
     if (env.CORS_ORIGINS.length === 0) problem('CORS_ORIGINS', 'is required in production');
@@ -361,6 +375,14 @@ export interface Config {
     /** Firebase service-account key file (PUSH_PROVIDER=fcm). */
     readonly pushServiceAccountFile: string | null;
   };
+  /** Google Maps for transport (client 2026-10-21). */
+  readonly maps: {
+    readonly provider: Env['MAPS_PROVIDER'];
+    /** Routes API key, server side only (never sent to a client). */
+    readonly serverKey: string | null;
+    /** The console's Maps JavaScript key (public by nature; restricted to the site in Google Cloud). */
+    readonly browserKey: string | null;
+  };
   readonly files: {
     readonly storage: Env['STORAGE_PROVIDER'];
     readonly uploadDir: string;
@@ -480,6 +502,11 @@ export function loadConfig(source: Readonly<Record<string, string | undefined>>)
       },
       push: e.PUSH_PROVIDER,
       pushServiceAccountFile: e.PUSH_FCM_SERVICE_ACCOUNT_FILE || null,
+    },
+    maps: {
+      provider: e.MAPS_PROVIDER,
+      serverKey: e.GOOGLE_MAPS_SERVER_KEY || null,
+      browserKey: e.GOOGLE_MAPS_BROWSER_KEY || null,
     },
     files: {
       storage: e.STORAGE_PROVIDER,

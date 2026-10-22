@@ -11,7 +11,7 @@ export interface NewSession {
   readonly publicId: Buffer;
   readonly accountId: string;
   readonly surface: SurfaceCode;
-  /** A console session of the staff app (migration 0081). */
+  /** A console session of the staff app (migration 0084). */
   readonly staffApp: boolean;
   readonly institutionId: string | null;
   readonly profileId: string | null;
@@ -45,7 +45,7 @@ export interface RefreshTokenRow {
 
 export const sessionRepository = {
   /**
-   * Active sessions of an account on a surface — the staff app's or the others' (migration 0081) —
+   * Active sessions of an account on a surface — the staff app's or the others' (migration 0084) —
    * locked for the ending update.
    */
   async lockActive(db: Db, accountId: string, surface: SurfaceCode, staffApp = false) {

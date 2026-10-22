@@ -2,8 +2,9 @@
  * Backup and restore drill (Phase 9.4; docs/runbooks §5). Development and staging only — refused in
  * production. Run: `npm run dr:drill` (reads DB_MIGRATOR_URL and FIELD_KEYS_FILE from .env).
  *
- * 1. Full backup: mysqldump of the database (one consistent transaction, routines, triggers, the
- *    binary-log position) → restore into an empty scratch schema → verify: the same tables and row
+ * 1. Full backup: mysqldump of the RingPe and CUG databases together (migration 0081: one consistent
+ *    transaction for both, routines, triggers, the binary-log position) → restore into two empty
+ *    scratch schemas (the names inside the dump follow) → verify: the same tables and row
  *    counts for the key tables, the ledger balanced, the migration level, and that encrypted personal
  *    fields still decrypt with the field-key file kept apart from the dump.
  * 2. Point in time: on a small scratch schema, rows written after the backup are recovered from the
@@ -19,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import mysql from 'mysql2/promise';
+import { cugDatabaseOf, isCugTable } from '../db/cug-tables';
 import { loadFieldCipher } from '../utils/fieldEncryption';
 import { binToUuid } from '../utils/idGenerator';
 
@@ -49,7 +51,7 @@ async function main() {
   const url = process.env['DB_MIGRATOR_URL'] ?? process.env['DATABASE_URL'];
   if (!url) fail('DB_MIGRATOR_URL is not set');
   const u = new URL(url);
-  const source = decodeURIComponent(u.pathname.replace(/^\//, ''));
+  const sourceDb = decodeURIComponent(u.pathname.replace(/^\//, ''));
   const work = await mkdtemp(join(tmpdir(), 'ringpe-dr-'));
   const creds = join(work, 'client.cnf');
   // Credentials go to the tools through a file only this run reads, never the command line.
@@ -61,6 +63,7 @@ async function main() {
   const tool = (name: string) => join(BIN, `${name}.exe`);
   const admin = await mysql.createConnection({ uri: url, multipleStatements: false });
   const restore = 'ringpe_dr_restore';
+  const restoreCug = cugDatabaseOf(restore);
   const pitr = 'ringpe_dr_pitr';
   const pitrRestore = 'ringpe_dr_pitr_restore';
   const results: string[] = [];
@@ -72,11 +75,12 @@ async function main() {
     console.log(`${label}: ${s.toFixed(1)} s`);
     return out;
   };
-  const pipeInto = (db: string, file: string) =>
+  /** Runs a SQL file with the mysql client (null: the file names its databases itself). */
+  const pipeInto = (db: string | null, file: string) =>
     new Promise<void>((resolve, reject) => {
       const p = spawn(
         tool('mysql'),
-        [`--defaults-extra-file=${creds}`, '--default-character-set=utf8mb4', db],
+        [`--defaults-extra-file=${creds}`, '--default-character-set=utf8mb4', ...(db ? [db] : [])],
         {
           stdio: ['pipe', 'ignore', 'pipe'],
         },
@@ -88,7 +92,7 @@ async function main() {
       createReadStream(file).pipe(p.stdin);
       p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(0, 500)))));
     });
-  const dumpTo = (db: string, file: string) =>
+  const dumpTo = (dbs: readonly string[], file: string) =>
     new Promise<void>((resolve, reject) => {
       const p = spawn(
         tool('mysqldump'),
@@ -102,7 +106,7 @@ async function main() {
           '--source-data=2',
           '--set-gtid-purged=OFF',
           '--default-character-set=utf8mb4',
-          db,
+          ...(dbs.length > 1 ? ['--databases', ...dbs] : dbs),
         ],
         { stdio: ['ignore', 'pipe', 'pipe'] },
       );
@@ -111,44 +115,64 @@ async function main() {
       p.stdout.pipe(createWriteStream(file));
       p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(0, 500)))));
     });
-  const counts = async (db: string) => {
+  const counts = async (dbs: { ringpe: string; cug: string }) => {
     const out: Record<string, number> = {};
     for (const t of KEY_TABLES) {
+      const db = isCugTable(t) ? dbs.cug : dbs.ringpe;
       const [rows] = await admin.query(`SELECT COUNT(*) AS n FROM \`${db}\`.\`${t}\``);
       out[t] = Number((rows as { n: number }[])[0]?.n ?? 0);
     }
     return out;
   };
+  const tableCount = async (dbs: readonly string[]) => {
+    const [rows] = await admin.query(
+      'SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema IN (?)',
+      [dbs],
+    );
+    return Number((rows as { n: number }[])[0]?.n);
+  };
+  const dropAll = async () => {
+    // The RingPe and CUG databases reference each other: foreign-key checks off to drop them.
+    await admin.query('SET FOREIGN_KEY_CHECKS = 0');
+    for (const db of [restore, restoreCug, pitr, pitrRestore]) {
+      await admin.query(`DROP DATABASE IF EXISTS \`${db}\``).catch(() => undefined);
+    }
+    await admin.query('SET FOREIGN_KEY_CHECKS = 1');
+  };
 
   try {
-    for (const db of [restore, pitr, pitrRestore])
-      await admin.query(`DROP DATABASE IF EXISTS \`${db}\``);
+    await dropAll();
 
     // --- 1. Full backup and restore -------------------------------------------------------------
+    // Both databases in one dump and one transaction (migration 0081): a consistent copy of the two.
     const dump = join(work, 'full.sql');
+    const source = { ringpe: sourceDb, cug: cugDatabaseOf(sourceDb) };
+    const target = { ringpe: restore, cug: restoreCug };
     const before = await counts(source);
-    await timed('full backup (mysqldump, one transaction)', () => dumpTo(source, dump));
+    await timed('full backup (mysqldump, both databases, one transaction)', () =>
+      dumpTo([source.ringpe, source.cug], dump),
+    );
     const size = (await stat(dump)).size;
     results.push(`dump size: ${(size / 1024 / 1024).toFixed(1)} MB`);
     console.log(`dump size: ${(size / 1024 / 1024).toFixed(1)} MB`);
-    await admin.query(
-      `CREATE DATABASE \`${restore}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
+    // The drill restores under scratch names: the databases named in the dump (CREATE DATABASE,
+    // USE, keys and triggers across the two) become the scratch ones.
+    const renamed = join(work, 'full.restore.sql');
+    await writeFile(
+      renamed,
+      (await readFile(dump, 'utf8'))
+        .split(`\`${source.cug}\``)
+        .join(`\`${target.cug}\``)
+        .split(`\`${source.ringpe}\``)
+        .join(`\`${target.ringpe}\``),
     );
-    await timed('restore into an empty schema', () => pipeInto(restore, dump));
+    await timed('restore into empty schemas', () => pipeInto(null, renamed));
 
-    const [srcTables] = await admin.query(
-      'SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = ?',
-      [source],
-    );
-    const [dstTables] = await admin.query(
-      'SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = ?',
-      [restore],
-    );
-    const nSrc = Number((srcTables as { n: number }[])[0]?.n);
-    const nDst = Number((dstTables as { n: number }[])[0]?.n);
+    const nSrc = await tableCount([source.ringpe, source.cug]);
+    const nDst = await tableCount([target.ringpe, target.cug]);
     if (nSrc !== nDst) fail(`tables ${nSrc} → ${nDst}`);
-    results.push(`tables: ${nDst} of ${nSrc}`);
-    const after = await counts(restore);
+    results.push(`tables: ${nDst} of ${nSrc} (RingPe and CUG)`);
+    const after = await counts(target);
     for (const t of KEY_TABLES) {
       // The source may move on during the drill (the user's API is running): never fewer rows.
       if (after[t]! < before[t]!) fail(`${t}: ${before[t]} rows before, ${after[t]} restored`);
@@ -157,7 +181,7 @@ async function main() {
     const [bal] = await admin.query(
       `SELECT COALESCE(SUM(IF(direction = 'D', amount_paise, 0)), 0) AS d,
               COALESCE(SUM(IF(direction = 'C', amount_paise, 0)), 0) AS c
-         FROM \`${restore}\`.ledger_entries`,
+         FROM \`${target.cug}\`.ledger_entries`,
     );
     const b = (bal as { d: string; c: string }[])[0]!;
     if (String(b.d) !== String(b.c)) fail(`ledger unbalanced after restore: ${b.d} vs ${b.c}`);
@@ -201,7 +225,7 @@ async function main() {
       `INSERT INTO \`${pitr}\`.payments VALUES (1, 5000, 'before the backup'), (2, 7500, 'before the backup')`,
     );
     const pitrDump = join(work, 'pitr.sql');
-    await dumpTo(pitr, pitrDump);
+    await dumpTo([pitr], pitrDump);
     const header = await readFile(pitrDump, 'utf8');
     const pos = /(?:SOURCE|MASTER)_LOG_FILE='([^']+)',\s*(?:SOURCE|MASTER)_LOG_POS=(\d+)/.exec(
       header,
@@ -259,9 +283,7 @@ async function main() {
     console.log('\nDRILL PASSED');
     for (const r of results) console.log(`- ${r}`);
   } finally {
-    for (const db of [restore, pitr, pitrRestore]) {
-      await admin.query(`DROP DATABASE IF EXISTS \`${db}\``).catch(() => undefined);
-    }
+    await dropAll().catch(() => undefined);
     await admin.end();
     await rm(work, { recursive: true, force: true });
   }

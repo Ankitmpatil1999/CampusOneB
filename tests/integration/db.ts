@@ -7,11 +7,16 @@
  * into a template schema (`ringpe_it_tpl_<hash>`, built under a MySQL lock so parallel workers wait for
  * one build); each test schema is then copied from it — tables (with their keys, checks, partitions and
  * auto-increment positions), rows, then triggers. The migrations suite still migrates from scratch.
+ *
+ * Since migration 0081 each schema has its CUG database beside it (`<name>_cug`, db/cug-tables.ts):
+ * both are built, copied (the database names inside cross-database keys and triggers follow) and
+ * dropped together — with foreign-key checks off, as each references the other.
  */
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { join } from 'node:path';
 import { createConnection, type RowDataPacket } from 'mysql2/promise';
 import { sql } from 'kysely';
+import { cugDatabaseOf } from '../../db/cug-tables';
 import { migrate, readMigrationDir } from '../../db/migrator';
 import { openMigrationConnection } from '../../db/mysql-executor';
 import { renderReferenceSeedSql } from '../../db/reference-seed';
@@ -32,7 +37,9 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   if (!adminUrl) throw new Error('TEST_DB_MIGRATOR_URL is not set');
   const name = `ringpe_it_${randomBytes(4).toString('hex')}`;
   const admin = await createConnection({ uri: adminUrl });
-  await admin.query(`CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+  for (const db of [name, cugDatabaseOf(name)]) {
+    await admin.query(`CREATE DATABASE \`${db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+  }
   await admin.end();
   const u = new URL(adminUrl);
   u.pathname = `/${name}`;
@@ -47,9 +54,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     db: handle.db,
     async drop() {
       await handle.close();
-      const a = await createConnection({ uri: adminUrl });
-      await a.query(`DROP DATABASE IF EXISTS \`${name}\``);
-      await a.end();
+      await dropPair(name);
     },
   };
 }
@@ -79,7 +84,7 @@ async function template(): Promise<string> {
         [name],
       );
       if (!ready.length) {
-        await admin.query(`DROP DATABASE IF EXISTS \`${name}\``);
+        await dropPair(name);
         await admin.query(
           `CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
         );
@@ -96,7 +101,10 @@ async function template(): Promise<string> {
           `SELECT SCHEMA_NAME AS s FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE 'ringpe\\_it\\_tpl\\_%' AND SCHEMA_NAME <> ?`,
           [name],
         );
-        for (const o of old) await admin.query(`DROP DATABASE IF EXISTS \`${String(o['s'])}\``);
+        for (const o of old) {
+          const s = String(o['s']);
+          if (!s.endsWith('_cug')) await dropPair(s);
+        }
       }
     } finally {
       await admin.query('SELECT RELEASE_LOCK(?)', [name]);
@@ -107,56 +115,85 @@ async function template(): Promise<string> {
   return name;
 }
 
-/** Copies the template's tables, rows and triggers into the (empty) schema at `url`. */
+/** Drops a schema and its CUG database (each references the other: foreign-key checks off). */
+async function dropPair(name: string) {
+  const a = await createConnection({ uri: adminUrl!, multipleStatements: true });
+  try {
+    await a.query(
+      `SET FOREIGN_KEY_CHECKS = 0; DROP DATABASE IF EXISTS \`${name}\`; DROP DATABASE IF EXISTS \`${cugDatabaseOf(name)}\`; SET FOREIGN_KEY_CHECKS = 1;`,
+    );
+  } finally {
+    await a.end();
+  }
+}
+
+/**
+ * Copies the template's tables, rows and triggers into the (empty) schema at `url` and its CUG
+ * database; the template's database names inside keys and triggers become the copy's.
+ */
 async function copyTemplate(tpl: string, url: string) {
   const c = await createConnection({ uri: url, multipleStatements: true });
   try {
+    const [[me]] = await c.query<RowDataPacket[]>('SELECT DATABASE() AS d');
+    const target = String(me!['d']);
+    const pairs = [
+      { from: tpl, to: target },
+      { from: cugDatabaseOf(tpl), to: cugDatabaseOf(target) },
+    ];
+    const rename = (text: string) =>
+      pairs.reduce((t, p) => t.split(`\`${p.from}\`.`).join(`\`${p.to}\`.`), text);
     await c.query('SET FOREIGN_KEY_CHECKS = 0');
-    const [tables] = await c.query<RowDataPacket[]>(
-      `SELECT TABLE_NAME AS t FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME <> '_template_ready'
-        ORDER BY TABLE_NAME`,
-      [tpl],
-    );
-    for (const { t } of tables) {
-      const [[row]] = await c.query<RowDataPacket[]>(
-        `SHOW CREATE TABLE \`${tpl}\`.\`${String(t)}\``,
+    for (const { from, to } of pairs) {
+      const [tables] = await c.query<RowDataPacket[]>(
+        `SELECT TABLE_NAME AS t FROM information_schema.TABLES
+          WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME <> '_template_ready'
+          ORDER BY TABLE_NAME`,
+        [from],
       );
-      await c.query(String(row!['Create Table']));
-    }
-    const [cols] = await c.query<RowDataPacket[]>(
-      `SELECT TABLE_NAME AS t, COLUMN_NAME AS c, EXTRA AS x FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION`,
-      [tpl],
-    );
-    const byTable = new Map<string, string[]>();
-    for (const col of cols) {
-      if (/\b(VIRTUAL|STORED) GENERATED\b/i.test(String(col['x'] ?? ''))) continue;
-      const list = byTable.get(String(col['t'])) ?? [];
-      list.push(`\`${String(col['c'])}\``);
-      byTable.set(String(col['t']), list);
-    }
-    const [filled] = await c.query<RowDataPacket[]>(
-      `SELECT TABLE_NAME AS t FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME <> '_template_ready'`,
-      [tpl],
-    );
-    const inserts = filled
-      .map(({ t }) => {
-        const list = (byTable.get(String(t)) ?? []).join(', ');
-        return `INSERT INTO \`${String(t)}\` (${list}) SELECT ${list} FROM \`${tpl}\`.\`${String(t)}\`;`;
-      })
-      .join('\n');
-    if (inserts) await c.query(inserts);
-    const [triggers] = await c.query<RowDataPacket[]>(
-      'SELECT TRIGGER_NAME AS t FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? ORDER BY TRIGGER_NAME',
-      [tpl],
-    );
-    for (const { t } of triggers) {
-      const [[row]] = await c.query<RowDataPacket[]>(
-        `SHOW CREATE TRIGGER \`${tpl}\`.\`${String(t)}\``,
+      for (const { t } of tables) {
+        const [[row]] = await c.query<RowDataPacket[]>(
+          `SHOW CREATE TABLE \`${from}\`.\`${String(t)}\``,
+        );
+        const ddl = rename(String(row!['Create Table'])).replace(
+          /^CREATE TABLE `[^`]+`/,
+          `CREATE TABLE \`${to}\`.\`${String(t)}\``,
+        );
+        await c.query(ddl);
+      }
+      const [cols] = await c.query<RowDataPacket[]>(
+        `SELECT TABLE_NAME AS t, COLUMN_NAME AS c, EXTRA AS x FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+        [from],
       );
-      await c.query(String(row!['SQL Original Statement']));
+      const byTable = new Map<string, string[]>();
+      for (const col of cols) {
+        if (/\b(VIRTUAL|STORED) GENERATED\b/i.test(String(col['x'] ?? ''))) continue;
+        const list = byTable.get(String(col['t'])) ?? [];
+        list.push(`\`${String(col['c'])}\``);
+        byTable.set(String(col['t']), list);
+      }
+      const inserts = tables
+        .map(({ t }) => {
+          const list = (byTable.get(String(t)) ?? []).join(', ');
+          return `INSERT INTO \`${to}\`.\`${String(t)}\` (${list}) SELECT ${list} FROM \`${from}\`.\`${String(t)}\`;`;
+        })
+        .join('\n');
+      if (inserts) await c.query(inserts);
+    }
+    for (const { from, to } of pairs) {
+      // A trigger's stored statement names its table without the database: create it from there.
+      await c.query(`USE \`${to}\``);
+      const [triggers] = await c.query<RowDataPacket[]>(
+        `SELECT TRIGGER_NAME AS t FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?
+          ORDER BY EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION, ACTION_ORDER`,
+        [from],
+      );
+      for (const { t } of triggers) {
+        const [[row]] = await c.query<RowDataPacket[]>(
+          `SHOW CREATE TRIGGER \`${from}\`.\`${String(t)}\``,
+        );
+        await c.query(rename(String(row!['SQL Original Statement'])));
+      }
     }
     await c.query('SET FOREIGN_KEY_CHECKS = 1');
   } finally {

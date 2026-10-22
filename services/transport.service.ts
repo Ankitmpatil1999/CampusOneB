@@ -16,6 +16,8 @@
  *   allocations over the same dates — and tells them and their families; it is ended, not deleted.
  * - A student whose admission form declined school transport is not allocated (client 2026-10-12);
  *   one with no choice on record (admitted before the form asked, imported, added directly) is.
+ * - An allocation raises the member's transport dues when the school charges by distance
+ *   (transport-fees.service.ts, client 2026-10-21), in the same transaction.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { Database, CrewRole, RouteType, TripDirection } from '../models/ringpe_models';
@@ -27,6 +29,7 @@ import {
 } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
+import { toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { assertInYear, assertOpen, institutionOf, yearFor, yearView } from './academic-year';
 import { allocateStudent, familyAccountsOf } from './student-transport';
@@ -278,6 +281,8 @@ export class TransportService {
             's.name',
             's.landmark',
             's.active',
+            's.lat',
+            's.lng',
           ])
           .where(
             'rs.route_id',
@@ -311,17 +316,24 @@ export class TransportService {
           active: !!Number(r.active),
           distanceKm: Math.round(list.reduce((n, s) => n + Number(s.distance_km), 0) * 100) / 100,
           passengers: Number(passengers.find((x) => String(x.route_id) === String(r.id))?.n ?? 0),
-          stops: list.map((s) => ({
+          stops: list.map((s, i) => ({
             seq: s.seq,
             stop: {
               id: binToUuid(s.public_id),
               name: s.name,
               landmark: s.landmark,
               active: !!Number(s.active),
+              lat: s.lat === null ? null : Number(s.lat),
+              lng: s.lng === null ? null : Number(s.lng),
             },
             arrival: hm(s.arrival),
             departure: hm(s.departure),
             distanceKm: Number(s.distance_km),
+            // From the school (the first stop) along the route, one way: what the fee is charged on.
+            fromSchoolKm:
+              Math.round(
+                list.slice(1, i + 1).reduce((n, x) => n + Number(x.distance_km), 0) * 100,
+              ) / 100,
           })),
           version: r.row_version,
         };
@@ -1450,6 +1462,7 @@ export class TransportService {
       throw new ValidationError([{ field: 'memberIds', code: 'TRN.MEMBERS' }]);
     const at = this.now();
     const made: string[] = [];
+    let fees = { members: 0, records: 0, amountPaise: 0 };
     await this.deps.db.transaction().execute(async (trx) => {
       const year = await yearFor(trx, inst.id, undefined);
       assertOpen(year);
@@ -1512,19 +1525,26 @@ export class TransportService {
           .where('effective_to', '>=', input.from)
           .executeTakeFirst();
         if (clash) throw new CustomAPIError(409, 'TRN.ALREADY_ALLOCATED');
-        made.push(
-          await allocateStudent(trx, {
-            institutionId: inst.id,
-            yearId: year.id,
-            profileRowId: String(m.id),
-            route: { id: route.id, code: String(route['code']), name: String(route['name']) },
-            stop: { id: stop.id, name: String(stop['name']) },
-            from: input.from,
-            to: input.to,
-            by: this.by(p),
-            at,
-          }),
-        );
+        const out = await allocateStudent(trx, {
+          institutionId: inst.id,
+          yearId: year.id,
+          profileRowId: String(m.id),
+          route: { id: route.id, code: String(route['code']), name: String(route['name']) },
+          stop: { id: stop.id, name: String(stop['name']) },
+          from: input.from,
+          to: input.to,
+          by: this.by(p),
+          at,
+        });
+        made.push(out.id);
+        // The transport fee by distance, raised with the allocation (client 2026-10-21).
+        if (out.fees.records) {
+          fees = {
+            members: fees.members + 1,
+            records: fees.records + out.fees.records,
+            amountPaise: fees.amountPaise + out.fees.amountPaise,
+          };
+        }
       }
       await recordAudit(trx, {
         institutionId: inst.id,
@@ -1534,7 +1554,12 @@ export class TransportService {
         after: { members: members.length, from: input.from, to: input.to },
       });
     });
-    return { allocated: made.length, ids: made };
+    return {
+      allocated: made.length,
+      ids: made,
+      // Transport dues raised by distance (none when the school doesn't charge by distance).
+      fees: { members: fees.members, records: fees.records, amount: toMoneyDto(fees.amountPaise) },
+    };
   }
 
   /** A member of the caller's school (404 otherwise). */

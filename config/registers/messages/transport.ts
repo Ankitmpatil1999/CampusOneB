@@ -287,6 +287,35 @@ export const TRANSPORT_MESSAGES = [
     '22.18',
     'RC-25',
   ]),
+  // --- maps, live tracking and the transport fee by distance (client 2026-10-21) -----------------------
+  n('TRN.TRIP_NOT_RUNNING', 409, 'This trip isn’t running, so its position isn’t shared.', [
+    'client 2026-10-21',
+  ]),
+  n('TRN.POSITION', 422, 'The position isn’t valid.', ['client 2026-10-21']),
+  n(
+    'TRN.STOPS_WITHOUT_PLACE',
+    422,
+    'Place these stops on the map first: {stops}.',
+    ['client 2026-10-21'],
+    ['stops'],
+  ),
+  n('TRN.MAPS_OFF', 409, 'Maps aren’t set up on this server yet.', ['client 2026-10-21']),
+  n('TRN.MAPS_FAILED', 502, 'The map service didn’t answer. Try again in a moment.', [
+    'client 2026-10-21',
+  ]),
+  n('TRN.FEE_RATE', 422, 'Enter the yearly rate per km, from ₹0 to ₹1,00,000.', [
+    'client 2026-10-21',
+  ]),
+  n('TRN.FEE_DUE_DAY', 422, 'Choose a due day from 1 to 28.', ['client 2026-10-21']),
+  n('TRN.FEE_RULE_OFF', 409, 'Turn on the transport fee by distance and set its rate first.', [
+    'client 2026-10-21',
+  ]),
+  info(
+    'NTF.BUS_NEAR_STOP',
+    '{bus} is near {stop}',
+    ['client 2026-10-21 (live tracking)'],
+    ['bus', 'stop'],
+  ),
   info('NTF.TRANSPORT_ALLOCATED', 'Transport: {route}', ['22.7', 'OI-TRN-13'], ['route']),
   info(
     'NTF.TRANSPORT_ENDED',

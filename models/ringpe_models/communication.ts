@@ -212,7 +212,7 @@ export interface PushOutboxTable {
   id: Generated<string>;
   institution_id: Ref | null;
   account_id: Ref;
-  /** Migration 0081: the member app's phones, or the staff app's for a console notice. */
+  /** Migration 0084: the member app's phones, or the staff app's for a console notice. */
   surface: ColumnType<'MEMBER' | 'CONSOLE', 'MEMBER' | 'CONSOLE' | undefined, 'MEMBER' | 'CONSOLE'>;
   event_key: string | null;
   notification_ref: Buffer;

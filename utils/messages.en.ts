@@ -643,6 +643,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'MKR.REMARKS_TOO_SHORT': 'Write your remarks — at least {min} characters.',
   'NTF.ABSENT': '{name} was marked absent on {date}',
   'NTF.ADMISSION_FEE_PAID': '{fee} paid for {no}',
+  'NTF.ADMISSION_PAY_LINK': 'Pay the admission fee of {amount} for {name}',
   'NTF.ADMISSION_READY': '{no} is ready for approval',
   'NTF.ADMISSION_SUBMITTED': 'New application {no}',
   'NTF.ALLOWANCE_CREDITED': "{amount} allowance credited to {name}'s allowance wallet",
@@ -652,6 +653,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'NTF.APPROVAL_APPROVED': '{no} approved',
   'NTF.APPROVAL_RAISED': '{no} is waiting for your decision',
   'NTF.APPROVAL_REJECTED': '{no} rejected',
+  'NTF.BUS_NEAR_STOP': '{bus} is near {stop}',
   'NTF.CARD_ACTIVE': "{name}'s campus card is active again",
   'NTF.CARD_BLOCKED': "{name}'s campus card is blocked",
   'NTF.CLASS_PLACED': '{name} is placed in {section} for {year}',
@@ -659,9 +661,10 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'NTF.CORRECTION_REJECTED': 'Your correction was rejected',
   'NTF.CREDIT_HELD': '{amount} arrived for {name} and is held while the wallet is suspended',
   'NTF.DIRECT_MESSAGE': 'Message from {name}',
-  'NTF.FEE_PAID_ONLINE': '{label} paid online for {name}',
   'NTF.FEE_ASSIGNED': 'Fee of {amount} assigned to {name} for {year}',
   'NTF.FEE_DUE': '{label} of {amount} for {name} is due on {date}',
+  'NTF.FEE_PAID_ONLINE': '{label} paid online for {name}',
+  'NTF.FEE_PAY_LINK': 'Pay {label} of {amount} for {name}',
   'NTF.HOMEWORK_REMINDER': 'Reminder: {title}',
   'NTF.HOMEWORK_REVIEWED': 'Homework reviewed: {title}',
   'NTF.HOMEWORK_SET': 'New {type}: {title}',
@@ -872,10 +875,15 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'TRN.DRIVER_BOOKED': 'Driver is already assigned for the selected date range.',
   'TRN.DUPLICATE_STOP': '{stop} appears twice on the route.',
   'TRN.EMPLOYEE_REF_TAKEN': '{ref} is already used by another crew member.',
+  'TRN.FEE_DUE_DAY': 'Choose a due day from 1 to 28.',
+  'TRN.FEE_RATE': 'Enter the yearly rate per km, from ₹0 to ₹1,00,000.',
+  'TRN.FEE_RULE_OFF': 'Turn on the transport fee by distance and set its rate first.',
   'TRN.LAT': 'Latitude must be between -90 and 90',
   'TRN.LICENCE_REQUIRED': 'A driver needs a licence number and an expiry date in the future.',
   'TRN.LICENCE_TAKEN': 'License Number already exists.',
   'TRN.LNG': 'Longitude must be between -180 and 180',
+  'TRN.MAPS_FAILED': 'The map service didn’t answer. Try again in a moment.',
+  'TRN.MAPS_OFF': 'Maps aren’t set up on this server yet.',
   'TRN.MEMBERS': 'Choose up to 200 active members of the school.',
   'TRN.MEMBER_NOT_FOUND': 'Employee not found or Inactive.',
   'TRN.NAME': 'Enter a name of 2 to 80 characters.',
@@ -890,6 +898,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'This student has no transport choice on record from the admission form, so they can be allocated already.',
   'TRN.OPT_OUT_ALLOCATED':
     'End the student’s current transport allocation before marking them as not opted.',
+  'TRN.POSITION': 'The position isn’t valid.',
   'TRN.RANGE_DATES': 'To Date cannot be earlier than From Date.',
   'TRN.REGISTRATION': 'Enter the registration number (up to 15 characters).',
   'TRN.REGISTRATION_TAKEN': 'Registration Number already exists.',
@@ -908,6 +917,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'TRN.SKIP_NOT_UPCOMING': 'Only an upcoming stop can be skipped.',
   'TRN.SKIP_REMARKS': 'Give a reason for skipping the stop.',
   'TRN.STOPS_PENDING': 'Trip can only be completed after reaching the final stop.',
+  'TRN.STOPS_WITHOUT_PLACE': 'Place these stops on the map first: {stops}.',
   'TRN.STOP_IN_USE': 'This stop is on an active route, so it can’t be made inactive.',
   'TRN.STOP_NAME_TAKEN': 'Stop already exists.',
   'TRN.STOP_NOT_FOUND': 'Stop not found.',
@@ -921,6 +931,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'TRN.TRIP_COMPLETED_CANCEL': 'Completed trip cannot be cancelled.',
   'TRN.TRIP_COMPLETED_UPDATE': 'Completed trip cannot be updated.',
   'TRN.TRIP_NOT_FOUND': 'Trip not found.',
+  'TRN.TRIP_NOT_RUNNING': 'This trip isn’t running, so its position isn’t shared.',
   'TRN.TRIP_NOT_SCHEDULED': 'Only a scheduled trip can be started.',
   'TRN.TRIP_NOT_STARTED': 'Trip must be started before updating stop status.',
   'TRN.TRIP_NOT_STARTED_COMPLETE': 'Only a started trip can be completed.',
@@ -930,6 +941,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'TRN.VEHICLE_INACTIVE': 'Selected bus is inactive.',
   'TRN.VEHICLE_NOT_FOUND': 'Bus not found.',
   'UPL.ALREADY_COMMITTED': 'This upload has already been onboarded.',
+  'UPL.CLASS_UNKNOWN': 'There is no class “{class}”. Use a class name from Classes & subjects.',
+  'UPL.DAY_UNKNOWN': '“{day}” isn’t a school day. Write Monday to Saturday.',
   'UPL.FILE_REQUIRED': 'Choose the filled-in template (CSV) to upload.',
   'UPL.HAS_REJECTED':
     '{n} rows were rejected. Fix them and upload again, or onboard the accepted rows only.',
@@ -939,6 +952,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     "The columns don't match the template. Download the template and fill it in.",
   'UPL.HEADER_UNKNOWN':
     'The file has a column the template doesn’t: “{found}”. Remove it, or download the template again — your institution’s own fields may have changed.',
+  'UPL.LESSON_INCOMPLETE':
+    'Give both the subject and the teacher, or leave both empty for a free period.',
   'UPL.NOTHING_ACCEPTED': 'No successful records.',
   'UPL.NOT_A_STUDENT':
     'The user type “{t}” is not a student type. Leave it empty for the student type.',
@@ -947,10 +962,19 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'UPL.NO_ROWS': 'No records received',
   'UPL.OLD_TEMPLATE':
     'This file is the earlier members template. Download the template again — it now has the admission form’s columns.',
+  'UPL.PERIOD_UNKNOWN': 'There is no period “{period}” in the bell schedule.',
   'UPL.ROW_CHANGED':
     'Row {row} can no longer be onboarded: {reason} Nothing was onboarded; upload the sheet again.',
+  'UPL.SECTION_REQUIRED': 'Name at least one section.',
+  'UPL.SECTION_SKIPPED':
+    'Not imported: another row of {section} has a problem, and a section’s week is imported whole.',
+  'UPL.SECTION_UNKNOWN': '{class} has no section “{section}”.',
   'UPL.STOP_UNKNOWN':
     'There is no pick-up point “{stop}”. Use a name from the school’s transport stops.',
+  'UPL.SUBJECT_UNKNOWN':
+    'There is no subject “{subject}”. Use a subject code or name from Classes & subjects.',
+  'UPL.TEACHER_AMBIGUOUS': '“{t}” matches more than one teacher. Use the employee ID instead.',
+  'UPL.TEACHER_UNKNOWN': 'No teacher has the employee ID or mobile number “{t}”.',
   'UPL.TOO_MANY_ROWS': 'Upload at most {max} rows at a time.',
   'UPL.WRONG_TEMPLATE':
     'This file is the {used} template. Upload it with the {used} upload, or download the {wanted} template.',
@@ -1318,6 +1342,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'subtask.institution.teaching.marks': 'Enter and publish marks',
   'subtask.institution.teaching.view': 'My classes, timetable and records',
   'subtask.institution.transport.edit': 'Edit routes, vehicles and allocations',
+  'subtask.institution.transport.fees': 'Set the transport fee per km',
   'subtask.institution.transport.view': 'See transport',
   'subtask.institution.vouchers.edit': 'Post vouchers',
   'subtask.institution.vouchers.view': 'See vouchers',

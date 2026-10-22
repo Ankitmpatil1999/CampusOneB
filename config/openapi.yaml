@@ -1622,7 +1622,7 @@ paths:
   /api/v1/console/applications/{applicationId}/admission-fee/online:
     post:
       operationId: ADM-023
-      summary: A payment link for the admission fee (valid adm.payLink.days) to send to the family
+      summary: "A payment link for the admission fee (valid adm.payLink.days, one day), sent at once (client 2026-10-22): by SMS and e-mail to the parents on the application — and the student once a member — through the school’s channels, and in the app to those with a RingPe account at the school; `sent` says where (masked)"
       tags:
         - Admissions
       x-ringpe-auth: admfees.collect
@@ -1650,6 +1650,79 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/console/applications/{applicationId}/admission-fee/orders:
+    post:
+      operationId: ADM-037
+      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee)"
+      tags:
+        - Admissions
+      x-ringpe-auth: admfees.collect
+      responses:
+        "201":
+          description: Order, as ADM-010
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionDeskOrder"
+  /api/v1/console/applications/{applicationId}/admission-fee/orders/{paymentId}/verify:
+    post:
+      operationId: ADM-038
+      summary: The desk checkout’s answer, verified on the server as ADM-011 (signature, then the payment as the gateway holds it); the fee is paid with its receipt
+      tags:
+        - Admissions
+      x-ringpe-auth: admfees.collect
+      responses:
+        "200":
+          description: Paid, as ADM-011
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionPaymentVerify"
   /api/v1/console/applications/{applicationId}/approval:
     post:
       operationId: ADM-018
@@ -4832,10 +4905,85 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/console/fee-records/{recordId}/orders:
+    post:
+      operationId: FEE-052
+      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the instalment’s outstanding amount, whose checkout opens on the console — no link is created or sent; kept as a DESK payment request so the gateway’s webhook settles it too"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.collect
+      responses:
+        "201":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeDeskOrder"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+  /api/v1/console/fee-records/{recordId}/orders/{requestId}/verify:
+    post:
+      operationId: FEE-053
+      summary: The desk checkout’s answer, verified as FEE-051 (signature, then the payment as the gateway holds it); the instalment is collected once, here or by the webhook, with a receipt
+      tags:
+        - Fees
+      x-ringpe-auth: fees.collect
+      responses:
+        "200":
+          description: Collected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeDeskCollected"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeePaymentVerifyInput"
   /api/v1/console/fee-records/{recordId}/payment-requests:
     post:
       operationId: FEE-048
-      summary: "A payment link (channel LINK: sent by SMS and e-mail through the school’s channels to the student’s registered mobile and e-mail, a parent’s for a child without their own) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days"
+      summary: "A payment link (channel LINK: sent to the student and every parent — by SMS and e-mail through the school’s channels, and in the app to those with a RingPe account; client 2026-10-22) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days (one day)"
       tags:
         - Fees
       x-ringpe-auth: fees.collect
@@ -5627,6 +5775,25 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LocationCapture"
+  /api/v1/console/maps:
+    get:
+      operationId: TRN-039
+      summary: "What the console’s maps load with: the map provider, the browser key (restricted to the site in Google Cloud) and how often live positions refresh"
+      tags:
+        - Transport
+      x-ringpe-auth: transport.view
+      responses:
+        "200":
+          description: Maps
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
   /api/v1/console/marks-status:
     get:
       operationId: ACA-039
@@ -7940,6 +8107,31 @@ paths:
                 active:
                   type: boolean
               additionalProperties: false
+  /api/v1/console/routes/{routeId}/distances:
+    post:
+      operationId: TRN-038
+      summary: The road distance from each stop of the route to the next through the map service (every stop placed on the map first); nothing is saved — the stops are saved with TRN-004
+      tags:
+        - Transport
+      x-ringpe-auth: transport.edit
+      responses:
+        "200":
+          description: Distances
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/console/routes/{routeId}/stops:
     put:
       operationId: TRN-004
@@ -8644,6 +8836,70 @@ paths:
           required: true
           schema:
             type: string
+  /api/v1/console/teacher-assignments/uploads:
+    post:
+      operationId: ACA-084
+      summary: "Upload class teachers (CSV: class, section, teacher) or subject teachers (CSV: class, sections, subject, teacher) for the year with the screen’s rules: commit=false checks every row, commit=true saves the accepted rows; replace=true replaces class teachers already assigned (kept as history); never removes an assignment"
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Row report
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+  /api/v1/console/teacher-assignments/uploads/template:
+    get:
+      operationId: ACA-083
+      summary: The class-teacher or subject-teacher sheet (CSV) for the year, filled with its current assignments; a teacher is named by employee ID, else mobile number
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Template
+          content:
+            text/csv:
+              schema:
+                type: string
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: yearId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - CLASS_TEACHER
+              - SUBJECT_TEACHER
   /api/v1/console/teacher-leaves:
     get:
       operationId: ACA-042
@@ -8983,6 +9239,62 @@ paths:
           schema:
             type: string
             maxLength: 40
+  /api/v1/console/timetables/uploads:
+    post:
+      operationId: ACA-086
+      summary: "Upload timetables (CSV: class, section, day, period, subject, teacher) for the year: each section in the file gets exactly its week (no subject and no teacher = a free period), a section with any refused row is skipped whole; commit=false checks, commit=true saves"
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Row report
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+  /api/v1/console/timetables/uploads/template:
+    get:
+      operationId: ACA-085
+      summary: "The timetable sheet (CSV) for the year: every section, day and teaching period, filled with the current lessons"
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Template
+          content:
+            text/csv:
+              schema:
+                type: string
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: yearId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
   /api/v1/console/transport-choices/{memberId}:
     put:
       operationId: TRN-035
@@ -9121,6 +9433,75 @@ paths:
                 active:
                   type: boolean
               additionalProperties: false
+  /api/v1/console/transport/fee-rule:
+    get:
+      operationId: TRN-040
+      summary: "The transport fee by distance (client 2026-10-21): on or off, the yearly rate per km of the round trip, the due day, and the current year’s months"
+      tags:
+        - Transport
+      x-ringpe-auth: transport.view
+      responses:
+        "200":
+          description: Fee rule
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+    put:
+      operationId: TRN-041
+      summary: Set the transport fee by distance (Institution Administrator); dues already raised don’t change; If-Match ("v0" before it was first saved)
+      tags:
+        - Transport
+      x-ringpe-auth: transport.fees
+      responses:
+        "200":
+          description: Fee rule
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransportFeeRule"
+  /api/v1/console/transport/fee-rule/apply:
+    post:
+      operationId: TRN-042
+      summary: Raise the transport dues of every allocation of the current year still in force (for a rule switched on after the buses were allocated); re-runnable — months already charged are left alone
+      tags:
+        - Transport
+      x-ringpe-auth: transport.fees
+      responses:
+        "200":
+          description: Dues raised
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
   /api/v1/console/transport/reports/{reportKind}:
     get:
       operationId: TRN-026
@@ -9806,6 +10187,37 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/crew/trips/{tripId}/positions:
+    post:
+      operationId: TRN-036
+      summary: "The crew’s phone sends the bus’s position while the trip runs (client 2026-10-21): up to 100 fixes; inaccurate, early or future ones are not used, a resent one adds nothing; a stop the bus comes near is told once; 409 TRN.TRIP_NOT_RUNNING once the trip is no longer Started (stop sharing)"
+      tags:
+        - Transport
+      x-ringpe-auth: member
+      responses:
+        "200":
+          description: Accepted fixes and the interval to send at
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TripPositions"
   /api/v1/crew/trips/{tripId}/start:
     post:
       operationId: TRN-029
@@ -12740,6 +13152,32 @@ paths:
       responses:
         "200":
           description: Transport
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: for
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+  /api/v1/me/transport/live:
+    get:
+      operationId: TRN-037
+      summary: "Where the bus is (client 2026-10-21): for a passenger of the route — a student, a staff member — or a parent (for: a child on the account), while a trip of the route runs today: the bus’s position, its trail, the stops and about how many minutes to the member’s stop"
+      tags:
+        - Transport
+      x-ringpe-auth: member|teaching.view,principal.view
+      responses:
+        "200":
+          description: Live transport
         default:
           description: Error (RFC 9457 problem details)
           content:
@@ -22123,6 +22561,17 @@ components:
         - receivedAt
         - paidBy
       additionalProperties: false
+    AdmissionDeskOrder:
+      type: object
+      properties:
+        feeType:
+          type: string
+          enum:
+            - APPLICATION
+            - ADMISSION
+      required:
+        - feeType
+      additionalProperties: false
     AdmissionLink:
       type: object
       properties:
@@ -31123,6 +31572,118 @@ components:
       required:
         - text
       additionalProperties: false
+    FeeDeskCollected:
+      type: object
+      properties:
+        receiptNo:
+          type:
+            - string
+            - "null"
+        transactionId:
+          type: string
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        mode:
+          type: string
+          const: ONLINE
+        recordId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        status:
+          type: string
+          const: PAID
+      required:
+        - receiptNo
+        - transactionId
+        - amount
+        - mode
+        - recordId
+        - status
+      additionalProperties: false
+    FeeDeskOrder:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        gatewayOrder:
+          type: object
+          properties:
+            orderId:
+              type: string
+            amount:
+              type: object
+              properties:
+                amount:
+                  type: string
+                currency:
+                  type: string
+                  const: INR
+              required:
+                - amount
+                - currency
+              additionalProperties: false
+            mode:
+              type: string
+              enum:
+                - test
+                - live
+            test:
+              type: object
+              properties:
+                paymentId:
+                  type: string
+                signature:
+                  type: string
+              required:
+                - paymentId
+                - signature
+              additionalProperties: false
+            checkout:
+              type: object
+              properties:
+                keyId:
+                  type: string
+                name:
+                  type: string
+              required:
+                - keyId
+                - name
+              additionalProperties: false
+          required:
+            - orderId
+            - amount
+            - mode
+          additionalProperties: false
+      required:
+        - requestId
+        - amount
+        - gatewayOrder
+      additionalProperties: false
     FeeHead:
       type: object
       properties:
@@ -31335,20 +31896,26 @@ components:
         qrSvg:
           type: string
         sentTo:
-          description: "Where the link was sent (masked); null: not sent that way"
+          description: "Where the link was sent (masked); an empty list: not sent that way"
           type: object
           properties:
-            mobile:
-              type:
-                - string
-                - "null"
-            email:
-              type:
-                - string
-                - "null"
+            mobiles:
+              type: array
+              items:
+                type: string
+            emails:
+              type: array
+              items:
+                type: string
+            inApp:
+              type: integer
+              minimum: -9007199254740991
+              maximum: 9007199254740991
+              description: RingPe accounts notified in the app
           required:
-            - mobile
-            - email
+            - mobiles
+            - emails
+            - inApp
           additionalProperties: false
       required:
         - id
@@ -49028,6 +49595,24 @@ components:
         - opted
         - reason
       additionalProperties: false
+    TransportFeeRule:
+      type: object
+      properties:
+        active:
+          type: boolean
+        ratePaisePerKm:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        dueDay:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+      required:
+        - active
+        - ratePaisePerKm
+        - dueDay
+      additionalProperties: false
     TransportRouteInput:
       type: object
       properties:
@@ -49154,6 +49739,49 @@ components:
           maxLength: 300
       required:
         - remarks
+      additionalProperties: false
+    TripPositions:
+      type: object
+      properties:
+        points:
+          minItems: 1
+          maxItems: 100
+          type: array
+          items:
+            type: object
+            properties:
+              lat:
+                type: number
+                minimum: -90
+                maximum: 90
+              lng:
+                type: number
+                minimum: -180
+                maximum: 180
+              accuracy:
+                anyOf:
+                  - type: number
+                    minimum: 0
+                  - type: "null"
+              speed:
+                type:
+                  - number
+                  - "null"
+              heading:
+                type:
+                  - number
+                  - "null"
+              at:
+                type: string
+                format: date-time
+                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+            required:
+              - lat
+              - lng
+              - at
+            additionalProperties: false
+      required:
+        - points
       additionalProperties: false
     TripStopEvent:
       type: object

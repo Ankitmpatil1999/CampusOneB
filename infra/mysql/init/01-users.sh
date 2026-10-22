@@ -13,6 +13,10 @@ CREATE USER IF NOT EXISTS 'ringpe_report'@'%'   IDENTIFIED BY '${RINGPE_REPORT_P
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON ringpe.* TO 'ringpe_app'@'%';
 GRANT ALL PRIVILEGES ON ringpe.* TO 'ringpe_migrator'@'%';
 GRANT SELECT ON ringpe.* TO 'ringpe_report'@'%';
+-- The CUG database (migration 0081 creates it and moves the school tables there).
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON ringpe_cug.* TO 'ringpe_app'@'%';
+GRANT ALL PRIVILEGES ON ringpe_cug.* TO 'ringpe_migrator'@'%';
+GRANT SELECT ON ringpe_cug.* TO 'ringpe_report'@'%';
 
 -- Integration tests create and drop throwaway schemas ringpe_it_*.
 GRANT ALL PRIVILEGES ON \`ringpe\_it\_%\`.* TO 'ringpe_migrator'@'%';

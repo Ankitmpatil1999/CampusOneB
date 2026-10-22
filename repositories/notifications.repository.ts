@@ -52,7 +52,8 @@ export const notificationsRepository = {
           category: n.category,
           title_key: n.titleKey,
           params: JSON.stringify(n.params),
-          body: n.body.slice(0, 300),
+          // A payment link's notice carries the whole link (migration 0083, client 2026-10-22).
+          body: n.body.slice(0, 1000),
           link: n.link,
           created_at: n.at,
         })),

@@ -9,6 +9,7 @@ import type { Database } from '../models/ringpe_models';
 import { istBusinessDate } from '../utils/format';
 import { newPublicIdPair } from '../utils/idGenerator';
 import { notify } from './notifications.service';
+import { raiseTransportFees } from './transport-fees.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -159,7 +160,7 @@ export async function allocateStudent(
   },
 ) {
   const pub = newPublicIdPair();
-  await trx
+  const ins = await trx
     .insertInto('transport_allocations')
     .values({
       public_id: pub.bin,
@@ -173,7 +174,7 @@ export async function allocateStudent(
       created_by: a.by,
       created_at: a.at,
     })
-    .execute();
+    .executeTakeFirstOrThrow();
   await notify(
     trx,
     {
@@ -189,5 +190,21 @@ export async function allocateStudent(
     },
     a.at,
   );
-  return pub.id;
+  // The transport fee by distance, when the school charges it (client 2026-10-21): for every
+  // allocation — the transport desk's, and one made with an admission.
+  const fees = await raiseTransportFees(
+    trx,
+    {
+      institutionId: a.institutionId,
+      yearId: a.yearId,
+      profileRowId: a.profileRowId,
+      allocationId: String(ins.insertId),
+      routeId: a.route.id,
+      stopId: a.stop.id,
+      from: a.from,
+      to: a.to,
+    },
+    { by: a.by, at: a.at },
+  );
+  return { id: pub.id, fees };
 }

@@ -472,6 +472,71 @@ export const TEACHING_MESSAGES = [
     batch: 7,
     refs: ['20.10', 'RNG-ACA-455', 'client standing approval 2026-10-03'],
   },
+  // Teacher-assignment and timetable sheets (client 2026-10-21: bulk uploads of class teachers,
+  // subject teachers and timetables, with the manual screens' rules).
+  n(
+    'UPL.CLASS_UNKNOWN',
+    422,
+    'There is no class “{class}”. Use a class name from Classes & subjects.',
+    ['20.7', '20.8', 'client 2026-10-21'],
+    ['class'],
+  ),
+  n(
+    'UPL.SECTION_UNKNOWN',
+    422,
+    '{class} has no section “{section}”.',
+    ['20.7', '20.8', 'client 2026-10-21'],
+    ['class', 'section'],
+  ),
+  n('UPL.SECTION_REQUIRED', 422, 'Name at least one section.', ['20.7', 'client 2026-10-21']),
+  n(
+    'UPL.SUBJECT_UNKNOWN',
+    422,
+    'There is no subject “{subject}”. Use a subject code or name from Classes & subjects.',
+    ['20.7', '20.8', 'client 2026-10-21'],
+    ['subject'],
+  ),
+  n(
+    'UPL.TEACHER_UNKNOWN',
+    422,
+    'No teacher has the employee ID or mobile number “{t}”.',
+    ['20.7', '20.8', 'client 2026-10-21'],
+    ['t'],
+  ),
+  n(
+    'UPL.TEACHER_AMBIGUOUS',
+    422,
+    '“{t}” matches more than one teacher. Use the employee ID instead.',
+    ['20.7', '20.8', 'client 2026-10-21'],
+    ['t'],
+  ),
+  n(
+    'UPL.PERIOD_UNKNOWN',
+    422,
+    'There is no period “{period}” in the bell schedule.',
+    ['20.8', 'client 2026-10-21'],
+    ['period'],
+  ),
+  n(
+    'UPL.DAY_UNKNOWN',
+    422,
+    '“{day}” isn’t a school day. Write Monday to Saturday.',
+    ['20.8', 'client 2026-10-21'],
+    ['day'],
+  ),
+  n(
+    'UPL.LESSON_INCOMPLETE',
+    422,
+    'Give both the subject and the teacher, or leave both empty for a free period.',
+    ['20.8', 'client 2026-10-21'],
+  ),
+  n(
+    'UPL.SECTION_SKIPPED',
+    422,
+    'Not imported: another row of {section} has a problem, and a section’s week is imported whole.',
+    ['20.8', 'client 2026-10-21'],
+    ['section'],
+  ),
 ] as const satisfies readonly MessageDefinition[];
 
 export type TeachingMessageKey = (typeof TEACHING_MESSAGES)[number]['key'];

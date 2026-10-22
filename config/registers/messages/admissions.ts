@@ -392,6 +392,20 @@ export const ADMISSION_MESSAGES = [
     batch: 7,
     refs: ['client 2026-10-19'],
   },
+  // The admission fee's payment link of "Collect fees · Send link" (client 2026-10-22), in the app as
+  // well as by SMS and e-mail.
+  {
+    key: 'NTF.ADMISSION_PAY_LINK',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: 'Pay the admission fee of {amount} for {name}',
+    placeholders: ['amount', 'name'],
+    approval: 'approved',
+    batch: 10,
+    refs: ['19.8', 'client 2026-10-22'],
+  },
 ] as const satisfies readonly MessageDefinition[];
 
 export type AdmissionMessageKey = (typeof ADMISSION_MESSAGES)[number]['key'];

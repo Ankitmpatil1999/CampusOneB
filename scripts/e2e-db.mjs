@@ -93,7 +93,12 @@ async function rebuild(keep) {
     server.pathname = '/';
     const conn = await createConnection({ uri: server.toString() });
     try {
+      // The schema and its CUG database (migration 0081) reference each other: dropped together
+      // with foreign-key checks off; the migrations create the CUG database again.
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
       await conn.query(`DROP DATABASE IF EXISTS \`${dbName}\``);
+      await conn.query(`DROP DATABASE IF EXISTS \`${dbName}_cug\``);
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
       await conn.query(
         `CREATE DATABASE \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
       );
@@ -119,16 +124,18 @@ async function rebuild(keep) {
 async function addMissingYears() {
   const conn = await createConnection({ uri: migratorUrl });
   try {
+    // Both are school tables, in the CUG database beside the schema (ADR-0019).
+    const cug = `\`${dbName}_cug\``;
     const [r] = await conn.query(
-      `INSERT INTO academic_years (public_id, institution_id, label, starts_on, ends_on, status, is_current)
+      `INSERT INTO ${cug}.academic_years (public_id, institution_id, label, starts_on, ends_on, status, is_current)
        SELECT UUID_TO_BIN(UUID()), i.id,
               CONCAT(y.start_year, '-', LPAD(MOD(y.start_year + 1, 100), 2, '0')),
               MAKEDATE(y.start_year, 1) + INTERVAL 3 MONTH,
               MAKEDATE(y.start_year + 1, 1) + INTERVAL 3 MONTH - INTERVAL 1 DAY,
               'OPEN', TRUE
-         FROM institutions i
+         FROM ${cug}.institutions i
          JOIN (SELECT IF(MONTH(UTC_DATE()) >= 4, YEAR(UTC_DATE()), YEAR(UTC_DATE()) - 1) AS start_year) y
-        WHERE NOT EXISTS (SELECT 1 FROM academic_years a WHERE a.institution_id = i.id)`,
+        WHERE NOT EXISTS (SELECT 1 FROM ${cug}.academic_years a WHERE a.institution_id = i.id)`,
     );
     if (r.affectedRows) {
       console.log(`e2e-db: current academic year added to ${r.affectedRows} seeded institution(s)`);
@@ -153,7 +160,10 @@ function serve() {
     RATE_LIMIT_AUTH_MAX: base.E2E_RATE_LIMIT_AUTH_MAX || '1000',
     LOG_DIR: '',
     LOG_LEVEL: base.E2E_LOG_LEVEL || 'warn',
+    // Plain HTTP on its own port, whatever the developer's .env says about HTTPS.
+    USE_HTTPS: 'false',
   };
+  delete env.HTTP_REDIRECT_PORT;
   const child = spawn(process.execPath, ['--import', 'tsx', 'server.ts'], {
     cwd: root,
     env,

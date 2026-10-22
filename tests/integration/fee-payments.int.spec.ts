@@ -19,6 +19,8 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
   let year: { id: string; label: string };
   let today: string;
   let asha: Payer;
+  /** Asha's father, with an account of his own. */
+  let ravi: Payer;
 
   const post = (path: string, body: object = {}, key = randomUUID()) =>
     request(f.app).post(path).set(con).set('Idempotency-Key', key).send(body);
@@ -74,6 +76,22 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
       .updateTable('member_profiles')
       .set({ contact_email: 'asha.rao@example.in' })
       .where('id', '=', asha.rowId)
+      .execute();
+    ravi = await f.payer('Ravi', 0);
+    await f.t.db
+      .updateTable('member_profiles')
+      .set({ contact_mobile: ravi.mobile, contact_email: 'ravi.rao@example.in' })
+      .where('id', '=', ravi.rowId)
+      .execute();
+    await f.t.db
+      .insertInto('guardianships')
+      .values({
+        institution_id: f.school.rowId,
+        guardian_profile_id: ravi.rowId,
+        ward_profile_id: asha.rowId,
+        relation: 'FATHER',
+        is_primary_contact: 1,
+      })
       .execute();
   }, 240_000);
   afterAll(async () => {
@@ -191,7 +209,7 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
     ]);
   });
 
-  it('sends a payment link by SMS and e-mail; paid in cash meanwhile, the link closes', async () => {
+  it('sends a payment link for a day to the student and the parents: SMS, e-mail and in the app; paid in cash meanwhile, the link closes', async () => {
     const term3 = await raise(asha, '4000.00', 'Term 3');
     const sms = f.h.sms.sent.length;
     const mail = f.h.email.sent.length;
@@ -201,15 +219,38 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
     expect(link.status, JSON.stringify(link.body)).toBe(201);
     expect(link.body).toMatchObject({
       channel: 'LINK',
-      sentTo: { mobile: expect.stringMatching(/\d{4}$/), email: 'a•••@example.in' },
+      sentTo: {
+        mobiles: [
+          expect.stringMatching(new RegExp(`${asha.mobile.slice(-4)}$`)),
+          expect.stringMatching(new RegExp(`${ravi.mobile.slice(-4)}$`)),
+        ],
+        emails: ['a•••@example.in', 'r•••@example.in'],
+        inApp: 2,
+      },
     });
     expect(link.body).not.toHaveProperty('qrSvg');
-    const text = f.h.sms.sent.slice(sms).find((m) => m.to === asha.mobile)?.text ?? '';
+    // Valid for one day (client 2026-10-22).
+    const hours = (Date.parse(link.body.expiresAt) - Date.now()) / 3_600_000;
+    expect(hours).toBeGreaterThan(23);
+    expect(hours).toBeLessThanOrEqual(24);
+    const sent = f.h.sms.sent.slice(sms);
+    const text = sent.find((m) => m.to === asha.mobile)?.text ?? '';
     expect(text).toContain('Term 3');
     expect(text).toContain(link.body.link);
-    expect(f.h.email.sent.slice(mail).find((m) => m.to === 'asha.rao@example.in')?.purpose).toBe(
-      'fee.payLink',
+    expect(sent.find((m) => m.to === ravi.mobile)?.text).toBe(text);
+    const mails = f.h.email.sent.slice(mail);
+    expect(mails.find((m) => m.to === 'asha.rao@example.in')?.purpose).toBe('fee.payLink');
+    expect(mails.find((m) => m.to === 'ravi.rao@example.in')?.purpose).toBe('fee.payLink');
+    // In the app, to Asha and her father.
+    const notices = await f.t.db
+      .selectFrom('notifications')
+      .select(['account_id', 'body'])
+      .where('title_key', '=', 'NTF.FEE_PAY_LINK')
+      .execute();
+    expect(notices.map((n) => String(n.account_id)).sort()).toEqual(
+      [asha.accountId, ravi.accountId].sort(),
     );
+    expect(notices[0]!.body).toContain(link.body.link);
 
     // Collected at the office before the family paid: the page says so; no order.
     await post(`/api/v1/console/fee-records/${term3.id}/cash`, {});
@@ -221,6 +262,66 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
       .set('Idempotency-Key', randomUUID())
       .send({});
     expect(order.body.code).toBe('FEE.RECORD_PAID');
+  });
+
+  it('takes Pay now at the desk through the gateway, without a link, once (FEE-052/053)', async () => {
+    const term5 = await raise(asha, '3200.00', 'Term 5');
+    const sms = f.h.sms.sent.length;
+    const mail = f.h.email.sent.length;
+    const order = await post(`/api/v1/console/fee-records/${term5.id}/orders`);
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    expect(order.body).toMatchObject({
+      requestId: expect.any(String),
+      amount: inr('3200.00'),
+      gatewayOrder: { mode: 'test' },
+    });
+    expect(order.body).not.toHaveProperty('link');
+    // Nothing is sent to the family.
+    expect(f.h.sms.sent.length).toBe(sms);
+    expect(f.h.email.sent.length).toBe(mail);
+    const t = order.body.gatewayOrder.test as { paymentId: string; signature: string };
+    const verify = (body: object, requestId = order.body.requestId as string) =>
+      request(f.app)
+        .post(`/api/v1/console/fee-records/${term5.id}/orders/${requestId}/verify`)
+        .set(con)
+        .send(body);
+    expect((await verify({ gatewayPaymentId: t.paymentId, signature: 'bad' })).body.code).toBe(
+      'FEE.PAYMENT_NOT_VERIFIED',
+    );
+    expect(
+      (await verify({ gatewayPaymentId: t.paymentId, signature: t.signature }, randomUUID()))
+        .status,
+    ).toBe(404);
+    const ok = await verify({ gatewayPaymentId: t.paymentId, signature: t.signature });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body).toMatchObject({
+      status: 'PAID',
+      mode: 'ONLINE',
+      recordId: term5.id,
+      transactionId: t.paymentId,
+      receiptNo: expect.stringMatching(/\/FR\/\d{4}\/\d{6}$/),
+    });
+    const twice = await verify({ gatewayPaymentId: t.paymentId, signature: t.signature });
+    expect(twice.body.receiptNo).toBe(ok.body.receiptNo);
+    expect(await row(term5.id)).toMatchObject({ status: 'PAID', paid_paise: '320000' });
+    // The desk's collection, kept with the request (channel DESK).
+    const c = await f.t.db
+      .selectFrom('fee_collections')
+      .select(['source', 'mode', 'collected_by'])
+      .where('receipt_no', '=', ok.body.receiptNo)
+      .executeTakeFirstOrThrow();
+    expect(c).toMatchObject({ source: 'CONSOLE', mode: 'ONLINE' });
+    expect(c.collected_by).not.toBeNull();
+    const req = await f.t.db
+      .selectFrom('fee_payment_requests')
+      .select(['channel', 'status', 'sent_mobile', 'sent_email'])
+      .where('public_id', '=', uuidToBin(order.body.requestId))
+      .executeTakeFirstOrThrow();
+    expect(req).toEqual({ channel: 'DESK', status: 'PAID', sent_mobile: null, sent_email: null });
+    // Paid: no second order.
+    expect((await post(`/api/v1/console/fee-records/${term5.id}/orders`)).body.code).toBe(
+      'FEE.RECORD_PAID',
+    );
   });
 
   it('takes a live payment the family left the page on: the gateway’s webhook collects it (SAS-033)', async () => {
@@ -291,5 +392,50 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
     expect(await row(term4.id)).toMatchObject({ status: 'PAID', paid_paise: '250000' });
     const p = await page(live.app, id, token);
     expect(p.body).toMatchObject({ status: 'PAID', transactionId: 'pay_FEEHOOK' });
+
+    // Pay now at the desk, the console closed before the checkout's answer: the webhook collects
+    // it as the desk's collection.
+    const term6 = await raise(asha, '1800.00', 'Term 6');
+    const desk = await request(live.app)
+      .post(`/api/v1/console/fee-records/${term6.id}/orders`)
+      .set(con)
+      .set('Idempotency-Key', randomUUID())
+      .send({});
+    expect(desk.status, JSON.stringify(desk.body)).toBe(201);
+    expect(desk.body.gatewayOrder).toMatchObject({
+      mode: 'live',
+      checkout: { keyId: 'rzp_test_FAKE', name: expect.stringMatching(/^Collect Fee School/) },
+    });
+    const deskEvent = JSON.stringify({
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: 'pay_DESKHOOK',
+            order_id: desk.body.gatewayOrder.orderId,
+            amount: 180000,
+            status: 'captured',
+          },
+        },
+      },
+    });
+    const deskHook = await request(live.app)
+      .post('/api/v1/partners/gateway/webhooks')
+      .set('Content-Type', 'application/json')
+      .set(
+        'X-Razorpay-Signature',
+        createHmac('sha256', HOOK_SECRET).update(deskEvent).digest('hex'),
+      )
+      .set('X-Razorpay-Event-Id', `evt_${randomUUID()}`)
+      .send(deskEvent);
+    expect(deskHook.body).toEqual({ ok: true, outcome: 'PAID' });
+    expect(await row(term6.id)).toMatchObject({ status: 'PAID', paid_paise: '180000' });
+    expect(
+      await f.t.db
+        .selectFrom('fee_collections')
+        .select(['source', 'gateway_payment_id'])
+        .where('gateway_payment_id', '=', 'pay_DESKHOOK')
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ source: 'CONSOLE', gateway_payment_id: 'pay_DESKHOOK' });
   });
 });

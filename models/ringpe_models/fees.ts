@@ -15,7 +15,7 @@ type Json<T> = ColumnType<T, string, string>;
 
 export type FeeVersionState = 'DRAFT' | 'PENDING' | 'ACTIVE' | 'SUPERSEDED';
 export type FeeRecordStatus = 'DUE' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
-export type FeeRecordSource = 'STRUCTURE' | 'MANUAL' | 'UPLOAD';
+export type FeeRecordSource = 'STRUCTURE' | 'MANUAL' | 'UPLOAD' | 'TRANSPORT';
 
 export interface FeeHeadsTable {
   id: Generated<string>;
@@ -142,6 +142,9 @@ export interface FeeRecordsTable {
   /** The last day a fee reminder was sent (migration 0078). */
   reminded_on: ColumnType<Date | string | null, string | null | undefined, string | null>;
   paid_reference: ColumnType<string | null, string | null | undefined, string | null>;
+  /** A transport due (migration 0082): the charge behind it and the month it covers (its 1st). */
+  transport_charge_id: ColumnType<string | null, string | null | undefined, string | null>;
+  transport_month: ColumnType<Date | string | null, string | null | undefined, string | null>;
   row_version: Generated<number>;
   created_by: Buffer | null;
   created_at: Timestamp;
@@ -225,13 +228,16 @@ export interface FeeCollectionsTable {
 export type FeeCollectionMode = 'WALLET' | 'CASH' | 'ONLINE';
 export type FeePaymentRequestStatus = 'OPEN' | 'PAID' | 'CANCELLED';
 
-/** A payment link or QR code for one instalment (migration 0075; client 2026-10-19). */
+/**
+ * A payment link or QR code for one instalment (migration 0075; client 2026-10-19), or an order paid
+ * at the accounts desk with no link (DESK, migration 0083; client 2026-10-22).
+ */
 export interface FeePaymentRequestsTable {
   id: Generated<string>;
   public_id: Buffer;
   institution_id: Ref;
   record_id: Ref;
-  channel: 'LINK' | 'QR';
+  channel: 'LINK' | 'QR' | 'DESK';
   amount_paise: Paise;
   status: ColumnType<
     FeePaymentRequestStatus,

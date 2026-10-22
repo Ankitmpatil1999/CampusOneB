@@ -14,6 +14,9 @@
  * - **The console** lists trips with server-side filters (OI-TRN-16), cancels a scheduled trip with
  *   remarks (OI-TRN-15) and reads the eight reports (OI-TRN-20).
  * - **The family** sees the allocation, today's trips and their progress (OI-TRN-24).
+ * - **Maps** (client 2026-10-21): a trip shows the bus's latest position from the crew's phone and the
+ *   km run (TransportLiveService); the job also deletes positions older than
+ *   trn.positions.retentionDays.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
@@ -31,6 +34,7 @@ import { memberOf } from './member-roles';
 import { notify } from './notifications.service';
 import { studentTransport } from './student-transport';
 import type { SettingsService } from './settings.service';
+import { purgePositions, thin } from './transport-live.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -204,6 +208,28 @@ export class TripsService {
   // --- the job trip-generation ----------------------------------------------------------------------------
   async run(ctx: Pick<JobContext, 'item'> & { scope?: { institutionId: string } | undefined }) {
     const date = istBusinessDate(this.now());
+    if (!ctx.scope) {
+      // Bus positions past their retention (client 2026-10-21: 30 days), for every school at once.
+      try {
+        const days = await this.limit(LIMITS.transportPositionsRetentionDays);
+        const purged = await purgePositions(this.deps.db, days, this.now());
+        ctx.item({
+          institutionId: null,
+          status: purged ? 'SUCCESS' : 'SKIPPED',
+          processed: purged,
+          failed: 0,
+          note: `${purged} bus positions older than ${days} days deleted`,
+        });
+      } catch {
+        ctx.item({
+          institutionId: null,
+          status: 'FAILED',
+          processed: 0,
+          failed: 1,
+          note: 'Deleting old bus positions failed; the next run tries again',
+        });
+      }
+    }
     let q = this.deps.db
       .selectFrom('transport_assignments')
       .select('institution_id')
@@ -464,6 +490,18 @@ export class TripsService {
       nextStop: t.status === 'STARTED' ? (t.next_stop ?? null) : null,
       lastStop: t.last_stop ?? null,
       passengers: { onBoard: Number(t.on_board ?? 0), boarded: Number(t.boarded ?? 0) },
+      // The latest position from the crew's phone and the km run (client 2026-10-21).
+      bus:
+        t.last_lat !== null && t.last_lng !== null
+          ? {
+              lat: Number(t.last_lat),
+              lng: Number(t.last_lng),
+              speedKmph: t.last_speed_kmph === null ? null : Number(t.last_speed_kmph),
+              heading: t.last_heading,
+              at: iso(t.last_position_at),
+            }
+          : null,
+      kmRun: Number(t.km_run ?? 0),
       version: t.row_version,
     };
   }
@@ -497,6 +535,8 @@ export class TripsService {
           's.public_id',
           's.name',
           's.landmark',
+          's.lat',
+          's.lng',
         ])
         .where('ts.trip_id', '=', t.id)
         .orderBy('ts.seq')
@@ -534,12 +574,25 @@ export class TripsService {
         .execute(),
       db.selectFrom('transport_boardings').selectAll().where('trip_id', '=', t.id).execute(),
     ]);
+    const trail = await db
+      .selectFrom('transport_trip_positions')
+      .select(['lat', 'lng'])
+      .where('trip_id', '=', t.id)
+      .orderBy('recorded_at')
+      .limit(5000)
+      .execute();
     const boarded = new Map(boardings.map((b) => [String(b.profile_id), b]));
     return {
       ...this.tripView(t),
       stops: stops.map((s) => ({
         seq: s.seq,
-        stop: { id: binToUuid(s.public_id), name: s.name, landmark: s.landmark },
+        stop: {
+          id: binToUuid(s.public_id),
+          name: s.name,
+          landmark: s.landmark,
+          lat: s.lat === null ? null : Number(s.lat),
+          lng: s.lng === null ? null : Number(s.lng),
+        },
         plannedTime: hm(s.planned_time),
         distanceKm: Number(s.distance_km),
         status: s.status,
@@ -569,6 +622,8 @@ export class TripsService {
       passengers: passengers.length,
       boarded: boardings.filter((b) => b.status === 'CHECKED_IN' || b.status === 'CHECKED_OUT')
         .length,
+      // The bus's path on this trip, oldest first ([lat, lng], thinned).
+      trail: thin(trail.map((r) => [Number(r.lat), Number(r.lng)] as [number, number])),
       events: events.map((e) => ({
         event: e.event,
         seq: e.seq,

@@ -1,6 +1,6 @@
 /**
  * Phone pushes for in-app notices (client 2026-10-19: "even though the mobile is lock also i should
- * notify"; migrations 0079, 0081). The member app (COM-034) and the staff app (COM-037, its console
+ * notify"; migrations 0079, 0084). The member app (COM-034) and the staff app (COM-037, its console
  * session) register their Firebase token for the signed-in session; `notify` queues a push for every
  * notified account with such a session on the notice's surface, in the notice's own transaction,
  * when the platform's push channel is on (INT-010) and the school lets the notice's event raise the

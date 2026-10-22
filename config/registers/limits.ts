@@ -295,25 +295,28 @@ export const LIMITS = {
     basis: 'proposed',
     refs: ['19.2', 'RNG-GOV-007'],
   }),
-  /** How long an admission-fee payment link stays valid (ADM-023). */
+  /** How long an admission-fee payment link stays valid (ADM-023): one day (client 2026-10-22). */
   admPayLinkDays: def({
     key: 'adm.payLink.days',
-    value: 7,
+    value: 1,
     unit: 'days',
     adjustable: { min: 1, max: 30 },
     scope: 'P',
     basis: 'proposed',
-    refs: ['19.8'],
+    refs: ['19.8', 'client 2026-10-22'],
   }),
-  /** How long an instalment's payment link or QR code stays valid (client 2026-10-19). */
+  /**
+   * How long an instalment's payment link or QR code stays valid (client 2026-10-19): one day
+   * (client 2026-10-22).
+   */
   feePayLinkDays: def({
     key: 'fee.payLink.days',
-    value: 7,
+    value: 1,
     unit: 'days',
     adjustable: { min: 1, max: 30 },
     scope: 'P',
     basis: 'proposed',
-    refs: ['client 2026-10-19'],
+    refs: ['client 2026-10-19', 'client 2026-10-22'],
   }),
   feeInstalmentsMax: def({
     key: 'fee.instalments.max',
@@ -1168,6 +1171,52 @@ export const LIMITS = {
     scope: 'P',
     basis: 'proposed',
     refs: ['22.17', 'prototype m.transport (planned times)', 'example value'],
+  }),
+  // Live bus tracking from the driver's phone (client 2026-10-21).
+  transportPositionsRetentionDays: def({
+    key: 'trn.positions.retentionDays',
+    value: 30,
+    unit: 'days',
+    adjustable: { min: 1, max: 365 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-21 (30 days)', 'docs/08 item 9'],
+  }),
+  transportPositionsIntervalSeconds: def({
+    key: 'trn.positions.intervalSeconds',
+    value: 15,
+    unit: 's',
+    adjustable: { min: 5, max: 120 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-21', 'docs/08 item 9 (update interval)'],
+  }),
+  transportPositionsMaxAccuracyM: def({
+    key: 'trn.positions.maxAccuracyM',
+    value: 200,
+    unit: 'm',
+    adjustable: { min: 20, max: 2000 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-21 (fixes less accurate are not used)'],
+  }),
+  transportPositionsStaleSeconds: def({
+    key: 'trn.positions.staleSeconds',
+    value: 120,
+    unit: 's',
+    adjustable: { min: 30, max: 1800 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-21 (the map says when the last position is older)'],
+  }),
+  transportNearStopMeters: def({
+    key: 'trn.nearStop.meters',
+    value: 1000,
+    unit: 'm',
+    adjustable: { min: 200, max: 5000 },
+    scope: 'P',
+    basis: 'adopted',
+    refs: ['client 2026-10-21 (the "bus is near your stop" notice)'],
   }),
   attendanceLateCutoffMinutes: def({
     key: 'att.late.cutoffMinutes',

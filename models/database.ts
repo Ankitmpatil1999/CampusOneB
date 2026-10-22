@@ -3,15 +3,21 @@
  * - `supportBigNumbers` + `bigNumberStrings`: BIGINT (paise, ids) never becomes a float (ADR-0004).
  * - `decimalNumbers: false`, `timezone: 'Z'`: no float decimals, UTC on the wire.
  * - Query logging records SQL text and duration only — never parameters (they may hold PII).
+ * - Two databases on one server (client 2026-10-21; db/cug-tables.ts): the connection opens the RingPe
+ *   database of the URL; CugSchemaPlugin sends the school tables to its CUG database (`<name>_cug`).
  */
 import { createPool, type Pool } from 'mysql2';
 import { Kysely, MysqlDialect, sql } from 'kysely';
 import type { Loggers } from '../controllers/logger';
 import type { Metrics } from '../utils/metrics';
+import { cugDatabaseOf, databaseOfUrl } from '../db/cug-tables';
+import { CugSchemaPlugin } from './cug-schema-plugin';
 import type { Database } from './ringpe_models';
 
 export interface DatabaseHandle {
   readonly db: Kysely<Database>;
+  /** The CUG database beside the RingPe one (`ringpe` → `ringpe_cug`). */
+  readonly cugDatabase: string;
   ping(timeoutMs: number): Promise<void>;
   close(): Promise<void>;
 }
@@ -43,8 +49,10 @@ export function createDatabase(
   });
   const slow = opts.slowQueryMs ?? 200;
 
+  const cugDatabase = cugDatabaseOf(databaseOfUrl(opts.url));
   const db = new Kysely<Database>({
     dialect: new MysqlDialect({ pool }),
+    plugins: [new CugSchemaPlugin(cugDatabase)],
     log(event) {
       const ms = event.queryDurationMillis;
       metrics?.observeDbQuery(ms / 1000, event.level === 'query');
@@ -67,6 +75,7 @@ export function createDatabase(
 
   return {
     db,
+    cugDatabase,
     async ping(timeoutMs) {
       let timer: NodeJS.Timeout | undefined;
       const timeout = new Promise<never>((_, reject) => {

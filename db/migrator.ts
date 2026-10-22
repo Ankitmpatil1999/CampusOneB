@@ -11,6 +11,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { cugDatabaseOf } from './cug-tables';
+
+/** Stands for the CUG database in a migration (filled in by `migrate`). */
+export const CUG_PLACEHOLDER = '{{CUG}}';
 
 export interface MigrationFile {
   readonly version: string;
@@ -159,10 +163,25 @@ export async function migrate(
       (f) => rows.find((r) => r.version === f.version)?.state === 'pending',
     );
     const done: string[] = [];
+    // `{{CUG}}` in a migration is the CUG database beside this one (db/cug-tables.ts, client
+    // 2026-10-21): `ringpe` → `ringpe_cug`. It is filled in as the file runs (its checksum is the file's).
+    let cug: string | null = null;
+    const cugOf = async () => {
+      if (cug === null) {
+        const [row] = await ex.query<{ d: string | null }>('SELECT DATABASE() AS d');
+        if (!row?.d) throw new Error('{{CUG}} needs the connection to name its database');
+        cug = `\`${cugDatabaseOf(row.d)}\``;
+      }
+      return cug;
+    };
     for (const f of pending) {
       log(`applying ${f.fileName}`);
       try {
-        await ex.script(f.sql);
+        await ex.script(
+          f.sql.includes(CUG_PLACEHOLDER)
+            ? f.sql.split(CUG_PLACEHOLDER).join(await cugOf())
+            : f.sql,
+        );
       } catch (e) {
         throw new Error(
           `Migration ${f.fileName} failed: ${e instanceof Error ? e.message : String(e)}`,
