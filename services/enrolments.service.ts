@@ -122,6 +122,8 @@ export class EnrolmentsService {
         titleKey: 'NTF.CLASS_PLACED',
         params: v,
         body: `${v.section} · ${v.year}`,
+        // Each parent's and the student's own app sign-in details (client 2026-10-22).
+        signIn: true,
       },
       at,
     );

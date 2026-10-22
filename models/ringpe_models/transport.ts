@@ -141,6 +141,8 @@ export interface TransportAllocationsTable {
   ended_by: Buffer | null;
   ended_at: NullableTimestamp;
   created_by: Buffer | null;
+  /** The day "today's bus" was last sent (migration 0085). */
+  daily_notice_on: ColumnType<Date | string | null, string | null | undefined, string | null>;
   created_at: Timestamp;
   row_version: Version;
 }
@@ -238,9 +240,20 @@ export interface TransportTripPositionsTable {
 }
 
 /** A school's transport fee by distance (migration 0082): per km of the round trip, per year. */
+/** Per km of the round trip, or by distance range (migration 0085). */
+export type TransportFeeMode = 'PER_KM' | 'RANGE';
+/** A distance range's yearly fee: from the range before it (or 0) up to `uptoKm`, one way. */
+export interface TransportFeeRange {
+  readonly uptoKm: number;
+  readonly yearlyPaise: number;
+}
+
 export interface TransportFeeRulesTable {
   institution_id: Ref;
+  mode: ColumnType<TransportFeeMode, TransportFeeMode | undefined, TransportFeeMode>;
   rate_paise_per_km: ColumnType<string, number | string | undefined, number | string>;
+  /** JSON [{uptoKm, yearlyPaise}] (RANGE). */
+  ranges: ColumnType<unknown, string | null | undefined, string | null>;
   due_day: ColumnType<number, number | undefined, number>;
   active: Flag;
   updated_by: Buffer | null;
@@ -257,6 +270,7 @@ export interface TransportFeeChargesTable {
   profile_id: Ref;
   allocation_id: Ref;
   distance_km: Decimal;
+  mode: ColumnType<TransportFeeMode, TransportFeeMode | undefined, TransportFeeMode>;
   rate_paise_per_km: ColumnType<string, number | string, number | string>;
   yearly_paise: ColumnType<string, number | string, number | string>;
   months: number;

@@ -183,6 +183,15 @@ export const GRIEVANCE_MESSAGES = [
     ['ticketNo', 'status'],
     'info',
   ),
+  // The support desk is told a ticket waits (client 2026-10-22: "action required").
+  n(
+    'NTF.TICKET_RAISED',
+    200,
+    'New ticket {ticketNo} for the support desk',
+    ['16.3', 'client 2026-10-22'],
+    ['ticketNo'],
+    'info',
+  ),
 ] as const satisfies readonly MessageDefinition[];
 
 export type GrievanceMessageKey = (typeof GRIEVANCE_MESSAGES)[number]['key'];

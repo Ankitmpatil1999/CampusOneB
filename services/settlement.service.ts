@@ -34,6 +34,7 @@ import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenera
 import { formatAmount, toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
+import { tellMembers } from './member-notices';
 import type { LedgerService } from './ledger.service';
 import { defaultValues, type SettingValues } from './settings.service';
 
@@ -1120,6 +1121,22 @@ export class SettlementService {
           entityRef: id,
           after: { utr, amount: formatInr(input.amountPaise), merchants: paying.length },
         });
+        // Each merchant paid is told (client 2026-10-22).
+        for (const m of paying.filter((x) => x.net > 0)) {
+          await tellMembers(
+            trx,
+            {
+              institutionId,
+              profileRowIds: [m.rowId],
+              titleKey: 'NTF.SETTLEMENT_PAID',
+              params: { amount: formatInr(m.net) },
+              body: `Settlement ${r.settlement_no} · UTR ${utr}`,
+              category: 'PAYMENT',
+              link: '/merchant/settlements',
+            },
+            at,
+          );
+        }
       });
     } catch (e) {
       if ((e as { errno?: number }).errno === 1062) throw new CustomAPIError(409, 'STL.UTR_TAKEN');

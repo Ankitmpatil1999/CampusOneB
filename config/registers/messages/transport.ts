@@ -307,6 +307,12 @@ export const TRANSPORT_MESSAGES = [
     'client 2026-10-21',
   ]),
   n('TRN.FEE_DUE_DAY', 422, 'Choose a due day from 1 to 28.', ['client 2026-10-21']),
+  n(
+    'TRN.FEE_RANGES',
+    422,
+    'Give each range an upper km (larger than the one before, up to 500 km) and a yearly amount.',
+    ['client 2026-10-22'],
+  ),
   n('TRN.FEE_RULE_OFF', 409, 'Turn on the transport fee by distance and set its rate first.', [
     'client 2026-10-21',
   ]),
@@ -316,6 +322,14 @@ export const TRANSPORT_MESSAGES = [
     ['client 2026-10-21 (live tracking)'],
     ['bus', 'stop'],
   ),
+  info('NTF.BUS_AT_STOP', '{bus} reached {stop}', ['client 2026-10-22'], ['bus', 'stop']),
+  info(
+    'NTF.TRIP_COMPLETED',
+    '{session} completed — {bus} reached {stop}',
+    ['client 2026-10-22'],
+    ['session', 'bus', 'stop'],
+  ),
+  info('NTF.TRANSPORT_TODAY', 'Today’s bus: {bus}', ['client 2026-10-22'], ['bus']),
   info('NTF.TRANSPORT_ALLOCATED', 'Transport: {route}', ['22.7', 'OI-TRN-13'], ['route']),
   info(
     'NTF.TRANSPORT_ENDED',

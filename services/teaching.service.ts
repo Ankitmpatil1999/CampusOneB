@@ -24,6 +24,7 @@ import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenera
 import type { Principal } from '../utils/principal';
 import { assertOpen, institutionOf, yearFor, yearView, type Year } from './academic-year';
 import { recordAudit } from './audit.service';
+import { tellMembers } from './member-notices';
 import {
   DAYS,
   TEACHING_CATEGORIES,
@@ -307,6 +308,9 @@ export class TeachingService {
         return;
       }
       const t = await this.teacher(trx, inst.id, input.teacherId ?? '');
+      // What the teacher is told (client 2026-10-22), and the class teacher replaced, if any.
+      const given: string[] = [];
+      let replaced: { profileRowId: string; what: string } | null = null;
       const insert = (v: { classId: string; sectionId: string | null; subjectId: string | null }) =>
         trx
           .insertInto('teacher_assignments')
@@ -335,8 +339,20 @@ export class TeachingService {
             .set({ ended_at: at, ended_by: by })
             .where('id', '=', cur.assignmentId)
             .execute();
+          const prev = await trx
+            .selectFrom('teacher_assignments')
+            .select('teacher_profile_id')
+            .where('id', '=', cur.assignmentId)
+            .executeTakeFirst();
+          if (prev && String(prev.teacher_profile_id) !== t.id) {
+            replaced = {
+              profileRowId: String(prev.teacher_profile_id),
+              what: `class teacher of ${s!.label}`,
+            };
+          }
         }
         await insert({ classId: s!.classId, sectionId: s!.id, subjectId: null });
+        given.push(`class teacher of ${s!.label}`);
         made = 1;
       } else if (input.kind === 'SUBJECT_TEACHER') {
         const sub = await this.subject(trx, inst.id, input.subjectId);
@@ -368,6 +384,7 @@ export class TeachingService {
             });
           }
           await insert({ classId: s.classId, sectionId: s.id, subjectId: sub.id });
+          given.push(`${sub.name} in ${s.label}`);
           made++;
         }
       } else {
@@ -397,6 +414,7 @@ export class TeachingService {
             .executeTakeFirst();
           if (exists) continue;
           await insert({ classId: String(c.id), sectionId: null, subjectId: null });
+          given.push(`co-ordinator of ${c.name}`);
           made++;
         }
       }
@@ -407,6 +425,34 @@ export class TeachingService {
         entityRef: input.teacherId,
         after: { kind: input.kind, year: year.label, made, replace: !!input.replace },
       });
+      if (given.length) {
+        await tellMembers(
+          trx,
+          {
+            institutionId: inst.id,
+            profileRowIds: [t.id],
+            titleKey: 'NTF.TEACHING_ASSIGNED',
+            params: { what: given.join(', ') },
+            body: `${year.label}. Your classes and timetable show it in the app.`,
+            link: '/teacher/timetable',
+          },
+          at,
+        );
+      }
+      if (replaced) {
+        await tellMembers(
+          trx,
+          {
+            institutionId: inst.id,
+            profileRowIds: [replaced.profileRowId],
+            titleKey: 'NTF.TEACHING_ENDED',
+            params: { what: replaced.what },
+            body: `${year.label}. Another teacher takes it from today.`,
+            link: '/teacher/timetable',
+          },
+          at,
+        );
+      }
     });
     return { created: made, ...(await this.assignments(p, { yearId: year.publicId })) };
   }
@@ -542,6 +588,26 @@ export class TeachingService {
         entityRef: id,
         after: { kind: a.kind },
       });
+      // The teacher is told (client 2026-10-22).
+      const section = a.class_name ? `${a.class_name} ${a.section_name ?? ''}`.trim() : '';
+      const what =
+        a.kind === 'CLASS_TEACHER'
+          ? `class teacher of ${section}`
+          : a.kind === 'SUBJECT_TEACHER'
+            ? `${a.subject_name ?? 'a subject'} in ${section}`
+            : `co-ordinator of ${a.class_name ?? 'a class'}`;
+      await tellMembers(
+        trx,
+        {
+          institutionId: inst.id,
+          profileRowIds: [String(a.teacher_profile_id)],
+          titleKey: 'NTF.TEACHING_ENDED',
+          params: { what },
+          body: 'The school has withdrawn this assignment.',
+          link: '/teacher/timetable',
+        },
+        this.now(),
+      );
     });
     return this.assignments(p, { yearId: yearPublic });
   }

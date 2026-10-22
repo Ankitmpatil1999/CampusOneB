@@ -24,12 +24,13 @@ import { LIMITS, type LimitDefinition } from '../config/registers';
 import type { CardsService } from './cards.service';
 import type { Database, DailyStatus } from '../models/ringpe_models';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
-import { formatDate, istBusinessDate } from '../utils/format';
+import { formatDate, formatTime, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import { emit, rooms } from '../utils/outbox';
 import type { Principal } from '../utils/principal';
 import { assertOpen, institutionOf, yearFor, yearView, type Year } from './academic-year';
 import { recordAudit } from './audit.service';
+import { tellMembers } from './member-notices';
 import { occurrences } from './calendar.service';
 import { memberOf, principalOf, teacherOf } from './member-roles';
 import { notify } from './notifications.service';
@@ -207,6 +208,32 @@ export class AttendanceService {
           .map(String),
       ),
     ];
+  }
+
+  /**
+   * A check-in or check-out (gate, front desk, the teacher's reader): the person and, for a
+   * student, the parents are told (client 2026-10-22; event CHECK_IN_OUT).
+   */
+  private async tellCheck(
+    db: Db,
+    institutionId: string,
+    m: { rowId: string; first: string; student: boolean },
+    action: 'IN' | 'OUT',
+    at: Date,
+    body: string,
+  ) {
+    await tellMembers(
+      db,
+      {
+        institutionId,
+        profileRowIds: [m.rowId],
+        titleKey: action === 'IN' ? 'NTF.CHECKED_IN' : 'NTF.CHECKED_OUT',
+        params: { name: m.first, time: formatTime(at) },
+        body: body.slice(0, 200),
+        link: m.student ? '/attendance' : '/me/attendance',
+      },
+      at,
+    );
   }
 
   /** OI-ATT-21: the family is told of every Absent. */
@@ -399,6 +426,7 @@ export class AttendanceService {
           })
           .execute();
         await this.changed(trx, me.institutionId, date);
+        await this.tellCheck(trx, me.institutionId, m, 'IN', at, 'Card tapped in class.');
         return { result: 'MARKED' as const, status: 'PRESENT', student, at: at.toISOString() };
       }
 
@@ -513,6 +541,7 @@ export class AttendanceService {
         })
         .execute();
       await this.changed(trx, terminal.institutionId, date);
+      await this.tellCheck(trx, terminal.institutionId, m, 'IN', at, 'Card tapped at the gate.');
       return { member, result: 'CHECKED_IN', status, at: at.toISOString() };
     }
     // A non-student's second tap checks them out; anything else is complete (27.3).
@@ -546,6 +575,7 @@ export class AttendanceService {
       })
       .execute();
     await this.changed(trx, terminal.institutionId, date);
+    await this.tellCheck(trx, terminal.institutionId, m, 'OUT', at, 'Card tapped at the gate.');
     return { member, result: 'CHECKED_OUT', status, at: at.toISOString() };
   }
 
@@ -1825,6 +1855,7 @@ export class AttendanceService {
         })
         .execute();
       await this.changed(trx, institutionId, date);
+      await this.tellCheck(trx, institutionId, m, 'IN', at, `${o.remark}.`);
       return { result: 'CHECKED_IN' as const, status, member, at: at.toISOString() };
     }
     if (!canCheckOut) {
@@ -1870,6 +1901,7 @@ export class AttendanceService {
       })
       .execute();
     await this.changed(trx, institutionId, date);
+    await this.tellCheck(trx, institutionId, m, 'OUT', at, `${o.remark}.`);
     return { result: 'CHECKED_OUT' as const, status, member, at: at.toISOString() };
   }
 

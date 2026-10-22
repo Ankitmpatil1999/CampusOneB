@@ -58,6 +58,63 @@ export interface NotifyInput {
    * e-mail goes to the notified accounts.
    */
   readonly about?: readonly string[];
+  /**
+   * The e-mail also tells each person how to sign in to the RingPe app (client 2026-10-22, the
+   * class placement e-mail): the mobile number to sign in with and their password, or — without an
+   * account yet — to sign up with the mobile the school holds (a code is sent to it; the school's
+   * profile links at sign-up). Never a password: RingPe keeps none it could send.
+   */
+  readonly signIn?: boolean;
+}
+
+/** "98861 10000". */
+const spaced = (mobile: string) =>
+  /^\d{10}$/.test(mobile) ? `${mobile.slice(0, 5)} ${mobile.slice(5)}` : mobile;
+
+/** Each recipient's own sign-in lines, by their profile at the school (else their account). */
+async function signInTexts(
+  db: Db,
+  people: readonly { accountId: string | null; profileId: string | null }[],
+) {
+  const profiles = people.map((p) => p.profileId).filter((x): x is string => !!x);
+  const accounts = people.map((p) => p.accountId).filter((x): x is string => !!x);
+  const rows = profiles.length
+    ? await db
+        .selectFrom('member_profiles as m')
+        .leftJoin('platform_accounts as a', 'a.id', 'm.account_id')
+        .select(['m.id', 'm.contact_mobile', 'a.mobile'])
+        .where('m.id', 'in', profiles)
+        .execute()
+    : [];
+  const owners = accounts.length
+    ? await db
+        .selectFrom('platform_accounts')
+        .select(['id', 'mobile'])
+        .where('id', 'in', accounts)
+        .execute()
+    : [];
+  const byProfile = new Map(rows.map((r) => [String(r.id), r]));
+  const byAccount = new Map(owners.map((r) => [String(r.id), r.mobile]));
+  return people.map((p) => {
+    const r = p.profileId ? byProfile.get(p.profileId) : undefined;
+    const registered = r?.mobile ?? (p.accountId ? byAccount.get(p.accountId) : undefined);
+    if (registered) {
+      return [
+        'Signing in to the RingPe app:',
+        `Mobile number: ${spaced(registered)}`,
+        'Password: the one you chose. Forgotten it? Tap "Forgot password?" on the sign-in screen and a code is sent to this mobile.',
+      ].join('\n');
+    }
+    if (r?.contact_mobile) {
+      return [
+        'Signing in to the RingPe app:',
+        'Open the RingPe app and tap "Sign up".',
+        `Mobile number: ${spaced(r.contact_mobile)} — a one-time code is sent to it.`,
+        'Then choose your password. Your school profile is linked to it, and from then on you sign in with this mobile and that password.',
+      ].join('\n');
+    }
+    return null;
+  });
 }
 
 /** Adds one notification per account (duplicates and empty lists are ignored). */
@@ -126,6 +183,7 @@ export async function notify(db: Db, n: NotifyInput, at: Date = new Date()) {
     );
     if (to.length) {
       const subject = renderMessage(n.titleKey, n.params ?? {}).slice(0, 200);
+      const signIn = n.signIn ? await signInTexts(db, to) : to.map(() => null);
       const refOf = (accountId: string | null) => {
         const i = accountId ? accounts.indexOf(accountId) : -1;
         return i >= 0 ? ids[i]!.bin : null;
@@ -133,7 +191,7 @@ export async function notify(db: Db, n: NotifyInput, at: Date = new Date()) {
       await db
         .insertInto('email_outbox')
         .values(
-          to.map((r) => ({
+          to.map((r, i) => ({
             institution_id: n.institutionId,
             account_id: r.accountId,
             profile_id: r.profileId,
@@ -141,7 +199,10 @@ export async function notify(db: Db, n: NotifyInput, at: Date = new Date()) {
             event_key: event.key,
             notification_ref: refOf(r.accountId),
             subject,
-            body: n.body.slice(0, 300),
+            body: (signIn[i]
+              ? `${n.body.slice(0, 300)}\n\n${signIn[i]}`
+              : n.body.slice(0, 300)
+            ).slice(0, 1000),
             next_attempt_at: at,
             created_at: at,
           })),

@@ -32,6 +32,7 @@ import type { Principal } from '../utils/principal';
 import { raiseApproval } from './approvals.service';
 import { recordAudit } from './audit.service';
 import { notify } from './notifications.service';
+import { notificationsRepository } from '../repositories/notifications.repository';
 import type { RefundsService } from './refunds.service';
 import { defaultValues, type SettingValues } from './settings.service';
 
@@ -321,6 +322,30 @@ export class GrievancesService {
       entityRef: pub.id,
       after: { ticketNo: no, kind: v.kind, reference: v.txn?.reference ?? null },
     });
+    // The support desk is told a ticket waits for it (client 2026-10-22); never the member's text.
+    await notify(
+      trx,
+      {
+        institutionId: v.institutionId,
+        accountIds: await notificationsRepository.holdersOf(
+          trx,
+          v.institutionId,
+          'grievances.edit',
+        ),
+        surface: 'CONSOLE',
+        category: 'ACCOUNT',
+        titleKey: 'NTF.TICKET_RAISED',
+        params: { ticketNo: no },
+        body:
+          v.kind === 'FRAUD'
+            ? 'A suspected fraud report.'
+            : v.kind === 'FEEDBACK'
+              ? 'Feedback from a member.'
+              : 'A member asks about a transaction.',
+        link: `/console/grievances?open=${pub.id}`,
+      },
+      at,
+    );
     return { id: pub.id, ticketNo: no };
   }
 

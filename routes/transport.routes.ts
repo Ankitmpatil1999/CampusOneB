@@ -187,7 +187,21 @@ export const positionsSchema = z
 export const feeRuleSchema = z
   .strictObject({
     active: z.boolean({ message: 'VALIDATION.REQUIRED' }),
-    ratePaisePerKm: z.number({ message: 'TRN.FEE_RATE' }).int({ message: 'TRN.FEE_RATE' }),
+    // Per km of the round trip, or by distance range (client 2026-10-22).
+    mode: z.enum(['PER_KM', 'RANGE'], { message: 'VALIDATION.FORMAT' }).optional(),
+    ratePaisePerKm: z
+      .number({ message: 'TRN.FEE_RATE' })
+      .int({ message: 'TRN.FEE_RATE' })
+      .optional(),
+    ranges: z
+      .array(
+        z.strictObject({
+          uptoKm: z.number({ message: 'TRN.FEE_RANGES' }),
+          yearlyPaise: z.number({ message: 'TRN.FEE_RANGES' }).int({ message: 'TRN.FEE_RANGES' }),
+        }),
+      )
+      .max(20, { message: 'TRN.FEE_RANGES' })
+      .optional(),
     dueDay: z.number({ message: 'TRN.FEE_DUE_DAY' }).int({ message: 'TRN.FEE_DUE_DAY' }),
   })
   .meta({ id: 'TransportFeeRule' });

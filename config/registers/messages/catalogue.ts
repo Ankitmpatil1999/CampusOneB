@@ -26,6 +26,7 @@ import { PLATFORM_MESSAGES, type PlatformMessageKey } from './platform';
 import { ROLE_MESSAGES, type RoleMessageKey } from './roles';
 import { SAAS_MESSAGES, type SaasMessageKey } from './saas';
 import { STAFF_MESSAGES, type StaffMessageKey } from './staff';
+import { NOTICE_MESSAGES, type NoticeMessageKey } from './notices';
 import type { MessageDefinition } from './types';
 
 export type MessageKey =
@@ -56,7 +57,8 @@ export type MessageKey =
   | TransportMessageKey
   | PlatformToolMessageKey
   | CommunicationMessageKey
-  | QuizMessageKey;
+  | QuizMessageKey
+  | NoticeMessageKey;
 
 const CATALOGUE: ReadonlyMap<string, MessageDefinition> = new Map(
   [
@@ -88,6 +90,7 @@ const CATALOGUE: ReadonlyMap<string, MessageDefinition> = new Map(
     ...PLATFORM_TOOL_MESSAGES,
     ...COMMUNICATION_MESSAGES,
     ...QUIZ_MESSAGES,
+    ...NOTICE_MESSAGES,
   ].map((m) => [m.key, m]),
 );
 

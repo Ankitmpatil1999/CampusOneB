@@ -22,13 +22,14 @@ import { academicsRepository } from '../repositories/academics.repository';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { idCursor } from '../utils/cursor';
-import { formatInr, istBusinessDate } from '../utils/format';
+import { formatDate, formatInr, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import type { JobContext } from '../schedulers';
 import { raiseApproval } from './approvals.service';
 import { recordAudit } from './audit.service';
+import { tellMembers } from './member-notices';
 import type { MembersService } from './members.service';
 import { outstandingOf, PaymentRefusedError, type PaymentEngine } from './payment-engine.service';
 import { defaultValues, type SettingValues } from './settings.service';
@@ -766,6 +767,30 @@ export class FeeRecordsService {
       },
       after: { amount: formatInr(amount), due, status },
     });
+    // The student and parents are told of a new amount or due date (client 2026-10-22).
+    const what = [
+      ...(amount !== Number(r.amount_paise)
+        ? [`amount ${formatInr(Number(r.amount_paise))} → ${formatInr(amount)}`]
+        : []),
+      ...(due !== day(r.due_date)
+        ? [`due date ${formatDate(day(r.due_date))} → ${formatDate(due)}`]
+        : []),
+    ];
+    if (what.length) {
+      await tellMembers(
+        trx,
+        {
+          institutionId: String(r.institution_id),
+          profileRowIds: [String(r.student_profile_id)],
+          titleKey: 'NTF.FEE_CHANGED',
+          params: { fee: r.label, what: what.join('; ') },
+          body: status === 'PAID' ? 'Nothing more is due on it.' : 'See it in the app under Fees.',
+          category: 'PAYMENT',
+          link: '/fees',
+        },
+        at,
+      );
+    }
   }
 
   /** What the checker sees: each changed field, before and after. */

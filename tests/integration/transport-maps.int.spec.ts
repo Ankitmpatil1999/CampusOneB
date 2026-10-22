@@ -7,7 +7,10 @@
  *   paid); a nearer stop changes nothing; re-applying adds nothing; staff pay transport dues too;
  * - the driver's phone: fixes stored once, inaccurate ones not used, the trip's latest position and
  *   km run, "the bus is near your stop" once, the passenger's live view, the console's trip;
- * - positions past their retention are deleted by the job.
+ * - positions past their retention are deleted by the job;
+ * - client 2026-10-22: every passenger told the trip started (their stop's time, the bus, the
+ *   driver), the bus at their stop and the trip's end, and each morning today's bus (once a day);
+ *   the fee by distance range; the family told of a fee payment taken.
  */
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
@@ -15,7 +18,7 @@ import { sql } from 'kysely';
 import { adminUrl } from './db';
 import { schoolFixture, type Auth, type Payer } from './school';
 import { testRouter } from '../../integrations/maps.provider';
-import { monthlyParts, monthsOf, yearlyFee } from '../../services/transport-fees.service';
+import { monthlyParts, monthsOf, rangeFee, yearlyFee } from '../../services/transport-fees.service';
 import { binToUuid } from '../../utils/idGenerator';
 
 const IST = { timeZone: 'Asia/Kolkata' } as const;
@@ -381,6 +384,124 @@ describe.skipIf(!adminUrl)('maps, live tracking and the transport fee on real My
     const detail = await get(`/console/trips/${trip.id}`);
     expect(detail.body.trail).toHaveLength(3);
     expect(detail.body.stops[0].stop).toMatchObject({ lat: 13.93, lng: 75.56 });
+  });
+
+  it('tells every passenger the trip started, the bus at their stop, its end and today’s bus', async () => {
+    type Notice = { titleKey: string; title: string; body: string; link: string | null };
+    const notices = async (auth: Auth): Promise<Notice[]> =>
+      (await get('/me/notifications?limit=50', auth)).body.items;
+    // Started in the test before: Kumar (staff) with his stop's time, the bus and the driver.
+    const started = (await notices(kumar.auth)).find((n) => n.titleKey === 'NTF.TRIP_STARTED');
+    expect(started).toMatchObject({
+      title: 'Bus 07 has started — Afternoon drop',
+      link: '/transport?self=1',
+    });
+    expect(started!.body).toMatch(
+      /^At Ashok Nagar about \d{1,2}:\d{2} [AP]M\. Bus 07 \(KA-14-F-2231\), driver /,
+    );
+    // Asha (a student) and her family open her bus.
+    const hers = (await notices(asha.auth)).find((n) => n.titleKey === 'NTF.TRIP_STARTED');
+    expect(hers?.link).toBe('/transport');
+
+    const trip = (await get('/crew/trips', raju.auth)).body.items.find(
+      (t: { direction: string }) => t.direction === 'DROP',
+    );
+    const t = `/crew/trips/${trip.id}`;
+    const stops: { seq: number; name?: string; stop?: { name: string } }[] = (
+      await get(t, raju.auth)
+    ).body.stops;
+    const nameOf = (x: (typeof stops)[number]) => x.stop?.name ?? x.name;
+    for (const st of stops) {
+      const reached = await post(`${t}/stop-events`, raju.auth, { seq: st.seq, event: 'REACHED' });
+      expect(reached.status, JSON.stringify(reached.body)).toBe(200);
+      if (st !== stops.at(-1)) {
+        await post(`${t}/stop-events`, raju.auth, { seq: st.seq, event: 'DEPARTED' });
+      }
+    }
+    // Kumar is told when the bus reaches Ashok Nagar, and not of the other stops.
+    const atStop = (await notices(kumar.auth)).filter((n) => n.titleKey === 'NTF.BUS_AT_STOP');
+    expect(atStop.map((n) => n.title)).toEqual(['Bus 07 reached Ashok Nagar']);
+    const done = await post(`${t}/completion`, raju.auth);
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const end = (await notices(kumar.auth)).find((n) => n.titleKey === 'NTF.TRIP_COMPLETED');
+    expect(end?.title).toBe(`Afternoon drop completed — Bus 07 reached ${nameOf(stops.at(-1)!)}`);
+
+    // Each morning: today's bus, its times at the passenger's stop and the driver — once a day.
+    const run = () =>
+      request(f.app)
+        .post('/api/v1/ops/jobs/transport-daily-notice/runs')
+        .set(f.ops)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reason: 'Integration test of today’s bus' });
+    const today = async () =>
+      (await notices(kumar.auth)).filter((n) => n.titleKey === 'NTF.TRANSPORT_TODAY');
+    expect([200, 201, 202]).toContain((await run()).status);
+    await expect.poll(async () => (await today()).length, { timeout: 10_000 }).toBe(1);
+    const mine = (await today())[0]!;
+    expect(mine).toMatchObject({ title: 'Today’s bus: Bus 07', link: '/transport?self=1' });
+    expect(mine.body).toMatch(
+      /^Drop \d{1,2}:\d{2} [AP]M \(Afternoon drop\) at Ashok Nagar\. Bus 07 \(KA-14-F-2231\), driver /,
+    );
+    expect([200, 201, 202]).toContain((await run()).status);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(await today()).toHaveLength(1);
+    // The fee paid at the office before (the test of a farther stop): the family was told.
+    expect((await notices(asha.auth)).some((n) => n.titleKey === 'NTF.FEE_RECEIVED')).toBe(true);
+  });
+
+  it('charges by distance range when the school chooses ranges', async () => {
+    const rule = await get('/console/transport/fee-rule');
+    const set = (body: object) =>
+      send('put', '/console/transport/fee-rule', body, rule.body.version);
+    // Ranges must rise, and each needs an amount.
+    for (const ranges of [
+      [],
+      [
+        { uptoKm: 5, yearlyPaise: 1_000_000 },
+        { uptoKm: 5, yearlyPaise: 1_500_000 },
+      ],
+      [{ uptoKm: 5, yearlyPaise: 0 }],
+      [{ uptoKm: 501, yearlyPaise: 1_000_000 }],
+    ]) {
+      const bad = await set({ active: true, mode: 'RANGE', ranges, dueDay: 5 });
+      expect(bad.body.errors?.[0]?.code, JSON.stringify(bad.body)).toBe('TRN.FEE_RANGES');
+    }
+    const ranges = [
+      { uptoKm: 5, yearlyPaise: 1_000_000 },
+      { uptoKm: 10, yearlyPaise: 1_500_000 },
+    ];
+    const ok = await set({ active: true, mode: 'RANGE', ranges, dueDay: 5 });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body).toMatchObject({ mode: 'RANGE', version: rule.body.version + 1 });
+    expect(ok.body.ranges).toMatchObject([
+      { fromKm: 0, uptoKm: 5, yearly: { amount: '10000.00' } },
+      { fromKm: 5, uptoKm: 10, yearly: { amount: '15000.00' } },
+    ]);
+    expect(rangeFee(3.6, ranges)).toBe(1_000_000);
+    expect(rangeFee(6, ranges)).toBe(1_500_000);
+    expect(rangeFee(12, ranges)).toBeNull();
+
+    // A new student at 3.6 km pays the first range's amount over the months left.
+    const meera = await f.student('Meera');
+    const a = await post('/console/passenger-allocations', con, {
+      memberIds: [meera.id],
+      routeId: ids['route'],
+      stopId: ids['Vinobanagar Circle'],
+      from: today(),
+      to: year.endsOn,
+    });
+    expect(a.status, JSON.stringify(a.body)).toBe(201);
+    const months = monthsOf(year.startsOn, year.endsOn);
+    const parts = monthlyParts(1_000_000, months.length);
+    const want = months.map((m, i) => [m, parts[i]!] as const).filter(([m]) => m >= month(today()));
+    const rows = await dues(meera.rowId);
+    expect(rows.map((r) => [month(r.transport_month!), Number(r.amount_paise)])).toEqual(want);
+    const charge = await f.t.db
+      .selectFrom('transport_fee_charges')
+      .select(['mode', 'rate_paise_per_km'])
+      .where('profile_id', '=', meera.rowId)
+      .executeTakeFirstOrThrow();
+    expect(charge).toMatchObject({ mode: 'RANGE' });
   });
 
   it('deletes positions past their retention in the trip job', async () => {

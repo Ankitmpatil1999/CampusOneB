@@ -1,12 +1,15 @@
 /**
  * The transport fee by distance (client 2026-10-21).
  *
- * - **The rule** (per school, set by the Institution Administrator — transport.fees): a rate per km of
- *   the round trip, **per year**, and the day of the month the dues fall on. Off until it is switched
- *   on with a rate. Changing it never changes dues already raised.
+ * - **The rule** (per school, set by the Institution Administrator — transport.fees): **per km** — a
+ *   rate per km of the round trip, per year — or **by distance range** (client 2026-10-22: "1 to 5 km
+ *   ₹10,000, 5 to 10 km ₹15,000") — a yearly amount for each range of the stop's distance; and the
+ *   day of the month the dues fall on. Off until it is switched on. Changing it never changes dues
+ *   already raised.
  * - **The amount:** the stop's distance from the school along its route (the route's first stop,
- *   seq 0, is the school end) × 2 (both ways) × the rate = the yearly fee, in whole rupees. It is
- *   split into the academic year's months, whole rupees each, the remainder on the last month.
+ *   seq 0, is the school end): per km, × 2 (both ways) × the rate; by range, the amount of the range
+ *   the distance falls in (a distance beyond the last range is not charged) — the yearly fee, in whole
+ *   rupees. It is split into the academic year's months, whole rupees each, the remainder on the last.
  * - **When:** as soon as a member — a student or a staff member — is allocated a stop, one due per month
  *   the allocation covers is raised at once (client: "all months at once"), each on the rule's day of
  *   that month (never before today). The dues stay if the member later stops using the bus.
@@ -19,7 +22,7 @@
  *   staff member pay them from the wallet in the app, or at the office in cash, as any fee.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database, TransportFeeMode, TransportFeeRange } from '../models/ringpe_models';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { formatInr, istBusinessDate } from '../utils/format';
 import { isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
@@ -70,6 +73,26 @@ export function yearlyFee(distanceKm: number, ratePaisePerKm: number): number {
   return Math.round((distanceKm * 2 * ratePaisePerKm) / 100) * 100;
 }
 
+/** At most this many ranges; the farthest range up to this many km. */
+export const MAX_RANGES = 20;
+export const MAX_RANGE_KM = 500;
+
+/**
+ * The yearly fee of a range for a distance: the first range whose upper end reaches it (ranges sorted
+ * by `uptoKm`, each from the one before it); null beyond the last range.
+ */
+export function rangeFee(distanceKm: number, ranges: readonly TransportFeeRange[]): number | null {
+  const sorted = [...ranges].sort((a, b) => a.uptoKm - b.uptoKm);
+  return sorted.find((r) => distanceKm <= r.uptoKm)?.yearlyPaise ?? null;
+}
+
+/** The yearly fee under the rule, in paise (0 when nothing is charged). */
+export function yearlyUnder(rule: Rule, distanceKm: number): number {
+  if (distanceKm <= 0) return 0;
+  if (rule.mode === 'RANGE') return rangeFee(distanceKm, rule.ranges) ?? 0;
+  return yearlyFee(distanceKm, rule.ratePaise);
+}
+
 /** "Transport Oct 2026". */
 export function transportLabel(month: string, extra = false) {
   const label = `Transport ${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
@@ -92,12 +115,30 @@ export async function distanceFromSchool(db: Db, routeId: string, stopId: string
   return 0;
 }
 
-interface Rule {
+export interface Rule {
   readonly active: boolean;
+  readonly mode: TransportFeeMode;
   readonly ratePaise: number;
+  readonly ranges: readonly TransportFeeRange[];
   readonly dueDay: number;
   readonly version: number;
 }
+
+const rangesOf = (v: unknown): TransportFeeRange[] => {
+  const raw = typeof v === 'string' ? (JSON.parse(v) as unknown) : v;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((x) => ({
+      uptoKm: Number((x as { uptoKm?: unknown }).uptoKm),
+      yearlyPaise: Number((x as { yearlyPaise?: unknown }).yearlyPaise),
+    }))
+    .filter((x) => Number.isFinite(x.uptoKm) && Number.isFinite(x.yearlyPaise))
+    .sort((a, b) => a.uptoKm - b.uptoKm);
+};
+
+/** Whether the rule charges anything. */
+const charges = (rule: Rule) =>
+  rule.active && (rule.mode === 'RANGE' ? rule.ranges.length > 0 : rule.ratePaise > 0);
 
 export async function feeRuleOf(db: Db, institutionId: string): Promise<Rule> {
   const r = await db
@@ -108,11 +149,13 @@ export async function feeRuleOf(db: Db, institutionId: string): Promise<Rule> {
   return r
     ? {
         active: !!Number(r.active),
+        mode: r.mode ?? 'PER_KM',
         ratePaise: Number(r.rate_paise_per_km),
+        ranges: rangesOf(r.ranges),
         dueDay: r.due_day,
         version: r.row_version,
       }
-    : { active: false, ratePaise: 0, dueDay: 5, version: 0 };
+    : { active: false, mode: 'PER_KM', ratePaise: 0, ranges: [], dueDay: 5, version: 0 };
 }
 
 /** The "Transport" fee head of the school (made on first use, as fee heads are). */
@@ -169,7 +212,7 @@ export async function raiseTransportFees(
   who: { readonly by: Buffer | null; readonly at: Date; readonly notify?: boolean },
 ): Promise<RaiseResult> {
   const rule = await feeRuleOf(trx, v.institutionId);
-  if (!rule.active || rule.ratePaise <= 0) return NOTHING();
+  if (!charges(rule)) return NOTHING();
   const year = await trx
     .selectFrom('academic_years')
     .select(['starts_on', 'ends_on', 'status'])
@@ -178,7 +221,7 @@ export async function raiseTransportFees(
     .executeTakeFirst();
   if (!year || year.status === 'CLOSED') return NOTHING();
   const distanceKm = await distanceFromSchool(trx, v.routeId, v.stopId);
-  const yearly = yearlyFee(distanceKm, rule.ratePaise);
+  const yearly = yearlyUnder(rule, distanceKm);
   if (yearly <= 0) return NOTHING(distanceKm);
   const yearStart = ymd(year.starts_on);
   const yearEnd = ymd(year.ends_on);
@@ -236,7 +279,8 @@ export async function raiseTransportFees(
       profile_id: v.profileRowId,
       allocation_id: v.allocationId,
       distance_km: distanceKm,
-      rate_paise_per_km: rule.ratePaise,
+      mode: rule.mode,
+      rate_paise_per_km: rule.mode === 'RANGE' ? 0 : rule.ratePaise,
       yearly_paise: yearly,
       months: months.length,
       created_by: who.by,
@@ -309,7 +353,10 @@ export async function raiseTransportFees(
         due_date: dueOf(p.month),
         amount_paise: p.add,
         late_fine_paise: 0,
-        remarks: `${distanceKm} km × 2 × ${formatInr(rule.ratePaise)} a km a year`,
+        remarks:
+          rule.mode === 'RANGE'
+            ? `${distanceKm} km from the school: ${formatInr(yearly)} a year (distance range)`
+            : `${distanceKm} km × 2 × ${formatInr(rule.ratePaise)} a km a year`,
         transport_charge_id: chargeId,
         transport_month: p.month,
         created_by: who.by,
@@ -399,8 +446,16 @@ export class TransportFeesService {
     const year = await yearFor(this.deps.db, inst.id).catch(() => null);
     return {
       active: rule.active,
+      mode: rule.mode,
       ratePerKm: toMoneyDto(rule.ratePaise),
       ratePaisePerKm: rule.ratePaise,
+      // Each range from the one before it (or 0 km) up to uptoKm, one way (client 2026-10-22).
+      ranges: rule.ranges.map((r, i) => ({
+        fromKm: i ? rule.ranges[i - 1]!.uptoKm : 0,
+        uptoKm: r.uptoKm,
+        yearly: toMoneyDto(r.yearlyPaise),
+        yearlyPaise: r.yearlyPaise,
+      })),
       dueDay: rule.dueDay,
       year: year
         ? {
@@ -417,16 +472,47 @@ export class TransportFeesService {
   async setRule(
     p: Principal,
     expected: number,
-    input: { active: boolean; ratePaisePerKm: number; dueDay: number },
+    input: {
+      active: boolean;
+      mode?: TransportFeeMode | undefined;
+      /** Kept as it is when not sent (the other mode's values survive a switch). */
+      ratePaisePerKm?: number | undefined;
+      ranges?: readonly { uptoKm: number; yearlyPaise: number }[] | undefined;
+      dueDay: number;
+    },
   ) {
     const inst = await institutionOf(this.deps.db, p);
+    const mode = input.mode ?? 'PER_KM';
+    const stored = await feeRuleOf(this.deps.db, inst.id);
+    const rate = input.ratePaisePerKm ?? stored.ratePaise;
     if (
-      !Number.isInteger(input.ratePaisePerKm) ||
-      input.ratePaisePerKm < 0 ||
-      input.ratePaisePerKm > MAX_RATE_PAISE ||
-      (input.active && input.ratePaisePerKm === 0)
+      !Number.isInteger(rate) ||
+      rate < 0 ||
+      rate > MAX_RATE_PAISE ||
+      (mode === 'PER_KM' && input.active && rate === 0)
     ) {
       throw new ValidationError([{ field: 'ratePaisePerKm', code: 'TRN.FEE_RATE' }]);
+    }
+    // Ranges: each with a larger upper km than the one before, and a yearly amount.
+    const ranges = [...(input.ranges ?? stored.ranges)];
+    const badRange = ranges.findIndex(
+      (r, i) =>
+        !Number.isFinite(r.uptoKm) ||
+        r.uptoKm <= (i ? ranges[i - 1]!.uptoKm : 0) ||
+        r.uptoKm > MAX_RANGE_KM ||
+        Math.abs(Math.round(r.uptoKm * 100) - r.uptoKm * 100) > 1e-6 ||
+        !Number.isInteger(r.yearlyPaise) ||
+        r.yearlyPaise <= 0 ||
+        r.yearlyPaise > MAX_RATE_PAISE * 10,
+    );
+    if (
+      ranges.length > MAX_RANGES ||
+      badRange >= 0 ||
+      (mode === 'RANGE' && input.active && !ranges.length)
+    ) {
+      throw new ValidationError([
+        { field: badRange >= 0 ? `ranges.${badRange}` : 'ranges', code: 'TRN.FEE_RANGES' },
+      ]);
     }
     if (!Number.isInteger(input.dueDay) || input.dueDay < 1 || input.dueDay > 28)
       throw new ValidationError([{ field: 'dueDay', code: 'TRN.FEE_DUE_DAY' }]);
@@ -440,7 +526,11 @@ export class TransportFeesService {
         .executeTakeFirst();
       if ((cur?.row_version ?? 0) !== expected) throw new PreconditionFailedError();
       const values = {
-        rate_paise_per_km: input.ratePaisePerKm,
+        mode,
+        ranges: ranges.length
+          ? JSON.stringify(ranges.map((r) => ({ uptoKm: r.uptoKm, yearlyPaise: r.yearlyPaise })))
+          : null,
+        rate_paise_per_km: rate,
         due_day: input.dueDay,
         active: input.active ? 1 : 0,
         updated_by: this.by(p),
@@ -468,7 +558,10 @@ export class TransportFeesService {
           : null,
         after: {
           active: input.active,
-          rate: formatInr(input.ratePaisePerKm),
+          mode,
+          ...(mode === 'RANGE'
+            ? { ranges: ranges.map((r) => `up to ${r.uptoKm} km: ${formatInr(r.yearlyPaise)}`) }
+            : { rate: formatInr(rate) }),
           dueDay: input.dueDay,
         },
       });
@@ -483,7 +576,7 @@ export class TransportFeesService {
   async apply(p: Principal) {
     const inst = await institutionOf(this.deps.db, p);
     const rule = await feeRuleOf(this.deps.db, inst.id);
-    if (!rule.active || rule.ratePaise <= 0) throw new CustomAPIError(409, 'TRN.FEE_RULE_OFF');
+    if (!charges(rule)) throw new CustomAPIError(409, 'TRN.FEE_RULE_OFF');
     const year = await yearFor(this.deps.db, inst.id);
     const today = istBusinessDate(this.now());
     const allocations = await this.deps.db

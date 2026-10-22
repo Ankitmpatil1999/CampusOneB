@@ -30,6 +30,7 @@ import { toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { qrSvg } from '../utils/qr';
 import { recordAudit } from './audit.service';
+import { tellMembers } from './member-notices';
 import { notificationsRepository } from '../repositories/notifications.repository';
 import { familyAccountsByStudent } from './fee-notices.service';
 import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
@@ -311,6 +312,21 @@ export class FeePaymentsService {
       entityRef: binToUuid(r.public_id),
       after: { receiptNo, amount: formatInr(c.amountPaise), mode: c.mode },
     });
+    // The student and parents are told of every payment taken (client 2026-10-22).
+    const left = Math.max(0, due - c.amountPaise);
+    await tellMembers(
+      trx,
+      {
+        institutionId: r.institution_id,
+        profileRowIds: [String(r.student_profile_id)],
+        titleKey: 'NTF.FEE_RECEIVED',
+        params: { amount: formatInr(c.amountPaise), fee: r.label },
+        body: `Receipt ${receiptNo}. ${left ? `Still due: ${formatInr(left)}.` : 'Paid in full.'}`,
+        category: 'PAYMENT',
+        link: '/fees',
+      },
+      now,
+    );
     return { collectionId: id, receiptNo };
   }
 

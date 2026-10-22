@@ -125,15 +125,16 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
   it('reports every path with totals, never a direct message’s body or a code', async () => {
     const r = await get('/console/communication-log');
     expect(r.status, JSON.stringify(r.body)).toBe(200);
+    // Two notifications: Ravi told he is class teacher (client 2026-10-22), and the fee desk's.
     expect(r.body.totals.byKind).toMatchObject({
       ANNOUNCEMENT: 1,
       DIRECT_MESSAGE: 1,
-      NOTIFICATION: 1,
+      NOTIFICATION: 2,
       OTP: 1,
       TRANSACTIONAL: 1,
     });
-    expect(r.body.totals).toMatchObject({ attempts: 5, byOutcome: { SUCCESS: 4, FAILED: 1 } });
-    expect(r.body.totals.failedShare).toBe(0.2);
+    expect(r.body.totals).toMatchObject({ attempts: 6, byOutcome: { SUCCESS: 5, FAILED: 1 } });
+    expect(r.body.totals.failedShare).toBe(0.1667);
     expect(r.body.retention).toMatchObject({ purging: false, successDays: 30, failedDays: 90 });
     expect(r.body.completeFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(r.body.unrecorded).toBe(0);
@@ -155,10 +156,18 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
       raisedBy: { name: expect.stringMatching(/ravi/i) },
       recipient: { name: 'Asha Rao' },
     });
-    expect(byKind['NOTIFICATION']).toMatchObject({
-      subject: 'Message from Fee desk',
-      raisedBy: { name: null, event: 'notification.payment' },
-    });
+    expect(
+      r.body.items.find(
+        (x: { kind: string; subject: string | null }) =>
+          x.kind === 'NOTIFICATION' && x.subject === 'Message from Fee desk',
+      ),
+    ).toMatchObject({ raisedBy: { name: null, event: 'notification.payment' } });
+    expect(
+      r.body.items.some(
+        (x: { kind: string; subject: string | null }) =>
+          x.kind === 'NOTIFICATION' && x.subject === 'You are now class teacher of Grade 6 A',
+      ),
+    ).toBe(true);
     expect(byKind['OTP']).toMatchObject({
       subject: 'One-time code',
       recipient: { address: '••••••2345' },
@@ -191,7 +200,7 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
     }
     expect(e.body, JSON.stringify(e.body)).toMatchObject({
       status: 'READY',
-      rows: 4,
+      rows: 5,
       truncated: false,
     });
     expect(e.body.file.name).toMatch(/^communication-report_last-30-days_today\.csv$/);
@@ -199,7 +208,7 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
     expect(file.status).toBe(200);
     const csv = file.text ?? String(file.body);
     expect(csv.charCodeAt(0)).toBe(0xfeff);
-    expect(csv.trim().split('\r\n')).toHaveLength(5);
+    expect(csv.trim().split('\r\n')).toHaveLength(6);
     expect(csv).toContain('Time,Kind,Channel,Raised by,Recipient,Address,Subject,Outcome,Reason');
     expect(csv).toContain('Private message');
     expect(csv).not.toContain('marks card');

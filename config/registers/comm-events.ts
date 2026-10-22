@@ -19,6 +19,12 @@ export type CommEventKey =
   | 'CLASS'
   | 'TRANSPORT'
   | 'BUS_NEAR'
+  | 'BUS_TODAY'
+  | 'CHECK_IN_OUT'
+  | 'FEE_PAID'
+  | 'TEACHING'
+  | 'PASSES'
+  | 'SETTLEMENTS'
   | 'LEAVE'
   | 'ANNOUNCEMENT'
   | 'MESSAGE'
@@ -70,6 +76,37 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     ['NTF.FEE_DUE', 'NTF.FEE_PAY_LINK', 'NTF.ADMISSION_PAY_LINK'],
   ),
   ev('ATTENDANCE', 'Absent', 'A student is marked absent: the student and parents', ['NTF.ABSENT']),
+  // Client 2026-10-22: a check-in or check-out at the gate, the front desk or the teacher's reader.
+  {
+    ...ev(
+      'CHECK_IN_OUT',
+      'Checked in or out',
+      'A card tap or the front desk checks someone in or out: the person and, for a student, the parents',
+      ['NTF.CHECKED_IN', 'NTF.CHECKED_OUT'],
+    ),
+    emailByDefault: false,
+  },
+  ev(
+    'FEE_PAID',
+    'Fee received or changed',
+    'A fee payment is taken, or a fee’s amount or due date is changed: the student and parents',
+    ['NTF.FEE_RECEIVED', 'NTF.FEE_CHANGED'],
+  ),
+  ev(
+    'TEACHING',
+    'Teaching assignments',
+    'A teacher is given or loses a class, subject or co-ordination: the teacher',
+    ['NTF.TEACHING_ASSIGNED', 'NTF.TEACHING_ENDED'],
+  ),
+  ev(
+    'PASSES',
+    'Passes and coupons',
+    'A pass or coupons are issued or cancelled: the holder and parents',
+    ['NTF.PASS_ISSUED', 'NTF.PASS_CANCELLED', 'NTF.COUPONS_ISSUED', 'NTF.COUPONS_CANCELLED'],
+  ),
+  ev('SETTLEMENTS', 'Settlement paid', 'The school paid a merchant’s settlement: the merchant', [
+    'NTF.SETTLEMENT_PAID',
+  ]),
   ev(
     'HOMEWORK',
     'Homework and classwork',
@@ -93,14 +130,24 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     'Bus allocated or ended, trip started or cancelled: the passengers and parents',
     ['NTF.TRANSPORT_ALLOCATED', 'NTF.TRANSPORT_ENDED', 'NTF.TRIP_STARTED', 'NTF.TRIP_CANCELLED'],
   ),
-  // Live tracking (client 2026-10-21): an e-mail would arrive after the bus has gone, so it is off
-  // by default (the school can turn it on); the phone alert is on.
+  // Live tracking (client 2026-10-21/22): an e-mail would arrive after the bus has gone, so it is
+  // off by default (the school can turn it on); the phone alert is on.
   {
     ...ev(
       'BUS_NEAR',
-      'Bus near the stop',
-      'The bus is close to a passenger’s stop: the passengers and parents',
-      ['NTF.BUS_NEAR_STOP'],
+      'Bus on the way',
+      'The bus is near or at a passenger’s stop, or its trip is complete: the passengers and parents',
+      ['NTF.BUS_NEAR_STOP', 'NTF.BUS_AT_STOP', 'NTF.TRIP_COMPLETED'],
+    ),
+    emailByDefault: false,
+  },
+  // Client 2026-10-22: every school day, the day's bus, times and crew; daily, so no e-mail by default.
+  {
+    ...ev(
+      'BUS_TODAY',
+      'Today’s bus',
+      'Each morning, the day’s pick-up and drop times, bus and driver: the passengers and parents',
+      ['NTF.TRANSPORT_TODAY'],
     ),
     emailByDefault: false,
   },
@@ -150,9 +197,12 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     'NTF.CARD_ACTIVE',
     'NTF.CARD_BLOCKED',
   ]),
-  ev('TICKETS', 'Support tickets', 'A ticket is updated: the person who raised it', [
-    'NTF.TICKET_UPDATED',
-  ]),
+  ev(
+    'TICKETS',
+    'Support tickets',
+    'A ticket is raised: the support desk; updated: the person who raised it',
+    ['NTF.TICKET_RAISED', 'NTF.TICKET_UPDATED'],
+  ),
   ev(
     'APPROVALS',
     'Approvals',

@@ -19,11 +19,12 @@ import type { Database, PassStatus } from '../models/ringpe_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import type { JobContext } from '../schedulers';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
-import { istBusinessDate } from '../utils/format';
+import { formatDate, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
 import { retryOnLock } from '../utils/retry';
 import { recordAudit } from './audit.service';
+import { tellMembers } from './member-notices';
 import { defaultValues, type SettingValues } from './settings.service';
 
 const day = (d: Date | string) =>
@@ -227,6 +228,19 @@ export class PassesService {
         entityRef: issued[0]!.passId,
         after: { type: input.type, validOn: input.validOn, passes: issued.map((x) => x.passId) },
       });
+      // The holders and their parents are told (client 2026-10-22).
+      await tellMembers(
+        this.deps.db,
+        {
+          institutionId: inst.id,
+          profileRowIds: issued.map((x) => String(byId.get(x.holderId)!.id)),
+          titleKey: 'NTF.PASS_ISSUED',
+          params: { pass: input.purpose.trim(), date: formatDate(input.validOn) },
+          body: `${input.description.trim()} — show it from the app under Passes.`.slice(0, 300),
+          link: '/passes',
+        },
+        this.now(),
+      );
     }
     return { issued, refused };
   }
@@ -300,6 +314,19 @@ export class PassesService {
       after: { status: 'CANCELLED', reason: input.reason },
     });
     const after = await this.query().where('p.id', '=', r.id).executeTakeFirstOrThrow();
+    // The holder and their parents are told (client 2026-10-22).
+    await tellMembers(
+      this.deps.db,
+      {
+        institutionId: inst.id,
+        profileRowIds: [String(after.holder_profile_id)],
+        titleKey: 'NTF.PASS_CANCELLED',
+        params: { pass: after.purpose, date: formatDate(day(after.valid_on)) },
+        body: input.reason.trim().slice(0, 200),
+        link: '/passes',
+      },
+      this.now(),
+    );
     return this.view(after, istBusinessDate(this.now()));
   }
 

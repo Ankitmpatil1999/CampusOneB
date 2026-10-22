@@ -8,11 +8,13 @@
  * - every event is on by default; switching an event's e-mail off queues nothing, and its phone alert
  *   off leaves the notice out of the alert count; stale or unknown changes are refused;
  * - a failed send is retried and given up after com.email.maxAttempts, masked and logged FAILED;
- * - the fee reminder job reminds an instalment due today once a day.
+ * - the fee reminder job reminds an instalment due today once a day;
+ * - the class placement e-mail tells each receiver how to sign in to the app (client 2026-10-22).
  */
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { EmailRelay } from '../../services/email-relay.service';
+import { notify } from '../../services/notifications.service';
 import { binToUuid, uuidToBin } from '../../utils/idGenerator';
 import type { Principal } from '../../utils/principal';
 import { adminUrl } from './db';
@@ -172,6 +174,34 @@ describe.skipIf(!adminUrl)('notification e-mails and settings on real MySQL', ()
     ]);
   });
 
+  it('the class placement e-mail tells each receiver how to sign in to the app', async () => {
+    const child = await f.profileRow(childId);
+    const at = new Date();
+    await notify(
+      f.t.db,
+      {
+        institutionId: f.school.rowId,
+        accountIds: [],
+        about: [String(child.id)],
+        surface: 'MEMBER',
+        category: 'ACCOUNT',
+        titleKey: 'NTF.CLASS_PLACED',
+        params: { name: 'Kiran', section: 'Grade 6 A', year: year.label },
+        body: `Grade 6 A · ${year.label}`,
+        signIn: true,
+      },
+      at,
+    );
+    // The parent has no account yet: sign up with the mobile the school holds (never a password).
+    const mail = (await outbox('CLASS')).at(-1)!;
+    expect(mail.body).toContain(`Grade 6 A · ${year.label}`);
+    expect(mail.body).toContain('Open the RingPe app and tap "Sign up".');
+    expect(mail.body).toContain(
+      `Mobile number: ${guardianMobile.slice(0, 5)} ${guardianMobile.slice(5)} — a one-time code is sent to it.`,
+    );
+    expect(mail.body).not.toMatch(/Password: [^t]/);
+  });
+
   it('a student with the app gets the notice with the phone alert', async () => {
     await raise(asha.id, 'Term 1', '800.00');
     const list = await ashaNotices();
@@ -185,14 +215,19 @@ describe.skipIf(!adminUrl)('notification e-mails and settings on real MySQL', ()
   it('every event is on by default; switching one off stops its e-mail and phone alert (COM-032/033)', async () => {
     const view = await events();
     expect(view.emailChannel).toBe(true);
-    // 17 events: Bus near the stop (db-split) and Staff work (the staff app).
-    expect(view.items).toHaveLength(17);
-    // Every phone alert is on; every e-mail too but "the bus is near your stop" (client 2026-10-21).
+    // 23 events: Bus on the way (db-split), Staff work (the staff app), and (client 2026-10-22)
+    // Today's bus, Checked in or out, Fee received or changed, Teaching, Passes and Settlements.
+    expect(view.items).toHaveLength(23);
+    // Every phone alert is on; every e-mail too but the daily and live ones (client 2026-10-21/22).
     expect(
       view.items
         .filter((x: { email: boolean; alert: boolean }) => !(x.email && x.alert))
         .map((x: { event: string; email: boolean; alert: boolean }) => [x.event, x.email, x.alert]),
-    ).toEqual([['BUS_NEAR', false, true]]);
+    ).toEqual([
+      ['CHECK_IN_OUT', false, true],
+      ['BUS_NEAR', false, true],
+      ['BUS_TODAY', false, true],
+    ]);
 
     const off = await request(f.app)
       .patch('/api/v1/console/notification-events')

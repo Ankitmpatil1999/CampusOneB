@@ -27,13 +27,14 @@ import {
   PreconditionFailedError,
   ValidationError,
 } from '../utils/CustomAPIError';
-import { istBusinessDate } from '../utils/format';
+import { formatDate, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { toMoneyDto } from '../utils/money';
 import { emit, rooms } from '../utils/outbox';
 import type { Principal } from '../utils/principal';
 import { retryOnLock } from '../utils/retry';
 import { recordAudit } from './audit.service';
+import { tellMembers } from './member-notices';
 import type { CardsService } from './cards.service';
 import { defaultValues, type SettingValues } from './settings.service';
 
@@ -798,6 +799,26 @@ export class CouponsService {
             refused,
           },
         });
+        // The students given coupons, and their parents, are told (client 2026-10-22).
+        const given = [...new Set(rows.map((r) => String(r.profile_id)))];
+        if (given.length) {
+          await tellMembers(
+            trx,
+            {
+              institutionId: inst.id,
+              profileRowIds: given,
+              titleKey: 'NTF.COUPONS_ISSUED',
+              params: {
+                types: types.map((t) => t.name).join(', '),
+                from: formatDate(input.from),
+                to: formatDate(input.to),
+              },
+              body: 'They are in the app under Coupons, each with its day and time.',
+              link: '/coupons',
+            },
+            this.now(),
+          );
+        }
         return { created, skipped, perStudent };
       }),
     );
@@ -1015,6 +1036,29 @@ export class CouponsService {
     }
     const res = await q.executeTakeFirst();
     const cancelled = Number(res.numUpdatedRows);
+    if (cancelled) {
+      // The students whose coupons ended now, and their parents, are told (client 2026-10-22).
+      const ended = await this.deps.db
+        .selectFrom('coupons')
+        .select('profile_id')
+        .distinct()
+        .where('institution_id', '=', inst.id)
+        .where('ended_reason', '=', 'CANCELLED')
+        .where('ended_at', '=', now)
+        .execute();
+      await tellMembers(
+        this.deps.db,
+        {
+          institutionId: inst.id,
+          profileRowIds: ended.map((x) => String(x.profile_id)),
+          titleKey: 'NTF.COUPONS_CANCELLED',
+          params: { from: formatDate(input.from), to: formatDate(input.to) },
+          body: input.reason.trim().slice(0, 200),
+          link: '/coupons',
+        },
+        now,
+      );
+    }
     await recordAudit(this.deps.db, {
       institutionId: inst.id,
       action: 'COUPONS_CANCELLED',

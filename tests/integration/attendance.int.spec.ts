@@ -139,6 +139,23 @@ describe.skipIf(!adminUrl)('attendance on real MySQL', () => {
       .orderBy('id')
       .execute();
     expect(events.map((e) => e.action)).toEqual(['CHECK-IN', 'CHECK-IN', 'CHECK-OUT']);
+    // Client 2026-10-22: each check-in and check-out is told — the student's family, the teacher.
+    type Notice = { titleKey: string; title: string; link: string | null };
+    const notices = async (auth: Record<string, string>): Promise<Notice[]> =>
+      (await get('/me/notifications?limit=50', auth)).body.items;
+    const hers = (await notices(asha.auth)).filter((n) => n.titleKey === 'NTF.CHECKED_IN');
+    expect(hers).toHaveLength(1);
+    expect(hers[0]).toMatchObject({ link: '/attendance' });
+    expect(hers[0]!.title).toMatch(/^Asha checked in at \d{1,2}:\d{2} [AP]M$/);
+    const meenas = await notices(meena.auth);
+    expect(meenas.filter((n) => n.titleKey === 'NTF.CHECKED_IN')).toHaveLength(1);
+    expect(meenas.find((n) => n.titleKey === 'NTF.CHECKED_OUT')).toMatchObject({
+      link: '/me/attendance',
+    });
+    // Ravi was made class teacher of Grade 6 A in the set-up: he was told.
+    expect(
+      (await notices(ravi.auth)).find((n) => n.titleKey === 'NTF.TEACHING_ASSIGNED')?.title,
+    ).toBe('You are now class teacher of Grade 6 A');
   });
 
   it('records period and location taps, the front desk and visitors', async () => {

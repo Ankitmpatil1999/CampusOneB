@@ -107,6 +107,12 @@ describe.skipIf(!adminUrl)('staff attendance at the front desk on real MySQL', (
       code: 'ATT.NOT_STAFF',
       params: { name: expect.stringMatching(/^Asha/) },
     });
+    // Raju is told of each (client 2026-10-22), once.
+    const told = (await get('/me/notifications?limit=50', raju.auth)).body.items.map(
+      (n: { titleKey: string }) => n.titleKey,
+    );
+    expect(told.filter((k: string) => k === 'NTF.CHECKED_IN')).toHaveLength(1);
+    expect(told.filter((k: string) => k === 'NTF.CHECKED_OUT')).toHaveLength(1);
     const r = await row('Raju');
     expect(r).toMatchObject({ status: 'HALF_DAY', method: 'NFC' });
     expect(r.checkInAt).toBeTruthy();

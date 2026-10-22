@@ -49729,17 +49729,37 @@ components:
       properties:
         active:
           type: boolean
+        mode:
+          type: string
+          enum:
+            - PER_KM
+            - RANGE
         ratePaisePerKm:
           type: integer
           minimum: -9007199254740991
           maximum: 9007199254740991
+        ranges:
+          maxItems: 20
+          type: array
+          items:
+            type: object
+            properties:
+              uptoKm:
+                type: number
+              yearlyPaise:
+                type: integer
+                minimum: -9007199254740991
+                maximum: 9007199254740991
+            required:
+              - uptoKm
+              - yearlyPaise
+            additionalProperties: false
         dueDay:
           type: integer
           minimum: -9007199254740991
           maximum: 9007199254740991
       required:
         - active
-        - ratePaisePerKm
         - dueDay
       additionalProperties: false
     TransportRouteInput:

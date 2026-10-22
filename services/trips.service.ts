@@ -23,7 +23,7 @@ import { LIMITS, type LimitDefinition } from '../config/registers';
 import type { BoardingStatus, Database, TripStatus } from '../models/ringpe_models';
 import type { JobContext } from '../schedulers';
 import { CustomAPIError, ValidationError } from '../utils/CustomAPIError';
-import { istBusinessDate } from '../utils/format';
+import { formatTime, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { emit, rooms } from '../utils/outbox';
 import type { Principal } from '../utils/principal';
@@ -31,6 +31,7 @@ import { institutionOf } from './academic-year';
 import { recordAudit } from './audit.service';
 import { occurrences } from './calendar.service';
 import { memberOf } from './member-roles';
+import { familyAccountsByStudent } from './fee-notices.service';
 import { notify } from './notifications.service';
 import { studentTransport } from './student-transport';
 import type { SettingsService } from './settings.service';
@@ -53,6 +54,12 @@ const addDays = (d: string, n: number) => {
   return t.toISOString().slice(0, 10);
 };
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+/** "07:35" → "7:35 AM". */
+const clock12 = (t: string) => {
+  if (!/^\d{2}:\d{2}/.test(t)) return t;
+  const h = Number(t.slice(0, 2));
+  return `${((h + 11) % 12) + 1}:${t.slice(3, 5)} ${h < 12 ? 'AM' : 'PM'}`;
+};
 const toTime = (m: number) => {
   const x = Math.max(0, Math.min(23 * 60 + 59, Math.round(m)));
   return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}:00`;
@@ -259,6 +266,152 @@ export class TripsService {
         });
       }
     }
+  }
+
+  // --- the job transport-daily-notice (client 2026-10-22) ------------------------------------------------
+  /**
+   * Today's bus, every school day at 06:00: each passenger with an allocation in force and a trip of
+   * their route today — students, staff — and their parents are told the pick-up and drop times at
+   * their stop, the bus and the driver, and that the app follows it live. Once a day per allocation
+   * (daily_notice_on), so a re-run sends nothing twice; nothing on a day without trips (a holiday).
+   */
+  async dailyNotice(
+    ctx: Pick<JobContext, 'item'> & { scope?: { institutionId: string } | undefined },
+  ) {
+    const date = istBusinessDate(this.now());
+    let q = this.deps.db
+      .selectFrom('transport_allocations')
+      .select('institution_id')
+      .distinct()
+      .where('active', '=', 1)
+      .where('effective_from', '<=', date)
+      .where('effective_to', '>=', date);
+    if (ctx.scope) q = q.where('institution_id', '=', ctx.scope.institutionId);
+    for (const r of await q.execute()) {
+      const id = String(r.institution_id);
+      try {
+        // Today's trips exist even when the 00:10 run missed (generation is re-runnable).
+        await this.generate(id, date);
+        const sent = await this.noticeDay(id, date);
+        ctx.item({
+          institutionId: id,
+          status: sent ? 'SUCCESS' : 'SKIPPED',
+          processed: sent,
+          failed: 0,
+          note: `${sent} passengers told of today's bus`,
+        });
+      } catch {
+        ctx.item({
+          institutionId: id,
+          status: 'FAILED',
+          processed: 0,
+          failed: 1,
+          note: "Today's bus notices failed; the next run tries again",
+        });
+      }
+    }
+  }
+
+  private async noticeDay(institutionId: string, date: string) {
+    const db = this.deps.db;
+    const allocations = await db
+      .selectFrom('transport_allocations as al')
+      .innerJoin('transport_stops as s', 's.id', 'al.stop_id')
+      .innerJoin('member_profiles as m', 'm.id', 'al.profile_id')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select([
+        'al.id',
+        'al.profile_id',
+        'al.route_id',
+        'al.stop_id',
+        's.name as stop_name',
+        'ut.category',
+      ])
+      .where('al.institution_id', '=', institutionId)
+      .where('al.active', '=', 1)
+      .where('al.effective_from', '<=', date)
+      .where('al.effective_to', '>=', date)
+      .where((eb) =>
+        eb.or([eb('al.daily_notice_on', 'is', null), eb('al.daily_notice_on', '<', date)]),
+      )
+      .execute();
+    if (!allocations.length) return 0;
+    const routeIds = [...new Set(allocations.map((a) => String(a.route_id)))];
+    const trips = await this.tripRows(db)
+      .where('t.institution_id', '=', institutionId)
+      .where('t.trip_date', '=', date)
+      .where('t.route_id', 'in', routeIds)
+      .where('t.status', '<>', 'CANCELLED')
+      .orderBy('t.planned_start')
+      .execute();
+    if (!trips.length) return 0;
+    const [stopTimes, drivers, families] = await Promise.all([
+      db
+        .selectFrom('transport_trip_stops')
+        .select(['trip_id', 'stop_id', 'planned_time'])
+        .where(
+          'trip_id',
+          'in',
+          trips.map((t) => String(t.id)),
+        )
+        .execute(),
+      db
+        .selectFrom('transport_crew as c')
+        .innerJoin('member_profiles as m', 'm.id', 'c.profile_id')
+        .leftJoin('platform_accounts as a', 'a.id', 'm.account_id')
+        .select(['c.id', 'm.contact_mobile', 'a.mobile'])
+        .where('c.id', 'in', [...new Set(trips.map((t) => String(t.driver_crew_id)))])
+        .execute(),
+      familyAccountsByStudent(
+        db,
+        allocations.map((a) => String(a.profile_id)),
+      ),
+    ]);
+    let sent = 0;
+    for (const al of allocations) {
+      const mine = trips.filter((t) => String(t.route_id) === String(al.route_id));
+      const accounts = families.get(String(al.profile_id)) ?? [];
+      if (!mine.length || !accounts.length) continue;
+      const times = mine.map((t) => {
+        const st = stopTimes.find(
+          (x) => String(x.trip_id) === String(t.id) && String(x.stop_id) === String(al.stop_id),
+        );
+        const time = clock12(hm(st?.planned_time ?? null) ?? hm(t.planned_start) ?? '');
+        return `${t.direction === 'PICKUP' ? 'Pick-up' : 'Drop'} ${time} (${t.session_name})`;
+      });
+      const t0 = mine[0]!;
+      const d = drivers.find((x) => String(x.id) === String(t0.driver_crew_id));
+      const mobile = d?.contact_mobile ?? d?.mobile ?? null;
+      const body = `${times.join(' · ')} at ${al.stop_name}. ${t0.vehicle_name} (${t0.registration}), driver ${nameOf(t0.driver_first, t0.driver_last)}${mobile ? ` ${mobile}` : ''}. Follow the bus live in the app.`;
+      const at = this.now();
+      await db.transaction().execute(async (trx) => {
+        const fresh = await trx
+          .updateTable('transport_allocations')
+          .set({ daily_notice_on: date })
+          .where('id', '=', al.id)
+          .where((eb) =>
+            eb.or([eb('daily_notice_on', 'is', null), eb('daily_notice_on', '<', date)]),
+          )
+          .executeTakeFirst();
+        if (Number(fresh.numUpdatedRows) !== 1) return; // told meanwhile
+        await notify(
+          trx,
+          {
+            institutionId,
+            accountIds: accounts,
+            surface: 'MEMBER',
+            category: 'ACCOUNT',
+            titleKey: 'NTF.TRANSPORT_TODAY',
+            params: { bus: t0.vehicle_name },
+            body,
+            link: al.category === 'STUDENT' ? '/transport' : '/transport?self=1',
+          },
+          at,
+        );
+        sent++;
+      });
+    }
+    return sent;
   }
 
   /** The day's trips for one institution (re-runnable). */
@@ -684,8 +837,9 @@ export class TripsService {
     return this.detail(this.deps.db, await this.tripOne(this.deps.db, inst.id, id));
   }
 
-  private async passengerAccounts(db: Db, routeId: string, date: string) {
-    const rows = await db
+  /** The route's passengers on a date (one stop's, when named) and their parents' accounts. */
+  private async passengerAccounts(db: Db, routeId: string, date: string, stopId?: string) {
+    let q = db
       .selectFrom('transport_allocations as al')
       .innerJoin('member_profiles as m', 'm.id', 'al.profile_id')
       .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
@@ -694,8 +848,9 @@ export class TripsService {
       .where('al.route_id', '=', routeId)
       .where('al.active', '=', 1)
       .where('al.effective_from', '<=', date)
-      .where('al.effective_to', '>=', date)
-      .execute();
+      .where('al.effective_to', '>=', date);
+    if (stopId) q = q.where('al.stop_id', '=', stopId);
+    const rows = await q.execute();
     return [
       ...new Set(
         rows
@@ -995,22 +1150,95 @@ export class TripsService {
         .where('id', '=', t.id)
         .execute();
       await this.event(trx, crew.institutionId, t.id, { event: 'STARTED', actor: this.by(p) }, at);
+      await this.tellStarted(trx, crew.institutionId, t, at);
+    });
+    return this.crewTripDetail(p, id);
+  }
+
+  /**
+   * TRN-029: every passenger of the trip — students and staff — and the students' parents are told
+   * it started, each with the bus, its registration, the driver and the planned time at their own
+   * stop (client 2026-10-22); the notice opens the bus live in the app (a staff member's own
+   * transport: `self`).
+   */
+  private async tellStarted(
+    trx: Transaction<Database>,
+    institutionId: string,
+    t: Awaited<ReturnType<TripsService['crewTrip']>>,
+    at: Date,
+  ) {
+    const date = ymd(t.trip_date);
+    const passengers = await trx
+      .selectFrom('transport_allocations as al')
+      .innerJoin('transport_stops as s', 's.id', 'al.stop_id')
+      .innerJoin('member_profiles as m', 'm.id', 'al.profile_id')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select(['al.profile_id', 'al.stop_id', 's.name as stop_name', 'ut.category'])
+      .where('al.route_id', '=', String(t.route_id))
+      .where('al.active', '=', 1)
+      .where('al.effective_from', '<=', date)
+      .where('al.effective_to', '>=', date)
+      .execute();
+    if (!passengers.length) return;
+    const [stopTimes, driver, families] = await Promise.all([
+      trx
+        .selectFrom('transport_trip_stops')
+        .select(['stop_id', 'planned_time'])
+        .where('trip_id', '=', t.id)
+        .execute(),
+      trx
+        .selectFrom('transport_crew as c')
+        .innerJoin('member_profiles as m', 'm.id', 'c.profile_id')
+        .leftJoin('platform_accounts as a', 'a.id', 'm.account_id')
+        .select(['m.contact_mobile', 'a.mobile'])
+        .where('c.id', '=', String(t.driver_crew_id))
+        .executeTakeFirst(),
+      familyAccountsByStudent(
+        trx,
+        passengers.map((x) => String(x.profile_id)),
+      ),
+    ]);
+    const mobile = driver?.contact_mobile ?? driver?.mobile ?? null;
+    const crew = `${t.vehicle_name} (${t.registration}), driver ${nameOf(t.driver_first, t.driver_last)}${mobile ? ` ${mobile}` : ''}`;
+    // One notice per stop and kind of passenger; an account told once.
+    const groups = new Map<
+      string,
+      { stop: string; stopId: string; student: boolean; accounts: Set<string> }
+    >();
+    for (const x of passengers) {
+      const student = x.category === 'STUDENT';
+      const key = `${x.stop_id}|${student ? 1 : 0}`;
+      const g = groups.get(key) ?? {
+        stop: x.stop_name,
+        stopId: String(x.stop_id),
+        student,
+        accounts: new Set<string>(),
+      };
+      for (const a of families.get(String(x.profile_id)) ?? []) g.accounts.add(a);
+      groups.set(key, g);
+    }
+    const told = new Set<string>();
+    for (const g of groups.values()) {
+      const accounts = [...g.accounts].filter((a) => !told.has(a));
+      if (!accounts.length) continue;
+      accounts.forEach((a) => told.add(a));
+      const st = stopTimes.find((x) => String(x.stop_id) === g.stopId);
+      const time = hm(st?.planned_time ?? null);
       await notify(
         trx,
         {
-          institutionId: crew.institutionId,
-          accountIds: await this.passengerAccounts(trx, String(t.route_id), ymd(t.trip_date)),
+          institutionId,
+          accountIds: accounts,
           surface: 'MEMBER',
           category: 'ACCOUNT',
           titleKey: 'NTF.TRIP_STARTED',
           params: { bus: t.vehicle_name, session: t.session_name },
-          body: `${t.route_code} · ${t.route_name}`,
-          link: '/transport',
+          body: `${time ? `At ${g.stop} about ${clock12(time)}. ` : ''}${crew}. Follow the bus live in the app.`,
+          link: g.student ? '/transport' : '/transport?self=1',
         },
         at,
       );
-    });
-    return this.crewTripDetail(p, id);
+    }
   }
 
   /** TRN-030: a stop reached, departed or skipped — in order (BR-62). */
@@ -1063,6 +1291,33 @@ export class TripsService {
         { event: input.event, seq: input.seq, actor: this.by(p), remarks },
         at,
       );
+      // The bus reached a stop: its passengers and their parents are told (client 2026-10-22).
+      if (input.event === 'REACHED') {
+        const name = await trx
+          .selectFrom('transport_stops')
+          .select('name')
+          .where('id', '=', String(stop.stop_id))
+          .executeTakeFirst();
+        await notify(
+          trx,
+          {
+            institutionId: crew.institutionId,
+            accountIds: await this.passengerAccounts(
+              trx,
+              String(t.route_id),
+              ymd(t.trip_date),
+              String(stop.stop_id),
+            ),
+            surface: 'MEMBER',
+            category: 'ACCOUNT',
+            titleKey: 'NTF.BUS_AT_STOP',
+            params: { bus: t.vehicle_name, stop: name?.name ?? '' },
+            body: `${t.route_code} · ${t.session_name} · ${formatTime(at)}`,
+            link: '/transport',
+          },
+          at,
+        );
+      }
     });
     return this.crewTripDetail(p, id);
   }
@@ -1191,6 +1446,29 @@ export class TripsService {
         crew.institutionId,
         t.id,
         { event: 'COMPLETED', actor: this.by(p) },
+        at,
+      );
+      // The trip is over: every passenger and parent is told where the bus finished.
+      const lastStop = await trx
+        .selectFrom('transport_trip_stops as ts')
+        .innerJoin('transport_stops as s', 's.id', 'ts.stop_id')
+        .select('s.name')
+        .where('ts.trip_id', '=', t.id)
+        .orderBy('ts.seq', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      await notify(
+        trx,
+        {
+          institutionId: crew.institutionId,
+          accountIds: await this.passengerAccounts(trx, String(t.route_id), ymd(t.trip_date)),
+          surface: 'MEMBER',
+          category: 'ACCOUNT',
+          titleKey: 'NTF.TRIP_COMPLETED',
+          params: { session: t.session_name, bus: t.vehicle_name, stop: lastStop?.name ?? '' },
+          body: `${t.route_code} · ${t.route_name} · ${formatTime(at)}`,
+          link: '/transport',
+        },
         at,
       );
     });

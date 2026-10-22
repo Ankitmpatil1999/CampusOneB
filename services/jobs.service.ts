@@ -74,6 +74,7 @@ const OWNING_TASK: Readonly<Record<string, string>> = {
   'accounting-vouchers': 'vouchers.view',
   'auto-absent': 'attendance.view',
   'trip-generation': 'transport.view',
+  'transport-daily-notice': 'transport.view',
   'announcement-dispatch': 'comms.view',
   'comm-log-purge': 'commreport.view',
   'held-credit-release': 'members.view',

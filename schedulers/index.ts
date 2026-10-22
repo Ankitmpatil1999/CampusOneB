@@ -68,6 +68,7 @@ export const RUNNABLE_JOB_IDS: readonly string[] = [
   'accounting-vouchers',
   'auto-absent',
   'trip-generation',
+  'transport-daily-notice',
   'announcement-dispatch',
   'comm-log-purge',
   'fee-reminders',
@@ -165,6 +166,22 @@ export function buildJobs(deps: {
             institutionRunSubTask: 'transport.edit',
             run: async (ctx: JobContext) => {
               await deps.trips!.run(ctx);
+            },
+          },
+          {
+            id: 'transport-daily-notice',
+            cron: '0 6 * * *',
+            timeZone: 'Asia/Kolkata' as const,
+            window:
+              'Today (IST): every passenger with an allocation in force and a trip of their route today',
+            catchUp: 'A later run the same day tells those not yet told',
+            reRun:
+              'Each allocation is told once a day (daily_notice_on, set with the notice), so a re-run sends nothing twice',
+            money: false,
+            manualRunSubTask: 'jobs.run',
+            institutionRunSubTask: 'transport.edit',
+            run: async (ctx: JobContext) => {
+              await deps.trips!.dailyNotice(ctx);
             },
           },
         ]

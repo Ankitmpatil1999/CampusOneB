@@ -1,0 +1,159 @@
+{
+  "info": {
+    "name": "RingPe – Add money to a wallet (Axis Bank test)",
+    "description": "Plays the bank's part to load money into a RingPe wallet on a test or LAN server, where the real Axis Bank can't reach (BNK-001…003, Axis Bank Power E-coll format).\n\nBefore the first run:\n1. Back office → Partner API clients → New client (or use the test client): scopes va.validate and va.notify; add this PC's IP address (or the network, e.g. 192.168.88.0/24) to its allowed addresses. Copy its client id and secret.\n2. In this collection's Variables: baseUrl (the API address), clientId, clientSecret, accountNumber (the student's account number from the app: Wallet → Add money), amount.\n3. With the RingPe self-signed certificate, turn off Settings → General → SSL certificate verification in Postman (or add the RingPe Local CA).\n\nEach top-up: send 1, then 2, then 3 (or Run the collection). Request 2 makes a new UTR each time, so every run is a new transfer; request 3 credits the wallet. The token from 1 is kept and can be reused while it is valid.\n\nFor testing only: never point this at the production server.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://192.168.88.17", "description": "The RingPe API address" },
+    { "key": "clientId", "value": "", "description": "Partner API client id (back office)" },
+    {
+      "key": "clientSecret",
+      "value": "",
+      "description": "Partner API client secret (back office)"
+    },
+    {
+      "key": "accountNumber",
+      "value": "",
+      "description": "The student's account number (VAN) shown in the app under Wallet → Add money"
+    },
+    { "key": "amount", "value": "500.00", "description": "Rupees, with paise" },
+    { "key": "mode", "value": "IMPS", "description": "IMPS, NEFT, RTGS or UPI" },
+    { "key": "senderName", "value": "TEST PARENT" },
+    { "key": "senderAccount", "value": "123456789012" },
+    { "key": "senderIfsc", "value": "UTIB0000001" },
+    { "key": "accessToken", "value": "", "description": "Set by request 1" },
+    { "key": "utr", "value": "", "description": "Set by request 2" },
+    { "key": "tranId", "value": "", "description": "Set by request 2" },
+    { "key": "reqDate", "value": "", "description": "Set by request 2 (today, India time)" }
+  ],
+  "item": [
+    {
+      "name": "1. Get the bank's token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('Token given', () => {",
+              "  pm.response.to.have.status(200);",
+              "  pm.expect(body.access_token, JSON.stringify(body)).to.be.a('string');",
+              "});",
+              "if (body.access_token) pm.collectionVariables.set('accessToken', body.access_token);",
+              "if (pm.response.code === 403) console.warn('Add this PC\\'s IP address to the Partner API client in the back office.');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"{{clientId}}\",\n  \"client_secret\": \"{{clientSecret}}\",\n  \"scope\": \"transaction_validation transaction_notification_posting\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/cug/bank/token",
+          "host": ["{{baseUrl}}"],
+          "path": ["cug", "bank", "token"]
+        },
+        "description": "OAuth client credentials on the Partner API client. While the token is valid, the same token comes back."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Check the account (validate)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// A new transfer each time: a new UTR and bank transaction id, dated today in India.",
+              "const now = Date.now();",
+              "pm.collectionVariables.set('utr', 'RPTEST' + now);",
+              "pm.collectionVariables.set('tranId', 'TXN' + now + Math.floor(Math.random() * 1000));",
+              "pm.collectionVariables.set('reqDate', new Date(now + 330 * 60000).toISOString().slice(0, 10));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('Account accepted', () => {",
+              "  pm.expect(body.Stts_flg, JSON.stringify(body)).to.eql('S');",
+              "  pm.expect(body.Err_cd).to.eql('000');",
+              "});",
+              "if (body.Stts_flg !== 'S') console.warn('Refused: ' + body.message + '. Check accountNumber (from the app) and that the wallet is active.');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"UTR\": \"{{utr}}\",\n  \"Tran_id\": \"{{tranId}}\",\n  \"Bene_acc_no\": \"{{accountNumber}}\",\n  \"Txn_amnt\": \"{{amount}}\",\n  \"Req_type\": \"validation\",\n  \"Req_date\": \"{{reqDate}}\",\n  \"Pmode\": \"{{mode}}\",\n  \"Sndr_nm\": \"{{senderName}}\",\n  \"Sndr_acnt\": \"{{senderAccount}}\",\n  \"Sndr_ifsc\": \"{{senderIfsc}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/cug/bank/transaction/validate",
+          "host": ["{{baseUrl}}"],
+          "path": ["cug", "bank", "transaction", "validate"]
+        },
+        "description": "What the bank asks before it moves the money: is this account a RingPe wallet that can take it? Answer Stts_flg S / Err_cd 000 when it is."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Credit the wallet (notify)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('Wallet credited', () => {",
+              "  pm.expect(body.Stts_flg, JSON.stringify(body)).to.eql('S');",
+              "  pm.expect(body.Err_cd).to.eql('000');",
+              "});",
+              "if (body.Stts_flg === 'S') console.log('Credited ₹' + pm.collectionVariables.get('amount') + ' to ' + pm.collectionVariables.get('accountNumber') + ' (UTR ' + pm.collectionVariables.get('utr') + ').');",
+              "else if (body.message === 'Duplicate UTR') console.warn('This UTR was already credited: send request 2 again for a new transfer.');",
+              "else console.warn('Refused: ' + (body.error || body.message) + '. Send request 2 first, with the same account and amount.');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"UTR\": \"{{utr}}\",\n  \"Tran_id\": \"{{tranId}}\",\n  \"Bene_acc_no\": \"{{accountNumber}}\",\n  \"Txn_amnt\": \"{{amount}}\",\n  \"Req_type\": \"notification\",\n  \"Req_date\": \"{{reqDate}}\",\n  \"Pmode\": \"{{mode}}\",\n  \"Sndr_nm\": \"{{senderName}}\",\n  \"Sndr_acnt\": \"{{senderAccount}}\",\n  \"Sndr_ifsc\": \"{{senderIfsc}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/cug/bank/transaction/notify",
+          "host": ["{{baseUrl}}"],
+          "path": ["cug", "bank", "transaction", "notify"]
+        },
+        "description": "The bank says the money was sent: the wallet is credited once for this UTR + transaction id (only after a successful request 2 with the same account and amount). The parent and student get \"Money added\"."
+      },
+      "response": []
+    }
+  ]
+}

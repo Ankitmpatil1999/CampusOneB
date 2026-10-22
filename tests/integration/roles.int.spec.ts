@@ -340,7 +340,7 @@ describe.skipIf(!adminUrl)('roles and jobs on real MySQL', () => {
     const admin = await signedIn((await operator()).email);
     const jobs = await request(app).get('/api/v1/ops/jobs').set(admin);
     expect(jobs.status).toBe(200);
-    expect(jobs.body.items).toHaveLength(14);
+    expect(jobs.body.items).toHaveLength(15);
     expect(jobs.body.items.find((j: { id: string }) => j.id === 'fee-reminders')).toMatchObject({
       time: '09:00',
       money: false,
