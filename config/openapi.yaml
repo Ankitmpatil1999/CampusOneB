@@ -8586,6 +8586,70 @@ paths:
           required: true
           schema:
             type: string
+  /api/v1/console/teacher-assignments/uploads:
+    post:
+      operationId: ACA-084
+      summary: "Upload class teachers (CSV: class, section, teacher) or subject teachers (CSV: class, sections, subject, teacher) for the year with the screen’s rules: commit=false checks every row, commit=true saves the accepted rows; replace=true replaces class teachers already assigned (kept as history); never removes an assignment"
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Row report
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+  /api/v1/console/teacher-assignments/uploads/template:
+    get:
+      operationId: ACA-083
+      summary: The class-teacher or subject-teacher sheet (CSV) for the year, filled with its current assignments; a teacher is named by employee ID, else mobile number
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Template
+          content:
+            text/csv:
+              schema:
+                type: string
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: yearId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - CLASS_TEACHER
+              - SUBJECT_TEACHER
   /api/v1/console/teacher-leaves:
     get:
       operationId: ACA-042
@@ -8920,6 +8984,62 @@ paths:
             type: string
             maxLength: 40
         - name: teacherId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+  /api/v1/console/timetables/uploads:
+    post:
+      operationId: ACA-086
+      summary: "Upload timetables (CSV: class, section, day, period, subject, teacher) for the year: each section in the file gets exactly its week (no subject and no teacher = a free period), a section with any refused row is skipped whole; commit=false checks, commit=true saves"
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Row report
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+  /api/v1/console/timetables/uploads/template:
+    get:
+      operationId: ACA-085
+      summary: "The timetable sheet (CSV) for the year: every section, day and teaching period, filled with the current lessons"
+      tags:
+        - Academics
+      x-ringpe-auth: academics.edit
+      responses:
+        "200":
+          description: Template
+          content:
+            text/csv:
+              schema:
+                type: string
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: yearId
           in: query
           required: false
           schema:

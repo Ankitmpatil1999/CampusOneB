@@ -931,6 +931,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'TRN.VEHICLE_INACTIVE': 'Selected bus is inactive.',
   'TRN.VEHICLE_NOT_FOUND': 'Bus not found.',
   'UPL.ALREADY_COMMITTED': 'This upload has already been onboarded.',
+  'UPL.CLASS_UNKNOWN': 'There is no class “{class}”. Use a class name from Classes & subjects.',
+  'UPL.DAY_UNKNOWN': '“{day}” isn’t a school day. Write Monday to Saturday.',
   'UPL.FILE_REQUIRED': 'Choose the filled-in template (CSV) to upload.',
   'UPL.HAS_REJECTED':
     '{n} rows were rejected. Fix them and upload again, or onboard the accepted rows only.',
@@ -940,6 +942,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     "The columns don't match the template. Download the template and fill it in.",
   'UPL.HEADER_UNKNOWN':
     'The file has a column the template doesn’t: “{found}”. Remove it, or download the template again — your institution’s own fields may have changed.',
+  'UPL.LESSON_INCOMPLETE':
+    'Give both the subject and the teacher, or leave both empty for a free period.',
   'UPL.NOTHING_ACCEPTED': 'No successful records.',
   'UPL.NOT_A_STUDENT':
     'The user type “{t}” is not a student type. Leave it empty for the student type.',
@@ -948,10 +952,19 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'UPL.NO_ROWS': 'No records received',
   'UPL.OLD_TEMPLATE':
     'This file is the earlier members template. Download the template again — it now has the admission form’s columns.',
+  'UPL.PERIOD_UNKNOWN': 'There is no period “{period}” in the bell schedule.',
   'UPL.ROW_CHANGED':
     'Row {row} can no longer be onboarded: {reason} Nothing was onboarded; upload the sheet again.',
+  'UPL.SECTION_REQUIRED': 'Name at least one section.',
+  'UPL.SECTION_SKIPPED':
+    'Not imported: another row of {section} has a problem, and a section’s week is imported whole.',
+  'UPL.SECTION_UNKNOWN': '{class} has no section “{section}”.',
   'UPL.STOP_UNKNOWN':
     'There is no pick-up point “{stop}”. Use a name from the school’s transport stops.',
+  'UPL.SUBJECT_UNKNOWN':
+    'There is no subject “{subject}”. Use a subject code or name from Classes & subjects.',
+  'UPL.TEACHER_AMBIGUOUS': '“{t}” matches more than one teacher. Use the employee ID instead.',
+  'UPL.TEACHER_UNKNOWN': 'No teacher has the employee ID or mobile number “{t}”.',
   'UPL.TOO_MANY_ROWS': 'Upload at most {max} rows at a time.',
   'UPL.WRONG_TEMPLATE':
     'This file is the {used} template. Upload it with the {used} upload, or download the {wanted} template.',

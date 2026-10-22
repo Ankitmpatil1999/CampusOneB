@@ -60,6 +60,7 @@ import { GrievancesService } from '../services/grievances.service';
 import { AccountingService } from '../services/accounting.service';
 import { CalendarService } from '../services/calendar.service';
 import { CurriculumService } from '../services/curriculum.service';
+import { TeachingUploadsService } from '../services/teaching-uploads.service';
 import { TeachingService } from '../services/teaching.service';
 import { EnrolmentsService } from '../services/enrolments.service';
 import { ExamsService } from '../services/exams.service';
@@ -723,6 +724,7 @@ export function buildApiServices(args: {
     calendar: new CalendarService({ db, ...(now ? { now } : {}) }),
     curriculum: new CurriculumService({ db, ...(now ? { now } : {}) }),
     teaching: new TeachingService({ db, ...(now ? { now } : {}) }),
+    teachingUploads: new TeachingUploadsService({ db, ...(now ? { now } : {}) }),
     enrolments,
     exams,
     classroom,

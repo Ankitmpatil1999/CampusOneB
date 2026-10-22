@@ -117,6 +117,7 @@ import type { AccountingService } from '../services/accounting.service';
 import type { CalendarService } from '../services/calendar.service';
 import type { CurriculumService } from '../services/curriculum.service';
 import type { TeachingService } from '../services/teaching.service';
+import type { TeachingUploadsService } from '../services/teaching-uploads.service';
 import type { EnrolmentsService } from '../services/enrolments.service';
 import type { ExamsService } from '../services/exams.service';
 import type { ClassroomService } from '../services/classroom.service';
@@ -205,6 +206,7 @@ export interface ApiServices {
   readonly calendar: CalendarService;
   readonly curriculum: CurriculumService;
   readonly teaching: TeachingService;
+  readonly teachingUploads: TeachingUploadsService;
   readonly enrolments: EnrolmentsService;
   readonly exams: ExamsService;
   readonly classroom: ClassroomService;
@@ -345,6 +347,7 @@ export function apiRouters(s: ApiServices): Router[] {
       calendar: s.calendar,
       curriculum: s.curriculum,
       teaching: s.teaching,
+      teachingUploads: s.teachingUploads,
       enrolments: s.enrolments,
       loggers: s.loggers,
     }),

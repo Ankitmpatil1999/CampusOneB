@@ -24,23 +24,53 @@ import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenera
 import type { Principal } from '../utils/principal';
 import { assertOpen, institutionOf, yearFor, yearView, type Year } from './academic-year';
 import { recordAudit } from './audit.service';
+import {
+  DAYS,
+  TEACHING_CATEGORIES,
+  classTeacherProblem,
+  isTeaching,
+  lessonProblem,
+  subjectNotMapped,
+  type LessonContext,
+} from './teaching-rules';
+
+export { DAYS };
 
 type Db = Kysely<Database> | Transaction<Database>;
-
-export const DAYS = [
-  { day: 1, label: 'Monday' },
-  { day: 2, label: 'Tuesday' },
-  { day: 3, label: 'Wednesday' },
-  { day: 4, label: 'Thursday' },
-  { day: 5, label: 'Friday' },
-  { day: 6, label: 'Saturday' },
-] as const;
-const TEACHING_CATEGORIES = ['TEACHER', 'PRINCIPAL'] as const;
 
 const nameOf = (first: string | null | undefined, last: string | null | undefined) =>
   [first, last].filter(Boolean).join(' ');
 const hm = (t: string) => t.slice(0, 5);
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
+
+/** The year's live class teachers, one per section; `lock` inside a write (the year is locked first). */
+export async function liveClassTeachers(db: Db, yearId: string, lock = false) {
+  const q = db
+    .selectFrom('teacher_assignments as ta')
+    .innerJoin('sections as s', 's.id', 'ta.section_id')
+    .innerJoin('classes as c', 'c.id', 's.class_id')
+    .innerJoin('member_profiles as m', 'm.id', 'ta.teacher_profile_id')
+    .select([
+      'ta.id',
+      'ta.section_id',
+      'ta.teacher_profile_id',
+      'c.name as class_name',
+      's.name as section_name',
+      'm.first_name',
+      'm.last_name',
+    ])
+    .where('ta.year_id', '=', yearId)
+    .where('ta.kind', '=', 'CLASS_TEACHER')
+    .where('ta.ended_at', 'is', null);
+  const rows = await (lock ? q.forUpdate('ta') : q).execute();
+  return rows.map((r) => ({
+    assignmentId: String(r.id),
+    sectionId: String(r.section_id),
+    sectionLabel: `${r.class_name} ${r.section_name}`,
+    teacherId: String(r.teacher_profile_id),
+    teacherName: nameOf(r.first_name, r.last_name),
+  }));
+}
 
 export class TeachingService {
   constructor(
@@ -64,11 +94,7 @@ export class TeachingService {
       .where('m.public_id', '=', uuidToBin(id))
       .where('m.institution_id', '=', institutionId)
       .executeTakeFirst();
-    if (
-      !t ||
-      t.status !== 'ACTIVE' ||
-      !(TEACHING_CATEGORIES as readonly string[]).includes(t.category)
-    ) {
+    if (!t || !isTeaching(t)) {
       throw new ValidationError([{ field: 'teacherId', code: 'ACA.NOT_A_TEACHER' }]);
     }
     return { id: String(t.id), name: nameOf(t.first_name, t.last_name) };
@@ -299,53 +325,15 @@ export class TeachingService {
           .execute();
       if (input.kind === 'CLASS_TEACHER') {
         const [s] = await this.sectionsOf(trx, inst.id, (input.sectionIds ?? []).slice(0, 1));
-        const cur = await trx
-          .selectFrom('teacher_assignments as ta')
-          .innerJoin('member_profiles as m', 'm.id', 'ta.teacher_profile_id')
-          .select(['ta.id', 'm.first_name', 'm.last_name'])
-          .where('ta.year_id', '=', year.id)
-          .where('ta.kind', '=', 'CLASS_TEACHER')
-          .where('ta.section_id', '=', s!.id)
-          .where('ta.ended_at', 'is', null)
-          .forUpdate()
-          .executeTakeFirst();
-        if (cur && !input.replace) {
-          throw new CustomAPIError(409, 'ACA.CLASS_TEACHER_TAKEN', {
-            params: {
-              section: s!.label,
-              year: year.label,
-              name: nameOf(cur.first_name, cur.last_name),
-            },
-          });
-        }
-        // One class per class teacher in a year (client 2026-10-14): one already leading another
-        // class-section is refused, also when replacing someone.
-        const theirs = await trx
-          .selectFrom('teacher_assignments as ta')
-          .innerJoin('sections as s', 's.id', 'ta.section_id')
-          .innerJoin('classes as c', 'c.id', 's.class_id')
-          .select(['ta.id', 'c.name as class_name', 's.name as section_name'])
-          .where('ta.year_id', '=', year.id)
-          .where('ta.kind', '=', 'CLASS_TEACHER')
-          .where('ta.teacher_profile_id', '=', t.id)
-          .where('ta.section_id', '<>', s!.id)
-          .where('ta.ended_at', 'is', null)
-          .forUpdate()
-          .executeTakeFirst();
-        if (theirs) {
-          throw new CustomAPIError(409, 'ACA.CLASS_TEACHER_ONE_CLASS', {
-            params: {
-              name: t.name,
-              section: `${theirs.class_name} ${theirs.section_name}`,
-              year: year.label,
-            },
-          });
-        }
+        const live = await liveClassTeachers(trx, year.id, true);
+        const problem = classTeacherProblem(live, s!, t, year.label, !!input.replace);
+        if (problem) throw new CustomAPIError(409, problem.code, { params: problem.params });
+        const cur = live.find((a) => a.sectionId === s!.id);
         if (cur) {
           await trx
             .updateTable('teacher_assignments')
             .set({ ended_at: at, ended_by: by })
-            .where('id', '=', cur.id)
+            .where('id', '=', cur.assignmentId)
             .execute();
         }
         await insert({ classId: s!.classId, sectionId: s!.id, subjectId: null });
@@ -361,9 +349,8 @@ export class TeachingService {
             .where('subject_id', '=', sub.id)
             .executeTakeFirst();
           if (!mapped) {
-            throw new CustomAPIError(422, 'ACA.SUBJECT_NOT_MAPPED', {
-              params: { subject: sub.name, class: s.className },
-            });
+            const problem = subjectNotMapped(sub.name, s.className);
+            throw new CustomAPIError(422, problem.code, { params: problem.params });
           }
           const exists = await trx
             .selectFrom('teacher_assignments')
@@ -720,47 +707,43 @@ export class TeachingService {
         .where('ta.kind', '=', 'SUBJECT_TEACHER')
         .where('ta.ended_at', 'is', null)
         .execute();
+      const ctx: LessonContext = {
+        section: s,
+        periods: new Map(periods.map((r) => [String(r.id), { isBreak: !!Number(r.is_break) }])),
+        subjects: new Map(subjects.map((r) => [String(r.id), { name: r.name }])),
+        assigned: new Set(assigned.map((a) => `${a.subject_id}:${a.teacher_profile_id}`)),
+      };
+      const byPublicId = <T extends { public_id: Buffer }>(list: readonly T[], id: string) =>
+        isUuid(id) ? list.find((r) => binToUuid(r.public_id) === id.toLowerCase()) : undefined;
       const seen = new Set<string>();
       const rows = input.slots.map((x, i) => {
-        const field = `slots.${i}`;
-        if (!DAYS.some((d) => d.day === x.day))
-          throw new ValidationError([{ field, code: 'VALIDATION.FORMAT' }]);
-        const pd = periods.find(
-          (r) => isUuid(x.periodId) && binToUuid(r.public_id) === x.periodId.toLowerCase(),
+        const pd = byPublicId(periods, x.periodId);
+        const sub = byPublicId(subjects, x.subjectId);
+        const t = byPublicId(assigned, x.teacherId);
+        const problem = lessonProblem(
+          ctx,
+          {
+            day: x.day,
+            periodId: pd ? String(pd.id) : null,
+            subjectId: sub ? String(sub.id) : null,
+            teacherId: t ? String(t.teacher_profile_id) : null,
+          },
+          seen,
         );
-        if (!pd) throw new ValidationError([{ field, code: 'VALIDATION.FORMAT' }]);
-        if (Number(pd.is_break)) throw new ValidationError([{ field, code: 'ACA.BREAK_PERIOD' }]);
-        const key = `${x.day}:${pd.id}`;
-        if (seen.has(key)) throw new ValidationError([{ field, code: 'ACA.ROW_REPEATED' }]);
-        seen.add(key);
-        const sub = subjects.find(
-          (r) => isUuid(x.subjectId) && binToUuid(r.public_id) === x.subjectId.toLowerCase(),
-        );
-        if (!sub) {
-          throw new ValidationError([
-            { field, code: 'ACA.SUBJECT_NOT_MAPPED', params: { subject: '', class: s.className } },
-          ]);
-        }
-        const t = assigned.find(
-          (a) =>
-            String(a.subject_id) === String(sub.id) &&
-            isUuid(x.teacherId) &&
-            binToUuid(a.public_id) === x.teacherId.toLowerCase(),
-        );
-        if (!t) {
+        if (problem) {
           throw new ValidationError([
             {
-              field,
-              code: 'ACA.TEACHER_NOT_ASSIGNED',
-              params: { subject: sub.name, section: s.label },
+              field: `slots.${i}`,
+              code: problem.code,
+              ...(problem.params ? { params: problem.params } : {}),
             },
           ]);
         }
         return {
           day: x.day,
-          periodId: String(pd.id),
-          subjectId: String(sub.id),
-          teacherId: String(t.teacher_profile_id),
+          periodId: String(pd!.id),
+          subjectId: String(sub!.id),
+          teacherId: String(t!.teacher_profile_id),
         };
       });
       // A teacher in two places in one period of the year (RNG-ACA-443).

@@ -101,6 +101,8 @@ export function createApp(deps: AppDependencies): Express {
       '/api/v1/ops/quiz/staging-uploads',
       '/api/v1/console/calendar-events/uploads',
       '/api/v1/console/classes/uploads',
+      '/api/v1/console/teacher-assignments/uploads',
+      '/api/v1/console/timetables/uploads',
       '/api/v1/console/applications',
       '/api/v1/public/admissions/applications/',
     ],

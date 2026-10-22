@@ -10,6 +10,7 @@ import type { Database } from '../models/ringpe_models';
 import type { CalendarService } from '../services/calendar.service';
 import type { CurriculumService } from '../services/curriculum.service';
 import type { EnrolmentsService } from '../services/enrolments.service';
+import type { TeachingUploadsService } from '../services/teaching-uploads.service';
 import type { TeachingService } from '../services/teaching.service';
 import { AuthenticationError, ValidationError } from '../utils/CustomAPIError';
 import { expectedVersion, setEtag } from '../utils/etag';
@@ -132,6 +133,8 @@ const assignmentsQuery = yearQuery.extend({
   kind: z.enum(['CLASS_TEACHER', 'SUBJECT_TEACHER', 'COORDINATOR']).optional(),
 });
 const clashesQuery = yearQuery.extend({ teacherId: uuid.optional() });
+const sheetKind = z.enum(['CLASS_TEACHER', 'SUBJECT_TEACHER'], { message: 'VALIDATION.FORMAT' });
+const sheetQuery = yearQuery.extend({ kind: sheetKind });
 const enrolmentsQuery = yearQuery.extend({
   classId: uuid.optional(),
   sectionId: uuid.optional(),
@@ -330,6 +333,49 @@ doc({
   responses: { 200: { description: 'Clashes' } },
 });
 // --- enrolments, corrections and roll-over ----------------------------------------------------------------
+// --- the assignment and timetable sheets (client 2026-10-21) ----------------------------------------------
+doc({
+  id: 'ACA-083',
+  method: 'get',
+  path: '/api/v1/console/teacher-assignments/uploads/template',
+  summary:
+    'The class-teacher or subject-teacher sheet (CSV) for the year, filled with its current assignments; a teacher is named by employee ID, else mobile number',
+  auth: 'academics.edit',
+  query: sheetQuery,
+  responses: { 200: { description: 'Template', contentType: 'text/csv' } },
+});
+doc({
+  id: 'ACA-084',
+  method: 'post',
+  path: '/api/v1/console/teacher-assignments/uploads',
+  summary:
+    'Upload class teachers (CSV: class, section, teacher) or subject teachers (CSV: class, sections, subject, teacher) for the year with the screen’s rules: commit=false checks every row, commit=true saves the accepted rows; replace=true replaces class teachers already assigned (kept as history); never removes an assignment',
+  auth: 'academics.edit',
+  requestContentType: 'multipart/form-data',
+  idempotent: 'required',
+  responses: { 200: { description: 'Row report' } },
+});
+doc({
+  id: 'ACA-085',
+  method: 'get',
+  path: '/api/v1/console/timetables/uploads/template',
+  summary:
+    'The timetable sheet (CSV) for the year: every section, day and teaching period, filled with the current lessons',
+  auth: 'academics.edit',
+  query: yearQuery,
+  responses: { 200: { description: 'Template', contentType: 'text/csv' } },
+});
+doc({
+  id: 'ACA-086',
+  method: 'post',
+  path: '/api/v1/console/timetables/uploads',
+  summary:
+    'Upload timetables (CSV: class, section, day, period, subject, teacher) for the year: each section in the file gets exactly its week (no subject and no teacher = a free period), a section with any refused row is skipped whole; commit=false checks, commit=true saves',
+  auth: 'academics.edit',
+  requestContentType: 'multipart/form-data',
+  idempotent: 'required',
+  responses: { 200: { description: 'Row report' } },
+});
 doc({
   id: 'ACA-027',
   method: 'get',
@@ -410,6 +456,7 @@ export function structureRoutes(deps: {
   calendar: CalendarService;
   curriculum: CurriculumService;
   teaching: TeachingService;
+  teachingUploads: TeachingUploadsService;
   enrolments: EnrolmentsService;
   loggers: Loggers;
 }): Router {
@@ -444,6 +491,17 @@ export function structureRoutes(deps: {
       const body = (req.body ?? {}) as Record<string, unknown>;
       res.json(await fn(req, req.file.buffer.toString('utf8'), body['commit'] === 'true'));
     });
+  const csv = (res: Parameters<RequestHandler>[1], out: { fileName: string; csv: string }) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
+    res.send(String.fromCharCode(0xfeff) + out.csv);
+  };
+  /** The year a multipart form names (an empty field is the current year). */
+  const formYear = (req: Request) => {
+    const v = ((req.body ?? {}) as Record<string, unknown>)['yearId'];
+    return typeof v === 'string' && v ? v : undefined;
+  };
 
   // calendar
   router.get(
@@ -642,6 +700,62 @@ export function structureRoutes(deps: {
     wrap(async (req, res) => {
       res.json(await deps.teaching.withdraw(principal(req), param(req, 'assignmentId')));
     }),
+  );
+  router.get(
+    '/console/teacher-assignments/uploads/template',
+    ...console,
+    edit,
+    wrap(async (req, res) => {
+      csv(
+        res,
+        await deps.teachingUploads.assignmentsTemplate(principal(req), sheetQuery.parse(req.query)),
+      );
+    }),
+  );
+  router.post(
+    '/console/teacher-assignments/uploads',
+    ...console,
+    edit,
+    once,
+    singleFileUpload,
+    uploadErrors,
+    upload((req, content, commit) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const { kind } = z.object({ kind: sheetKind }).parse(body);
+      return deps.teachingUploads.uploadAssignments(principal(req), {
+        kind,
+        yearId: formYear(req),
+        replace: body['replace'] === 'true',
+        content,
+        commit,
+      });
+    }),
+  );
+  router.get(
+    '/console/timetables/uploads/template',
+    ...console,
+    edit,
+    wrap(async (req, res) => {
+      csv(
+        res,
+        await deps.teachingUploads.timetableTemplate(principal(req), yearQuery.parse(req.query)),
+      );
+    }),
+  );
+  router.post(
+    '/console/timetables/uploads',
+    ...console,
+    edit,
+    once,
+    singleFileUpload,
+    uploadErrors,
+    upload((req, content, commit) =>
+      deps.teachingUploads.uploadTimetable(principal(req), {
+        yearId: formYear(req),
+        content,
+        commit,
+      }),
+    ),
   );
   router.get(
     '/console/timetables/clashes',
