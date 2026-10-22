@@ -1545,7 +1545,7 @@ paths:
   /api/v1/console/applications/{applicationId}/admission-fee/online:
     post:
       operationId: ADM-023
-      summary: A payment link for the admission fee (valid adm.payLink.days) to send to the family
+      summary: "A payment link for the admission fee (valid adm.payLink.days, one day), sent at once (client 2026-10-22): by SMS and e-mail to the parents on the application — and the student once a member — through the school’s channels, and in the app to those with a RingPe account at the school; `sent` says where (masked)"
       tags:
         - Admissions
       x-ringpe-auth: admfees.collect
@@ -1573,6 +1573,79 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/console/applications/{applicationId}/admission-fee/orders:
+    post:
+      operationId: ADM-037
+      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee)"
+      tags:
+        - Admissions
+      x-ringpe-auth: admfees.collect
+      responses:
+        "201":
+          description: Order, as ADM-010
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionDeskOrder"
+  /api/v1/console/applications/{applicationId}/admission-fee/orders/{paymentId}/verify:
+    post:
+      operationId: ADM-038
+      summary: The desk checkout’s answer, verified on the server as ADM-011 (signature, then the payment as the gateway holds it); the fee is paid with its receipt
+      tags:
+        - Admissions
+      x-ringpe-auth: admfees.collect
+      responses:
+        "200":
+          description: Paid, as ADM-011
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionPaymentVerify"
   /api/v1/console/applications/{applicationId}/approval:
     post:
       operationId: ADM-018
@@ -4755,10 +4828,85 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/console/fee-records/{recordId}/orders:
+    post:
+      operationId: FEE-052
+      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the instalment’s outstanding amount, whose checkout opens on the console — no link is created or sent; kept as a DESK payment request so the gateway’s webhook settles it too"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.collect
+      responses:
+        "201":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeDeskOrder"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+  /api/v1/console/fee-records/{recordId}/orders/{requestId}/verify:
+    post:
+      operationId: FEE-053
+      summary: The desk checkout’s answer, verified as FEE-051 (signature, then the payment as the gateway holds it); the instalment is collected once, here or by the webhook, with a receipt
+      tags:
+        - Fees
+      x-ringpe-auth: fees.collect
+      responses:
+        "200":
+          description: Collected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeDeskCollected"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeePaymentVerifyInput"
   /api/v1/console/fee-records/{recordId}/payment-requests:
     post:
       operationId: FEE-048
-      summary: "A payment link (channel LINK: sent by SMS and e-mail through the school’s channels to the student’s registered mobile and e-mail, a parent’s for a child without their own) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days"
+      summary: "A payment link (channel LINK: sent to the student and every parent — by SMS and e-mail through the school’s channels, and in the app to those with a RingPe account; client 2026-10-22) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days (one day)"
       tags:
         - Fees
       x-ringpe-auth: fees.collect
@@ -22311,6 +22459,17 @@ components:
         - receivedAt
         - paidBy
       additionalProperties: false
+    AdmissionDeskOrder:
+      type: object
+      properties:
+        feeType:
+          type: string
+          enum:
+            - APPLICATION
+            - ADMISSION
+      required:
+        - feeType
+      additionalProperties: false
     AdmissionLink:
       type: object
       properties:
@@ -31311,6 +31470,118 @@ components:
       required:
         - text
       additionalProperties: false
+    FeeDeskCollected:
+      type: object
+      properties:
+        receiptNo:
+          type:
+            - string
+            - "null"
+        transactionId:
+          type: string
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        mode:
+          type: string
+          const: ONLINE
+        recordId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        status:
+          type: string
+          const: PAID
+      required:
+        - receiptNo
+        - transactionId
+        - amount
+        - mode
+        - recordId
+        - status
+      additionalProperties: false
+    FeeDeskOrder:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        gatewayOrder:
+          type: object
+          properties:
+            orderId:
+              type: string
+            amount:
+              type: object
+              properties:
+                amount:
+                  type: string
+                currency:
+                  type: string
+                  const: INR
+              required:
+                - amount
+                - currency
+              additionalProperties: false
+            mode:
+              type: string
+              enum:
+                - test
+                - live
+            test:
+              type: object
+              properties:
+                paymentId:
+                  type: string
+                signature:
+                  type: string
+              required:
+                - paymentId
+                - signature
+              additionalProperties: false
+            checkout:
+              type: object
+              properties:
+                keyId:
+                  type: string
+                name:
+                  type: string
+              required:
+                - keyId
+                - name
+              additionalProperties: false
+          required:
+            - orderId
+            - amount
+            - mode
+          additionalProperties: false
+      required:
+        - requestId
+        - amount
+        - gatewayOrder
+      additionalProperties: false
     FeeHead:
       type: object
       properties:
@@ -31523,20 +31794,26 @@ components:
         qrSvg:
           type: string
         sentTo:
-          description: "Where the link was sent (masked); null: not sent that way"
+          description: "Where the link was sent (masked); an empty list: not sent that way"
           type: object
           properties:
-            mobile:
-              type:
-                - string
-                - "null"
-            email:
-              type:
-                - string
-                - "null"
+            mobiles:
+              type: array
+              items:
+                type: string
+            emails:
+              type: array
+              items:
+                type: string
+            inApp:
+              type: integer
+              minimum: -9007199254740991
+              maximum: 9007199254740991
+              description: RingPe accounts notified in the app
           required:
-            - mobile
-            - email
+            - mobiles
+            - emails
+            - inApp
           additionalProperties: false
       required:
         - id

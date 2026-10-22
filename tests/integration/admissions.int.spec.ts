@@ -1438,8 +1438,26 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     );
 
     // The admission fee before approval, by payment link; then nothing more to collect.
+    const smsBefore = f.h.sms.sent.length;
     const link2 = await post(`/api/v1/console/applications/${id}/admission-fee/online`);
     expect(link2.status, JSON.stringify(link2.body)).toBe(201);
+    // Sent at once to both parents (client 2026-10-22), and valid for a day.
+    expect(link2.body.sent).toEqual({
+      sms: ['••••••1122', '••••••1133'],
+      email: ['m•••@example.in'],
+      inApp: 0,
+    });
+    const linkSms = f.h.sms.sent.slice(smsBefore).filter((m) => m.purpose === 'admission.payLink');
+    expect(linkSms).toHaveLength(2);
+    expect(linkSms.some((m) => m.to.endsWith('9845001122'))).toBe(true);
+    expect(linkSms.some((m) => m.to.endsWith('9845001133'))).toBe(true);
+    expect(linkSms[0]!.text).toContain(link2.body.paymentLink);
+    expect(f.h.email.sent.findLast((m) => m.purpose === 'admission.payLink')?.to).toBe(
+      'mohan@example.in',
+    );
+    const linkHours = (Date.parse(link2.body.expiresAt) - Date.now()) / 3_600_000;
+    expect(linkHours).toBeGreaterThan(23);
+    expect(linkHours).toBeLessThanOrEqual(24);
     const payToken = new URL(link2.body.paymentLink).searchParams.get('token')!;
     const summary = await pub('get', `/api/v1/public/admissions/applications/${id}`, payToken);
     expect(Object.keys(summary.body)).not.toContain('parents');
@@ -1740,7 +1758,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(detail.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
   });
 
-  it('keeps each person’s numbers and cards, asks a guardian who is the contact and a hostel student’s local guardian for theirs; the application fee is never left for later by the family, and the desk can still take the fees in cash (client 2026-10-13)', async () => {
+  it('keeps each person’s numbers and cards, asks a guardian who is the contact and a hostel student’s local guardian for theirs; the application fee is never left for later by the family, and the desk can still take the fees — Pay now or cash (client 2026-10-13, 2026-10-22)', async () => {
     const created = await post(
       `/api/v1/public/admissions/${link.token}/applications`,
       {
@@ -1873,20 +1891,51 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(alone.body.code).toBe('ADM.APPLICATION_FEE_FIRST');
     const payLink = await post(`/api/v1/console/applications/${app.id}/admission-fee/online`);
     expect(payLink.body.code).toBe('ADM.APPLICATION_FEE_FIRST');
-    // The family paid at the school's desk instead: Accounts records both fees in cash, each with
-    // its receipt — the application fee submits the declared form.
-    for (const feeType of ['APPLICATION', 'ADMISSION']) {
-      const cash = await post(`/api/v1/console/applications/${app.id}/admission-fee/cash`, {
-        feeType,
-        receivedAt: today,
-        paidBy: 'Suresh Bhat',
-      });
-      expect(cash.status, JSON.stringify(cash.body)).toBe(201);
-      expect(cash.body.receipt.receiptNo).toMatch(/\/R\/\d{4}\/\d{6}$/);
-    }
+    // Nor with Pay now at the desk (client 2026-10-22).
+    const deskOrder = (feeType: string) =>
+      post(`/api/v1/console/applications/${app.id}/admission-fee/orders`, { feeType });
+    expect((await deskOrder('ADMISSION')).body.code).toBe('ADM.APPLICATION_FEE_FIRST');
+    // The family paid at the school's desk instead: the application fee with Pay now — the
+    // gateway's checkout on the console, no link — which submits the declared form …
+    const smsBefore = f.h.sms.sent.length;
+    const order = await deskOrder('APPLICATION');
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    expect(order.body).toMatchObject({
+      feeType: 'APPLICATION',
+      amount: inr('500.00'),
+      gatewayOrder: { mode: 'test' },
+    });
+    expect(f.h.sms.sent.length).toBe(smsBefore);
+    const t = order.body.gatewayOrder.test as { paymentId: string; signature: string };
+    const verify = (signature: string) =>
+      post(
+        `/api/v1/console/applications/${app.id}/admission-fee/orders/${order.body.paymentId}/verify`,
+        { gatewayPaymentId: t.paymentId, signature },
+      );
+    expect((await verify('bad')).body.code).toBe('ADM.PAYMENT_NOT_VERIFIED');
+    const fresh = await deskOrder('APPLICATION');
+    const t2 = fresh.body.gatewayOrder.test as { paymentId: string; signature: string };
+    const paid = await post(
+      `/api/v1/console/applications/${app.id}/admission-fee/orders/${fresh.body.paymentId}/verify`,
+      { gatewayPaymentId: t2.paymentId, signature: t2.signature },
+    );
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect(paid.body).toMatchObject({
+      status: 'PAID',
+      transactionId: t2.paymentId,
+      applicationStatus: 'SUBMITTED',
+    });
+    // … and the admission fee in cash, with its receipt.
+    const cash = await post(`/api/v1/console/applications/${app.id}/admission-fee/cash`, {
+      feeType: 'ADMISSION',
+      receivedAt: today,
+      paidBy: 'Suresh Bhat',
+    });
+    expect(cash.status, JSON.stringify(cash.body)).toBe(201);
+    expect(cash.body.receipt.receiptNo).toMatch(/\/R\/\d{4}\/\d{6}$/);
     const after = (await detail()).body;
     expect(after).toMatchObject({ status: 'SUBMITTED', paymentStatus: 'PAID' });
-    expect(after.fees.map((x: { mode: string }) => x.mode)).toEqual(['CASH', 'CASH']);
+    expect(after.fees.map((x: { mode: string }) => x.mode)).toEqual(['ONLINE', 'CASH']);
   });
 
   // 2026-10-14: "Mobile Number, Aadhar Number, PAN should never be same for Father, Mother and

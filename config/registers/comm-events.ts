@@ -60,9 +60,14 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
     'A student’s fee for the year is set: the student and parents',
     ['NTF.FEE_ASSIGNED'],
   ),
-  ev('FEE_DUE', 'Fee due reminder', 'An unpaid instalment is due soon: the student and parents', [
-    'NTF.FEE_DUE',
-  ]),
+  // The payment link of "Collect fees · Send link" (client 2026-10-22) is a call to pay a fee due: it
+  // goes by SMS and e-mail from the desk's action itself; the event switches its phone alert.
+  ev(
+    'FEE_DUE',
+    'Fee due reminder',
+    'A fee is due — a reminder before the due date, or a payment link from the school: the student and parents',
+    ['NTF.FEE_DUE', 'NTF.FEE_PAY_LINK', 'NTF.ADMISSION_PAY_LINK'],
+  ),
   ev('ATTENDANCE', 'Absent', 'A student is marked absent: the student and parents', ['NTF.ABSENT']),
   ev(
     'HOMEWORK',

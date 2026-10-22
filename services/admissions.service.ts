@@ -68,7 +68,9 @@ import { classOrder } from './admission-links.service';
 import { recordAudit } from './audit.service';
 import { admissionFormPdf } from './admission-form-pdf';
 import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
+import { familyAccountsByStudent } from './fee-notices.service';
 import type { FeePaymentsService } from './fee-payments.service';
+import { notify } from './notifications.service';
 import { activeFields, parseValues } from './custom-values.service';
 import { logoFileOf } from './institution-logo';
 import type { FileService } from './file.service';
@@ -262,6 +264,12 @@ const maskName = (n: string) =>
         .join(' ')
     : 'Name not entered yet';
 const maskMobile = (m: string | null) => (m ? `+91 ••••• •••${m.slice(-2)}` : null);
+/** Where a payment link went, as the fee collection shows it (fee-payments.service.ts). */
+const maskSentMobile = (m: string) => `••••••${m.slice(-4)}`;
+const maskSentEmail = (e: string) => {
+  const [user = '', domain = ''] = e.split('@');
+  return `${user.slice(0, 1)}•••@${domain}`;
+};
 const splitName = (n: string) => {
   const w = n.trim().split(/\s+/);
   return w.length > 1
@@ -2029,12 +2037,31 @@ export class AdmissionsService {
     // A draft still owes its application fee; once submitted, what is left is the admission fee.
     const feeType: AdmissionFeeType =
       a.fee ?? input.feeType ?? (a.row.status === 'DRAFT' ? 'APPLICATION' : 'ADMISSION');
+    return this.openOrder(a, feeType, !!input.withAdmission && !a.fee);
+  }
+
+  /**
+   * ADM-037, Pay now at the accounts desk (client 2026-10-22): an order for the fee whose checkout
+   * opens on the console — no link is created or sent. Otherwise as the family's own payment.
+   */
+  async deskOrder(p: Principal, id: string, feeType: AdmissionFeeType) {
+    const inst = await this.consoleInst(p);
+    const row = await this.lockless(inst.id, id);
+    return this.openOrder({ inst, row }, feeType, false);
+  }
+
+  /** An order with the school's gateway for the fee (and the admission fee with it, when chosen). */
+  private async openOrder(
+    a: Pick<Awaited<ReturnType<AdmissionsService['access']>>, 'inst' | 'row'>,
+    feeType: AdmissionFeeType,
+    withAdmission: boolean,
+  ) {
     const amount = await this.payable(a.row, feeType);
     if (feeType === 'ADMISSION') await this.assertApplicationFeeSettled(a.row.id);
     // The family chose on the form to pay the admission fee now (client 2026-10-09): it joins the
     // application fee in one order, unless it is paid already or the year has none.
     let admission = 0;
-    if (input.withAdmission && feeType === 'APPLICATION' && !a.fee) {
+    if (withAdmission && feeType === 'APPLICATION') {
       const paid = await this.deps.db
         .selectFrom('admission_payments')
         .select('id')
@@ -2104,7 +2131,28 @@ export class AdmissionsService {
     paymentId: string,
     input: { gatewayPaymentId: string; signature: string },
   ) {
-    const a = await this.access(id, token, 'pay');
+    return this.settleOrder(await this.access(id, token, 'pay'), id, paymentId, input);
+  }
+
+  /** ADM-038: the desk checkout's answer, verified as the family's own (ADM-011). */
+  async deskVerify(
+    p: Principal,
+    id: string,
+    paymentId: string,
+    input: { gatewayPaymentId: string; signature: string },
+  ) {
+    const inst = await this.consoleInst(p);
+    const row = await this.lockless(inst.id, id);
+    return this.settleOrder({ inst, row }, id, paymentId, input);
+  }
+
+  /** The checkout's answer for an order: its signature, then the payment as the gateway has it. */
+  private async settleOrder(
+    a: Pick<Awaited<ReturnType<AdmissionsService['access']>>, 'inst' | 'row'>,
+    id: string,
+    paymentId: string,
+    input: { gatewayPaymentId: string; signature: string },
+  ) {
     if (!isUuid(paymentId)) throw new NotFoundError();
     const f = await this.deps.db
       .selectFrom('admission_payments')
@@ -3014,7 +3062,8 @@ export class AdmissionsService {
       if (!PATTERNS.mobile.test(mobile)) err('Parent mobile', 'ADM.MOBILE_INVALID');
       if (!relation) err('Parent relation', 'VALIDATION.FORMAT');
       const parentEmail = cell('Parent e-mail').toLowerCase();
-      if (parentEmail && !PATTERNS.email.test(parentEmail)) err('Parent e-mail', 'VALIDATION.EMAIL');
+      if (parentEmail && !PATTERNS.email.test(parentEmail))
+        err('Parent e-mail', 'VALIDATION.EMAIL');
       else if (!parentEmail && emailRequired) err('Parent e-mail', 'VALIDATION.REQUIRED');
       if (!studentType) err('Class', 'IDN.USER_TYPE_UNKNOWN', { t: 'Student' });
       const name = fullName(first, last) || '—';
@@ -3605,7 +3654,10 @@ export class AdmissionsService {
     return { paymentId, confirmedAt: at.toISOString(), application: await this.detail(p, appId) };
   }
 
-  /** A payment link for the admission fee (19.8): the family pays online without signing in. */
+  /**
+   * A payment link for the admission fee (19.8): the family pays online without signing in. It is
+   * sent to them at once (client 2026-10-22) and works for adm.payLink.days (one day).
+   */
   async onlineLink(p: Principal, id: string) {
     const i = await this.consoleInst(p);
     const r = await this.lockless(i.id, id);
@@ -3622,12 +3674,114 @@ export class AdmissionsService {
       { inst: binToUuid(i.public_id), app: id.toLowerCase(), fee: 'ADMISSION' },
       days * 86_400,
     );
+    const paymentLink = `${this.deps.webUrl}/admissions/pay/${id.toLowerCase()}?token=${encodeURIComponent(t.token)}`;
     return {
-      paymentLink: `${this.deps.webUrl}/admissions/pay/${id.toLowerCase()}?token=${encodeURIComponent(t.token)}`,
+      paymentLink,
       amount: toMoneyDto(amount),
       expiresAt: t.expiresAt.toISOString(),
       sendTo: { mobile: r.primary_mobile, email: r.primary_email },
+      sent: await this.sendPayLink(i, r, id, paymentLink, amount, t.expiresAt),
     };
+  }
+
+  /**
+   * The payment link to the family (client 2026-10-22): by SMS and e-mail to the parents on the
+   * application — and the student, once a member — through the school's channels, and in the app to
+   * those of them with a RingPe account at the school. Best effort: the link is shown either way and
+   * the communication log records each send. Where it went, masked.
+   */
+  private async sendPayLink(
+    inst: { id: string; name: string },
+    r: Awaited<ReturnType<AdmissionsService['lockless']>>,
+    id: string,
+    link: string,
+    amountPaise: number,
+    expiresAt: Date,
+  ) {
+    const db = this.deps.db;
+    const parents = this.dataOf(r).parents;
+    const student = r.member_profile_id
+      ? await db
+          .selectFrom('member_profiles')
+          .select(['contact_mobile', 'contact_email'])
+          .where('id', '=', String(r.member_profile_id))
+          .executeTakeFirst()
+      : undefined;
+    const distinct = (v: (string | null | undefined)[]) => [
+      ...new Set(v.map((x) => x?.trim()).filter((x): x is string => !!x)),
+    ];
+    const people = [parents?.father, parents?.mother, parents?.guardian];
+    const mobiles = distinct([
+      student?.contact_mobile,
+      r.primary_mobile,
+      ...people.map((x) => x?.mobile),
+    ]);
+    const emails = distinct(
+      [student?.contact_email, r.primary_email, ...people.map((x) => x?.email)].map((e) =>
+        e?.toLowerCase(),
+      ),
+    );
+    // In the app: the student and their parents once members, and any parent whose mobile is a
+    // RingPe account at the school already (a brother or sister studies there).
+    const accounts = new Set<string>(
+      r.member_profile_id
+        ? ((await familyAccountsByStudent(db, [String(r.member_profile_id)])).get(
+            String(r.member_profile_id),
+          ) ?? [])
+        : [],
+    );
+    const indian = mobiles.filter((m) => PATTERNS.mobile.test(m));
+    if (indian.length) {
+      const known = await db
+        .selectFrom('platform_accounts as pa')
+        .innerJoin('member_profiles as m', 'm.account_id', 'pa.id')
+        .select('pa.id')
+        .where('pa.mobile', 'in', indian)
+        .where('m.institution_id', '=', inst.id)
+        .where('m.status', '=', 'ACTIVE')
+        .execute();
+      for (const k of known) accounts.add(String(k.id));
+    }
+    const channels = await this.familyChannels(inst.id);
+    const sms = channels.sms && this.deps.sms ? mobiles : [];
+    const email = channels.email && this.deps.email ? emails : [];
+    const child = fullName(r.first_name, r.last_name) || 'your child';
+    const amount = formatInr(amountPaise);
+    const text = `${inst.name}: please pay the admission fee of ${amount} for ${child} (application ${r.application_no}) here: ${link} (valid until ${formatDate(istBusinessDate(expiresAt))}).`;
+    const log = {
+      institutionId: inst.id,
+      kind: 'TRANSACTIONAL' as const,
+      subject: 'Admission fee payment',
+      refType: 'admission_application',
+      refId: id.toLowerCase(),
+    };
+    await Promise.allSettled([
+      ...sms.map((to) => this.deps.sms!.send({ to, purpose: 'admission.payLink', text, log })),
+      ...email.map((to) => this.deps.email!.send({ to, purpose: 'admission.payLink', text, log })),
+    ]);
+    let inApp = 0;
+    if (accounts.size) {
+      try {
+        await notify(
+          db,
+          {
+            institutionId: inst.id,
+            accountIds: [...accounts],
+            surface: 'MEMBER',
+            category: 'PAYMENT',
+            titleKey: 'NTF.ADMISSION_PAY_LINK',
+            params: { amount, name: child },
+            body: text,
+            email: false,
+          },
+          this.now(),
+        );
+        inApp = accounts.size;
+      } catch {
+        // As the SMS and the e-mail: the link is shown and can be shared by hand.
+      }
+    }
+    return { sms: sms.map(maskSentMobile), email: email.map(maskSentEmail), inApp };
   }
 
   async receiptPdf(p: Principal, paymentId: string) {

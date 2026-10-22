@@ -228,13 +228,16 @@ export interface FeeCollectionsTable {
 export type FeeCollectionMode = 'WALLET' | 'CASH' | 'ONLINE';
 export type FeePaymentRequestStatus = 'OPEN' | 'PAID' | 'CANCELLED';
 
-/** A payment link or QR code for one instalment (migration 0075; client 2026-10-19). */
+/**
+ * A payment link or QR code for one instalment (migration 0075; client 2026-10-19), or an order paid
+ * at the accounts desk with no link (DESK, migration 0083; client 2026-10-22).
+ */
 export interface FeePaymentRequestsTable {
   id: Generated<string>;
   public_id: Buffer;
   institution_id: Ref;
   record_id: Ref;
-  channel: 'LINK' | 'QR';
+  channel: 'LINK' | 'QR' | 'DESK';
   amount_paise: Paise;
   status: ColumnType<
     FeePaymentRequestStatus,

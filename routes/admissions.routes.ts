@@ -13,6 +13,7 @@ import {
   approvalSchema,
   cashSchema,
   consoleApplicationSchema,
+  deskOrderSchema,
   feePaymentStartSchema,
   feePaymentVerifySchema,
   linkEmailSchema,
@@ -553,10 +554,32 @@ doc({
   id: 'ADM-023',
   method: 'post',
   path: '/api/v1/console/applications/{applicationId}/admission-fee/online',
-  summary: 'A payment link for the admission fee (valid adm.payLink.days) to send to the family',
+  summary:
+    'A payment link for the admission fee (valid adm.payLink.days, one day), sent at once (client 2026-10-22): by SMS and e-mail to the parents on the application — and the student once a member — through the school’s channels, and in the app to those with a RingPe account at the school; `sent` says where (masked)',
   auth: 'admfees.collect',
   idempotent: 'required',
   responses: { 201: { description: 'Link' } },
+});
+doc({
+  id: 'ADM-037',
+  method: 'post',
+  path: '/api/v1/console/applications/{applicationId}/admission-fee/orders',
+  summary:
+    'Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee)',
+  auth: 'admfees.collect',
+  request: deskOrderSchema,
+  idempotent: 'required',
+  responses: { 201: { description: 'Order, as ADM-010' } },
+});
+doc({
+  id: 'ADM-038',
+  method: 'post',
+  path: '/api/v1/console/applications/{applicationId}/admission-fee/orders/{paymentId}/verify',
+  summary:
+    'The desk checkout’s answer, verified on the server as ADM-011 (signature, then the payment as the gateway holds it); the fee is paid with its receipt',
+  auth: 'admfees.collect',
+  request: feePaymentVerifySchema,
+  responses: { 200: { description: 'Paid, as ADM-011' } },
 });
 doc({
   id: 'ADM-031',
@@ -1114,6 +1137,31 @@ export function admissionsRoutes(deps: {
     once,
     wrap(async (req, res) => {
       res.status(201).json(await A.onlineLink(principal(req), param(req, 'applicationId')));
+    }),
+  );
+  router.post(
+    '/console/applications/:applicationId/admission-fee/orders',
+    ...console,
+    authorize('admfees.collect', L),
+    once,
+    wrap(async (req, res) => {
+      const { feeType } = deskOrderSchema.parse(req.body ?? {});
+      res.status(201).json(await A.deskOrder(principal(req), param(req, 'applicationId'), feeType));
+    }),
+  );
+  router.post(
+    '/console/applications/:applicationId/admission-fee/orders/:paymentId/verify',
+    ...console,
+    authorize('admfees.collect', L),
+    wrap(async (req, res) => {
+      res.json(
+        await A.deskVerify(
+          principal(req),
+          param(req, 'applicationId'),
+          param(req, 'paymentId'),
+          feePaymentVerifySchema.parse(req.body ?? {}),
+        ),
+      );
     }),
   );
   router.post(

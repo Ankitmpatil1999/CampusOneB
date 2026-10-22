@@ -240,6 +240,20 @@ export const FEE_MESSAGES = [
     batch: 10,
     refs: ['13.4', 'client 2026-10-16'],
   },
+  // The payment link of "Collect fees · Send link" (client 2026-10-22), in the app as well as by SMS
+  // and e-mail.
+  {
+    key: 'NTF.FEE_PAY_LINK',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'info',
+    en: 'Pay {label} of {amount} for {name}',
+    placeholders: ['label', 'amount', 'name'],
+    approval: 'approved',
+    batch: 10,
+    refs: ['13.15', 'client 2026-10-22'],
+  },
 ] as const satisfies readonly MessageDefinition[];
 
 export type FeeMessageKey = (typeof FEE_MESSAGES)[number]['key'];

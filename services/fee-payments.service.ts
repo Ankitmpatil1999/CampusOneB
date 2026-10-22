@@ -30,7 +30,9 @@ import { toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { qrSvg } from '../utils/qr';
 import { recordAudit } from './audit.service';
+import { familyAccountsByStudent } from './fee-notices.service';
 import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
+import { notify } from './notifications.service';
 import { outstandingOf } from './payment-engine.service';
 import type { PaymentGatewaysService } from './payment-gateways.service';
 import { defaultValues, type SettingValues } from './settings.service';
@@ -169,6 +171,39 @@ export class FeePaymentsService {
     return {
       mobile: st?.contact_mobile || parent?.contact_mobile || null,
       email: st?.contact_email || parent?.contact_email || null,
+    };
+  }
+
+  /**
+   * Everyone a payment link goes to (client 2026-10-22): the student and every parent — their
+   * mobiles and e-mails, the student's first — and their RingPe accounts for the in-app notice.
+   */
+  private async familyOf(studentRowId: string) {
+    const db = this.deps.db;
+    const people = await db
+      .selectFrom('member_profiles as m')
+      .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
+      .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
+      .select([
+        'm.contact_mobile',
+        'm.contact_email',
+        'gm.contact_mobile as guardian_mobile',
+        'gm.contact_email as guardian_email',
+      ])
+      .where('m.id', '=', studentRowId)
+      .orderBy('g.is_primary_contact', 'desc')
+      .orderBy('g.id')
+      .execute();
+    const distinct = (v: (string | null | undefined)[]) => [
+      ...new Set(v.map((x) => x?.trim()).filter((x): x is string => !!x)),
+    ];
+    const accounts = (await familyAccountsByStudent(db, [studentRowId])).get(studentRowId) ?? [];
+    return {
+      mobiles: distinct(people.flatMap((x) => [x.contact_mobile, x.guardian_mobile])),
+      emails: distinct(
+        people.flatMap((x) => [x.contact_email?.toLowerCase(), x.guardian_email?.toLowerCase()]),
+      ),
+      accounts,
     };
   }
 
@@ -407,8 +442,9 @@ export class FeePaymentsService {
 
   // --- FEE-048 --------------------------------------------------------------------------------------
   /**
-   * A payment link or QR code for an instalment's outstanding amount. A link is sent by SMS and
-   * e-mail through the school's channels to the student's registered contacts; a QR code is shown.
+   * A payment link or QR code for an instalment's outstanding amount. A link goes to the student and
+   * every parent (client 2026-10-22): by SMS and e-mail through the school's channels, and in the
+   * app to those with a RingPe account; a QR code is shown.
    */
   async request(p: Principal, recordId: string, input: { channel: 'LINK' | 'QR' }) {
     const i = await this.inst(p);
@@ -416,11 +452,8 @@ export class FeePaymentsService {
     const db = this.deps.db;
     const r = await this.record(db, inst, recordId);
     const amount = this.payable(r);
-    const contacts =
-      input.channel === 'LINK'
-        ? await this.contactsOf(r.student_profile_id)
-        : { mobile: null, email: null };
-    if (input.channel === 'LINK' && !contacts.mobile && !contacts.email) {
+    const family = input.channel === 'LINK' ? await this.familyOf(r.student_profile_id) : null;
+    if (family && !family.mobiles.length && !family.emails.length && !family.accounts.length) {
       throw new CustomAPIError(409, 'FEE.NO_CONTACT');
     }
     const days = await this.limit(LIMITS.feePayLinkDays);
@@ -432,9 +465,9 @@ export class FeePaymentsService {
       days * 86_400,
     );
     const link = `${this.deps.webUrl}/fees/pay/${pub.id}?token=${encodeURIComponent(t.token)}`;
-    const channels = input.channel === 'LINK' ? await this.channels(inst) : null;
-    const sms = !!(channels?.sms && contacts.mobile && this.deps.sms);
-    const email = !!(channels?.email && contacts.email && this.deps.email);
+    const channels = family ? await this.channels(inst) : null;
+    const sms = family && channels?.sms && this.deps.sms ? family.mobiles : [];
+    const email = family && channels?.email && this.deps.email ? family.emails : [];
     await db
       .insertInto('fee_payment_requests')
       .values({
@@ -443,15 +476,17 @@ export class FeePaymentsService {
         record_id: r.id,
         channel: input.channel,
         amount_paise: amount,
-        sent_mobile: sms ? contacts.mobile : null,
-        sent_email: email ? contacts.email : null,
+        // The first of each (the communication log keeps every send).
+        sent_mobile: sms[0] ?? null,
+        sent_email: email[0] ?? null,
         expires_at: t.expiresAt,
         created_by: this.by(p),
         created_at: now,
         updated_at: now,
       })
       .execute();
-    if (input.channel === 'LINK') {
+    let inApp = 0;
+    if (family) {
       const student = await db
         .selectFrom('member_profiles')
         .select(['first_name', 'last_name'])
@@ -466,25 +501,46 @@ export class FeePaymentsService {
         refType: 'fee_record',
         refId: binToUuid(r.public_id),
       };
-      const sends: Promise<void>[] = [];
-      if (sms)
-        sends.push(
-          this.deps.sms!.send({ to: contacts.mobile!, purpose: 'fee.payLink', text, log }),
-        );
-      if (email) {
-        sends.push(
-          this.deps.email!.send({ to: contacts.email!, purpose: 'fee.payLink', text, log }),
-        );
-      }
       // Best effort: the communication log records a failed send; the link is shown either way.
-      await Promise.allSettled(sends);
+      await Promise.allSettled([
+        ...sms.map((to) => this.deps.sms!.send({ to, purpose: 'fee.payLink', text, log })),
+        ...email.map((to) => this.deps.email!.send({ to, purpose: 'fee.payLink', text, log })),
+      ]);
+      if (family.accounts.length) {
+        try {
+          await notify(
+            db,
+            {
+              institutionId: inst,
+              accountIds: family.accounts,
+              surface: 'MEMBER',
+              category: 'PAYMENT',
+              titleKey: 'NTF.FEE_PAY_LINK',
+              params: { label: r.label, amount: formatInr(amount), name: child },
+              body: text,
+              link: '/fees',
+              email: false,
+            },
+            now,
+          );
+          inApp = family.accounts.length;
+        } catch {
+          // As the SMS and the e-mail: the link is shown and can be shared by hand.
+        }
+      }
     }
     await recordAudit(db, {
       institutionId: inst,
       action: input.channel === 'LINK' ? 'FEE_PAY_LINK_SENT' : 'FEE_PAY_QR_SHOWN',
       entityType: 'fee_record',
       entityRef: binToUuid(r.public_id),
-      after: { request: pub.id, amount: formatInr(amount), sms, email },
+      after: {
+        request: pub.id,
+        amount: formatInr(amount),
+        sms: sms.length,
+        email: email.length,
+        inApp,
+      },
     });
     return {
       id: pub.id,
@@ -493,14 +549,153 @@ export class FeePaymentsService {
       amount: toMoneyDto(amount),
       expiresAt: t.expiresAt.toISOString(),
       ...(input.channel === 'QR' ? { qrSvg: qrSvg(link) } : {}),
-      ...(input.channel === 'LINK'
+      ...(family
         ? {
             sentTo: {
-              mobile: sms ? maskMobile(contacts.mobile) : null,
-              email: email ? maskEmail(contacts.email) : null,
+              mobiles: sms.map((m) => maskMobile(m)!),
+              emails: email.map((e) => maskEmail(e)!),
+              inApp,
             },
           }
         : {}),
+    };
+  }
+
+  // --- FEE-052 --------------------------------------------------------------------------------------
+  /**
+   * Pay now at the accounts desk (client 2026-10-22): an order with the school's gateway for what is
+   * outstanding, for its checkout to open on the console — no link is created or sent. The order is
+   * kept as a DESK request so the gateway's webhook settles it if the page closes first.
+   */
+  async deskOrder(p: Principal, recordId: string) {
+    const i = await this.inst(p);
+    const inst = String(i.id);
+    const db = this.deps.db;
+    const r = await this.record(db, inst, recordId);
+    const amount = this.payable(r);
+    const chosen = await chooseGateway(this.gatewayDeps(), inst, 'FEE.GATEWAY_NOT_CONFIGURED');
+    const pub = newPublicIdPair();
+    let order: Awaited<ReturnType<PaymentGateway['createOrder']>>;
+    try {
+      order = await chosen.gateway.createOrder({
+        amountPaise: amount,
+        receipt: `FEE-${pub.id.slice(-12)}`,
+        notes: { feeRecord: binToUuid(r.public_id), instalment: r.label },
+      });
+    } catch {
+      // The gateway didn't answer: the desk can try again.
+      throw new CustomAPIError(503, 'GEN.UNAVAILABLE');
+    }
+    if (!order) throw new CustomAPIError(503, 'FEE.GATEWAY_NOT_CONFIGURED');
+    const now = this.now();
+    const days = await this.limit(LIMITS.feePayLinkDays);
+    await db
+      .insertInto('fee_payment_requests')
+      .values({
+        public_id: pub.bin,
+        institution_id: inst,
+        record_id: r.id,
+        channel: 'DESK',
+        amount_paise: amount,
+        sent_mobile: null,
+        sent_email: null,
+        gateway_id: chosen.gatewayId,
+        gateway_order_id: order.orderId,
+        expires_at: new Date(now.getTime() + days * 86_400_000),
+        created_by: this.by(p),
+        created_at: now,
+        updated_at: now,
+      })
+      .execute();
+    return {
+      requestId: pub.id,
+      amount: toMoneyDto(amount),
+      gatewayOrder: {
+        orderId: order.orderId,
+        amount: toMoneyDto(order.amountPaise),
+        mode: chosen.gateway.mode,
+        ...(order.test ? { test: order.test } : {}),
+        ...(order.checkout ? { checkout: { keyId: order.checkout.keyId, name: i.name } } : {}),
+      },
+    };
+  }
+
+  // --- FEE-053 --------------------------------------------------------------------------------------
+  /** The desk checkout's answer: verified as a link's (FEE-051), then the instalment's receipt. */
+  async deskVerify(
+    p: Principal,
+    recordId: string,
+    requestId: string,
+    input: { gatewayPaymentId: string; signature: string },
+  ) {
+    const i = await this.inst(p);
+    if (!isUuid(recordId) || !isUuid(requestId)) throw new NotFoundError();
+    const db = this.deps.db;
+    const req = await db
+      .selectFrom('fee_payment_requests as q')
+      .innerJoin('fee_records as r', 'r.id', 'q.record_id')
+      .select([
+        'q.id',
+        'q.record_id',
+        'q.status',
+        'q.amount_paise',
+        'q.gateway_id',
+        'q.gateway_order_id',
+        'q.gateway_payment_id',
+        'q.collection_id',
+        'r.public_id as record_public_id',
+      ])
+      .where('q.institution_id', '=', String(i.id))
+      .where('q.public_id', '=', uuidToBin(requestId))
+      .where('q.channel', '=', 'DESK')
+      .executeTakeFirst();
+    if (!req || binToUuid(req.record_public_id) !== recordId.toLowerCase()) {
+      throw new NotFoundError();
+    }
+    let outcome = 'ALREADY_PAID';
+    if (req.status !== 'PAID') {
+      const g = await gatewayById(
+        this.gatewayDeps(),
+        req.gateway_id ? String(req.gateway_id) : null,
+      );
+      const ok =
+        !!req.gateway_order_id &&
+        g.verify({
+          orderId: req.gateway_order_id,
+          paymentId: input.gatewayPaymentId,
+          signature: input.signature,
+        });
+      if (!ok) throw new CustomAPIError(402, 'FEE.PAYMENT_NOT_VERIFIED');
+      const wrong = await gatewayProblem(
+        g,
+        { orderId: req.gateway_order_id, amountPaise: Number(req.amount_paise) },
+        input.gatewayPaymentId,
+      );
+      if (wrong) throw new CustomAPIError(402, 'FEE.PAYMENT_NOT_VERIFIED');
+      outcome = await this.paid(
+        { id: String(req.id), record_id: String(req.record_id) },
+        Number(req.amount_paise),
+        input.gatewayPaymentId,
+        { source: 'CONSOLE', by: this.by(p) },
+      );
+    } else if (req.gateway_payment_id !== input.gatewayPaymentId) {
+      throw new CustomAPIError(409, 'FEE.RECORD_PAID');
+    }
+    // Paid another way meanwhile (cash at the desk): the payment stays on the request for a refund.
+    if (outcome === 'PAID_OTHERWISE') throw new CustomAPIError(409, 'FEE.RECORD_PAID');
+    const after = await db
+      .selectFrom('fee_payment_requests')
+      .select('collection_id')
+      .where('id', '=', String(req.id))
+      .executeTakeFirstOrThrow();
+    const receipt = await this.receiptOf(after.collection_id ? String(after.collection_id) : null);
+    return {
+      receiptNo: receipt?.receiptNo ?? null,
+      transactionId: receipt?.transactionId ?? input.gatewayPaymentId,
+      amount: toMoneyDto(Number(req.amount_paise)),
+      mode: 'ONLINE' as const,
+      recordId: recordId.toLowerCase(),
+      status: 'PAID' as const,
     };
   }
 
@@ -640,11 +835,15 @@ export class FeePaymentsService {
     };
   }
 
-  /** The request paid: the record collected, once (the page and the webhook may both arrive). */
+  /**
+   * The request paid: the record collected, once (the page and the webhook may both arrive). A desk
+   * payment is the accounts desk's collection; a link's, the family's.
+   */
   private async paid(
     req: { id: string; record_id: string },
     amountPaise: number,
     gatewayPaymentId: string,
+    who: { source: 'CONSOLE' | 'MEMBER'; by: Buffer | null } = { source: 'MEMBER', by: null },
   ) {
     return this.deps.db.transaction().execute(async (trx) => {
       const cur = await trx
@@ -680,10 +879,10 @@ export class FeePaymentsService {
       }
       const s = await this.settle(trx, r, {
         mode: 'ONLINE',
-        source: 'MEMBER',
+        source: who.source,
         amountPaise: Math.min(amountPaise, outstandingOf(r)),
         gatewayPaymentId,
-        by: null,
+        by: who.by,
         requestRowId: req.id,
       });
       await trx
@@ -752,7 +951,7 @@ export class FeePaymentsService {
   }): Promise<string | null> {
     const req = await this.deps.db
       .selectFrom('fee_payment_requests')
-      .select(['id', 'record_id', 'status', 'amount_paise'])
+      .select(['id', 'record_id', 'status', 'amount_paise', 'channel', 'created_by'])
       .where('gateway_order_id', '=', e.orderId)
       // Only payments taken with this gateway: one school's keys never settle another's.
       .where('gateway_id', e.gatewayId === null ? 'is' : '=', e.gatewayId)
@@ -765,6 +964,7 @@ export class FeePaymentsService {
       { id: String(req.id), record_id: String(req.record_id) },
       e.amountPaise,
       e.paymentId,
+      req.channel === 'DESK' ? { source: 'CONSOLE', by: req.created_by } : undefined,
     );
   }
 }

@@ -340,6 +340,12 @@ export const feePaymentVerifySchema = z
     signature: z.string().trim().min(1).max(200),
   })
   .meta({ id: 'AdmissionPaymentVerify' });
+/** Pay now at the accounts desk (client 2026-10-22): the fee to take through the gateway. */
+export const deskOrderSchema = z
+  .strictObject({
+    feeType: z.enum(['APPLICATION', 'ADMISSION'], { message: 'VALIDATION.FORMAT' }),
+  })
+  .meta({ id: 'AdmissionDeskOrder' });
 
 // --- console ------------------------------------------------------------------------------------------
 export const consoleApplicationSchema = applicationInputSchema

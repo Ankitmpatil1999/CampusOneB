@@ -295,25 +295,28 @@ export const LIMITS = {
     basis: 'proposed',
     refs: ['19.2', 'RNG-GOV-007'],
   }),
-  /** How long an admission-fee payment link stays valid (ADM-023). */
+  /** How long an admission-fee payment link stays valid (ADM-023): one day (client 2026-10-22). */
   admPayLinkDays: def({
     key: 'adm.payLink.days',
-    value: 7,
+    value: 1,
     unit: 'days',
     adjustable: { min: 1, max: 30 },
     scope: 'P',
     basis: 'proposed',
-    refs: ['19.8'],
+    refs: ['19.8', 'client 2026-10-22'],
   }),
-  /** How long an instalment's payment link or QR code stays valid (client 2026-10-19). */
+  /**
+   * How long an instalment's payment link or QR code stays valid (client 2026-10-19): one day
+   * (client 2026-10-22).
+   */
   feePayLinkDays: def({
     key: 'fee.payLink.days',
-    value: 7,
+    value: 1,
     unit: 'days',
     adjustable: { min: 1, max: 30 },
     scope: 'P',
     basis: 'proposed',
-    refs: ['client 2026-10-19'],
+    refs: ['client 2026-10-19', 'client 2026-10-22'],
   }),
   feeInstalmentsMax: def({
     key: 'fee.instalments.max',

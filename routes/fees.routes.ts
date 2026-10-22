@@ -920,7 +920,7 @@ fee({
   method: 'post',
   path: '/api/v1/console/fee-records/{recordId}/payment-requests',
   summary:
-    'A payment link (channel LINK: sent by SMS and e-mail through the school’s channels to the student’s registered mobile and e-mail, a parent’s for a child without their own) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days',
+    'A payment link (channel LINK: sent to the student and every parent — by SMS and e-mail through the school’s channels, and in the app to those with a RingPe account; client 2026-10-22) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days (one day)',
   auth: 'fees.collect',
   idempotent: 'required',
   request: feePayRequestSchema,
@@ -936,11 +936,56 @@ fee({
           expiresAt: z.string(),
           qrSvg: z.string().optional(),
           sentTo: z
-            .object({ mobile: z.string().nullable(), email: z.string().nullable() })
+            .object({
+              mobiles: z.array(z.string()),
+              emails: z.array(z.string()),
+              inApp: z.number().int().describe('RingPe accounts notified in the app'),
+            })
             .optional()
-            .describe('Where the link was sent (masked); null: not sent that way'),
+            .describe('Where the link was sent (masked); an empty list: not sent that way'),
         })
         .meta({ id: 'FeePaymentRequest' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-052',
+  method: 'post',
+  path: '/api/v1/console/fee-records/{recordId}/orders',
+  summary:
+    'Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the instalment’s outstanding amount, whose checkout opens on the console — no link is created or sent; kept as a DESK payment request so the gateway’s webhook settles it too',
+  auth: 'fees.collect',
+  idempotent: 'required',
+  responses: {
+    201: {
+      description: 'Order',
+      schema: z
+        .object({ requestId: z.uuid(), amount: money, gatewayOrder: gatewayOrderSchema })
+        .meta({ id: 'FeeDeskOrder' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-053',
+  method: 'post',
+  path: '/api/v1/console/fee-records/{recordId}/orders/{requestId}/verify',
+  summary:
+    'The desk checkout’s answer, verified as FEE-051 (signature, then the payment as the gateway holds it); the instalment is collected once, here or by the webhook, with a receipt',
+  auth: 'fees.collect',
+  request: feePayVerifySchema,
+  responses: {
+    200: {
+      description: 'Collected',
+      schema: z
+        .object({
+          receiptNo: z.string().nullable(),
+          transactionId: z.string(),
+          amount: money,
+          mode: z.literal('ONLINE'),
+          recordId: z.uuid(),
+          status: z.literal('PAID'),
+        })
+        .meta({ id: 'FeeDeskCollected' }),
     },
   },
 });
@@ -1197,6 +1242,30 @@ export function feesRoutes(deps: {
             feePayRequestSchema.parse(req.body ?? {}),
           ),
         );
+    }),
+  );
+  router.post(
+    '/console/fee-records/:recordId/orders',
+    ...console,
+    authorize('fees.collect', L),
+    once,
+    wrap(async (req, res) => {
+      res.status(201).json(await P.deskOrder(principal(req), param(req, 'recordId')));
+    }),
+  );
+  router.post(
+    '/console/fee-records/:recordId/orders/:requestId/verify',
+    ...console,
+    authorize('fees.collect', L),
+    wrap(async (req, res) => {
+      res.json(
+        await P.deskVerify(
+          principal(req),
+          param(req, 'recordId'),
+          param(req, 'requestId'),
+          feePayVerifySchema.parse(req.body ?? {}),
+        ),
+      );
     }),
   );
   router.get(
