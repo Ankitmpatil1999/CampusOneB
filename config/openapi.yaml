@@ -1874,6 +1874,117 @@ paths:
           required: true
           schema:
             type: string
+  /api/v1/console/applications/{applicationId}/record:
+    patch:
+      operationId: ADM-040
+      summary: "Edit a section of an admitted record (client 2026-10-22; If-Match): as ADM-016, except that the identity stays — the student’s name, gender and date of birth, each person’s name and mobile, the primary contact and every Aadhaar and PAN (omitted) — else 422 IDN.PII_READ_ONLY on the field; one with nothing stored (an older bulk upload’s) is filled once, a parent it never had added; the class section is the enrolment’s"
+      tags:
+        - Admissions
+      x-ringpe-auth: members.edit
+      responses:
+        "200":
+          description: Application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdmissionApplication"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionSectionUpdate"
+  /api/v1/console/applications/{applicationId}/record-documents:
+    post:
+      operationId: ADM-041
+      summary: "Add a document to an admitted record, or replace one of the same type (client 2026-10-22; multipart: documentType + file; 2 MB)"
+      tags:
+        - Admissions
+      x-ringpe-auth: members.edit
+      responses:
+        "201":
+          description: Application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdmissionApplication"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                documentType:
+                  type: string
+                  enum:
+                    - PHOTO
+                    - BIRTH
+                    - ADDRESS
+                    - REPORT
+                    - TC
+                    - OTHER
+                    - STUDENT_AADHAAR_FRONT
+                    - STUDENT_AADHAAR_BACK
+                    - STUDENT_PAN_FRONT
+                    - STUDENT_PAN_BACK
+                    - FATHER_AADHAAR_FRONT
+                    - FATHER_AADHAAR_BACK
+                    - FATHER_PAN_FRONT
+                    - FATHER_PAN_BACK
+                    - MOTHER_AADHAAR_FRONT
+                    - MOTHER_AADHAAR_BACK
+                    - MOTHER_PAN_FRONT
+                    - MOTHER_PAN_BACK
+                    - GUARDIAN_AADHAAR_FRONT
+                    - GUARDIAN_AADHAAR_BACK
+                    - GUARDIAN_PAN_FRONT
+                    - GUARDIAN_PAN_BACK
+                    - LOCAL_GUARDIAN_AADHAAR_FRONT
+                    - LOCAL_GUARDIAN_AADHAAR_BACK
+                    - LOCAL_GUARDIAN_PAN_FRONT
+                    - LOCAL_GUARDIAN_PAN_BACK
+                file:
+                  type: string
+              required:
+                - documentType
+                - file
   /api/v1/console/applications/{applicationId}/references:
     post:
       operationId: ADM-026
@@ -6171,6 +6282,31 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/MemberUpdate"
+  /api/v1/console/members/{memberId}/admission:
+    get:
+      operationId: ADM-039
+      summary: "A member’s admission records (client 2026-10-22): a student’s own application — from the public form, the counsellor’s or the members bulk upload — or each child’s for a parent, with how the member appears on it (STUDENT, FATHER, MOTHER, GUARDIAN), as ADM-014 shows it with the documents; `editable` when the caller may edit an admitted record"
+      tags:
+        - Admissions
+      x-ringpe-auth: members.view
+      responses:
+        "200":
+          description: Records
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/console/members/{memberId}/delink-requests:
     post:
       operationId: IDN-055
