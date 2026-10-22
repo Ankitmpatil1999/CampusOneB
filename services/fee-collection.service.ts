@@ -34,6 +34,8 @@ const nameOf = (first: string | null, last: string | null) =>
 const OTHER = { key: 'other', id: 'other', name: 'Other fees', order: Number.MAX_SAFE_INTEGER };
 const PAGE_SIZE = 15;
 const PAGE_SIZE_MAX = 100;
+/** An instalment Collect fee can still take (as fee-payments.service.ts). */
+const OPEN_STATUSES: readonly FeeRecordStatus[] = ['DUE', 'OVERDUE', 'PARTIALLY_PAID'];
 
 /** A record's fee collection shared between its heads by amount; the remainder on the last head. */
 export function headShares(
@@ -517,6 +519,9 @@ export class FeeCollectionService {
         };
       };
       const lines = mine.flatMap((r) => r.lines);
+      const open = mine.filter(
+        (r) => OPEN_STATUSES.includes(r.record.status) && !Number(r.record.financed),
+      );
       const entryList = [fees?.application, fees?.admission].filter((e): e is Entry => !!e);
       const amount =
         lines.reduce((a, l) => a + l.amountPaise, 0) +
@@ -535,6 +540,20 @@ export class FeeCollectionService {
         applicationFee: entryCell(fees?.application, 'application'),
         admissionFee: entryCell(fees?.admission, 'admission'),
         total: sums(amount, collected),
+        // What Collect fee can take (client 2026-10-22: no button when nothing is due): the open,
+        // unfinanced instalments' outstanding amounts.
+        due: toMoneyDto(
+          open.reduce(
+            (a, r) =>
+              a +
+              Math.max(
+                0,
+                Number(r.record.amount_paise) - r.lines.reduce((b, l) => b + l.collectedPaise, 0),
+              ),
+            0,
+          ),
+        ),
+        collectable: open.length > 0,
       };
     });
     const pageSize = Math.min(PAGE_SIZE_MAX, Math.max(1, Math.floor(f.pageSize ?? PAGE_SIZE)));
