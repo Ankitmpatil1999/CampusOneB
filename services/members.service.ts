@@ -36,7 +36,10 @@ import {
   type MemberKind,
 } from '../repositories/members.repository';
 import { userTypesRepository } from '../repositories/institution-setup.repository';
+import { rolesRepository } from '../repositories/roles.repository';
 import {
+  AuthorizationError,
+  ConflictError,
   CustomAPIError,
   NotFoundError,
   PreconditionFailedError,
@@ -50,6 +53,7 @@ import type { Principal } from '../utils/principal';
 import { istBusinessDate } from '../utils/format';
 import { recordAudit } from './audit.service';
 import { dateOnly } from './billing.service';
+import { ADMIN, checkProfileForRole } from './console-staff.service';
 import {
   activeFields,
   parseValues,
@@ -119,6 +123,8 @@ export interface StaffInput {
   readonly joinedOn: string;
   readonly employeeNo?: string | null | undefined;
   readonly customFields?: Readonly<Record<string, unknown>> | undefined;
+  /** The console role given as they are onboarded (client 2026-10-22); none when left out. */
+  readonly roleId?: string | null | undefined;
 }
 
 export class MembersService {
@@ -985,6 +991,10 @@ export class MembersService {
    */
   async onboardStaff(p: Principal, input: StaffInput) {
     this.checkStaffAge(input);
+    // Giving a console role is the access page's sub-task too (IDN-061).
+    if (input.roleId && !p.subTasks.includes('members.roles')) {
+      throw new AuthorizationError('IDN.ROLE_NOT_PERMITTED');
+    }
     const by = this.by(p);
     const pub = newPublicIdPair();
     const out = await this.deps.db.transaction().execute(async (trx) => {
@@ -998,6 +1008,7 @@ export class MembersService {
       memberNo: out.memberNo,
       employeeNo: out.employeeNo,
       newAccount: out.password !== null,
+      role: out.role,
       // Shown once: never stored, left out of an idempotent replay (the controller).
       ...(shown && out.password ? { temporaryPassword: out.password } : {}),
     };
@@ -1050,6 +1061,24 @@ export class MembersService {
     }
   }
 
+  /**
+   * The console role a staff member is given as they are onboarded (client 2026-10-22), checked as
+   * the access page checks it (IDN-061): an active institution role, not the Institution
+   * Administrator's (RingPe gives it), that fits the profile — the Principal role to the principal or
+   * management, never a merchant's role.
+   */
+  async staffRole(db: Kysely<Database>, roleId: string, category: string) {
+    const id = roleId.toLowerCase();
+    const role = isUuid(id)
+      ? (await rolesRepository.roles(db, 'INSTITUTION')).find((r) => binToUuid(r.public_id) === id)
+      : undefined;
+    if (!role) throw new ValidationError([{ field: 'roleId', code: 'VALIDATION.FORMAT' }]);
+    if (role.status !== 'ACTIVE') throw new ConflictError('IDN.ROLE_DISABLED');
+    if (role.code === ADMIN) throw new ConflictError('IDN.ROLE_NOT_ASSIGNABLE');
+    checkProfileForRole(role, { category, merchant_type: null });
+    return role;
+  }
+
   /** Creates one staff member inside the caller's transaction (single form and sheets). */
   async createStaff(
     trx: Kysely<Database>,
@@ -1066,6 +1095,7 @@ export class MembersService {
       ]);
     }
     const departmentId = await this.department(trx, inst.id, ut.id, input.departmentId);
+    const role = input.roleId ? await this.staffRole(trx, input.roleId, ut.category) : null;
     const fields = await activeFields(trx, inst.id, 'MEMBER');
     const cf = parseValues(fields, input.customFields ?? {}, { partial: false });
     if (cf.errors.length) throw new ValidationError(cf.errors);
@@ -1138,8 +1168,28 @@ export class MembersService {
       action: 'STAFF_ONBOARDED',
       entityType: 'member',
       entityRef: pub.id,
-      after: { userType: ut.name, employeeNo, newAccount: generated !== null },
+      after: {
+        userType: ut.name,
+        employeeNo,
+        newAccount: generated !== null,
+        role: role ? (role.code ?? role.name) : null,
+      },
     });
+    if (role) {
+      // The console role chosen at onboarding (client 2026-10-22): it opens their menus at sign-in.
+      await trx
+        .insertInto('profile_roles')
+        .values({ institution_id: inst.id, profile_id: String(id), role_id: String(role.id) })
+        .execute();
+      await recordAudit(trx, {
+        institutionId: inst.id,
+        action: 'CONSOLE_ROLES_CHANGED',
+        entityType: 'member',
+        entityRef: pub.id,
+        before: { roles: [] },
+        after: { roles: [role.code ?? role.name] },
+      });
+    }
     const seq = await trx
       .selectFrom('member_profiles')
       .select('member_seq')
@@ -1152,6 +1202,7 @@ export class MembersService {
       employeeNo,
       password: generated,
       memberNo: `${inst.short_name}-${String(seq.member_seq).padStart(5, '0')}`,
+      role: role?.name ?? null,
     };
   }
 

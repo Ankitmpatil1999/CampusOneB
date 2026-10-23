@@ -142,7 +142,7 @@ doc({
   method: 'get',
   path: '/api/v1/console/members/uploads/templates/{kind}',
   summary:
-    'The template (CSV): kind members has the admission form columns (client 2026-10-19), required ones marked *, staff the staff columns; the institution fields follow as extra columns',
+    'The template (CSV): kind members has the admission form columns (client 2026-10-19), required ones marked *, staff the staff columns with each one’s console role — a role’s name, or None (client 2026-10-22); the institution fields follow as extra columns',
   tags,
   auth: 'members.onboard',
   responses: { 200: { description: 'Template', contentType: 'text/csv' } },
@@ -152,7 +152,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/staff',
   summary:
-    'Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given',
+    'Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given; the console role chosen is given with the profile (client 2026-10-22; needs members.roles)',
   tags,
   auth: 'members.onboard',
   request: staffSchema,

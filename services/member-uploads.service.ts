@@ -18,13 +18,20 @@ import type { Database } from '../models/ringpe_models';
 import { academicsRepository } from '../repositories/academics.repository';
 import { userTypesRepository } from '../repositories/institution-setup.repository';
 import { membersRepository as repo, KIND_CATEGORIES } from '../repositories/members.repository';
-import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
+import {
+  AuthorizationError,
+  CustomAPIError,
+  NotFoundError,
+  ValidationError,
+} from '../utils/CustomAPIError';
 import { detectDelimiter, toCsv, parseCsv } from '../utils/csv';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
 import { PATTERNS } from '../utils/validators';
 import { institutionsRepository } from '../repositories/institutions.repository';
+import { rolesRepository } from '../repositories/roles.repository';
 import { recordAudit } from './audit.service';
+import { ADMIN, checkProfileForRole } from './console-staff.service';
 import { activeFields, parseValues, type CfField } from './custom-values.service';
 import {
   SHEET_COLUMNS,
@@ -63,7 +70,8 @@ const OLD_MEMBER_COLUMNS = [
   'Parent relation',
 ] as const;
 
-const STAFF_COLUMNS = [
+/** The staff template before each row carried the console role (client 2026-10-22). */
+const OLD_STAFF_COLUMNS = [
   'User type',
   'Department',
   'First name',
@@ -75,6 +83,26 @@ const STAFF_COLUMNS = [
   'Joining date',
   'Employee ID',
 ] as const;
+
+const STAFF_COLUMNS = [
+  'User type',
+  'Department',
+  // The console role given with the profile, or None (client 2026-10-22).
+  'Role',
+  'First name',
+  'Last name',
+  'Gender',
+  'Date of birth',
+  'Mobile',
+  'E-mail',
+  'Joining date',
+  'Employee ID',
+] as const;
+
+/** A role as written in a sheet: its name or code, case, spaces and punctuation aside. */
+const roleKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+/** The roles a staff member can be given at onboarding: not RingPe's, not a merchant's. */
+const NOT_FOR_STAFF = new Set([ADMIN, 'MERCHANT', 'VENDOR_MERCHANT']);
 
 const GENDERS: Readonly<Record<string, 'MALE' | 'FEMALE' | 'OTHER'>> = {
   male: 'MALE',
@@ -151,6 +179,13 @@ export class MemberUploadsService {
     return { form, member, all };
   }
 
+  /** The active institution roles (client 2026-10-22: a staff row names one, or None). */
+  private async roles() {
+    return (await rolesRepository.roles(this.deps.db, 'INSTITUTION')).filter(
+      (r) => r.status === 'ACTIVE',
+    );
+  }
+
   private columns(kind: UploadKind, fields: readonly CfField[]) {
     const base = kind === 'STAFF' ? [...STAFF_COLUMNS] : SHEET_COLUMNS.map(headerOf);
     return [
@@ -167,11 +202,14 @@ export class MemberUploadsService {
   async template(p: Principal, kind: UploadKind) {
     const inst = await this.own(p);
     const { all } = await this.fieldsOf(inst.id, kind);
+    const teacher =
+      kind === 'STAFF' ? (await this.roles()).find((r) => r.code === 'TEACHER') : null;
     const example =
       kind === 'STAFF'
         ? [
             'Teacher',
             'Primary',
+            teacher?.name ?? 'None',
             'Kavya',
             'Rao',
             'Female',
@@ -211,7 +249,14 @@ export class MemberUploadsService {
       if (kind === 'MEMBERS' && same(OLD_MEMBER_COLUMNS)) {
         throw new CustomAPIError(422, 'UPL.OLD_TEMPLATE');
       }
-      if (kind === 'MEMBERS' ? same(STAFF_COLUMNS) : same(students) || same(OLD_MEMBER_COLUMNS)) {
+      if (kind === 'STAFF' && same(OLD_STAFF_COLUMNS)) {
+        throw new CustomAPIError(422, 'UPL.OLD_STAFF_TEMPLATE');
+      }
+      if (
+        kind === 'MEMBERS'
+          ? same(STAFF_COLUMNS) || same(OLD_STAFF_COLUMNS)
+          : same(students) || same(OLD_MEMBER_COLUMNS)
+      ) {
         const [used, wanted] = kind === 'STAFF' ? ['members', 'staff'] : ['staff', 'members'];
         throw new CustomAPIError(422, 'UPL.WRONG_TEMPLATE', { params: { used, wanted } });
       }
@@ -257,7 +302,7 @@ export class MemberUploadsService {
     const report =
       input.kind === 'MEMBERS'
         ? await this.studentRows(inst.id, pub.id, data, index, form, member)
-        : await this.staffRows(inst.id, data, index, member);
+        : await this.staffRows(inst.id, data, index, member, p.subTasks.includes('members.roles'));
     const accepted = report.filter((r) => r.accepted).length;
     await repo.insertUpload(db, {
       publicId: pub.bin,
@@ -408,7 +453,8 @@ export class MemberUploadsService {
           ) {
             err(`${who[g.relation]} mobile`, 'IDN.MOBILE_IN_OTHER_INSTITUTION');
           }
-          if (!g.email && parentEmailRequired) err(`${who[g.relation]} e-mail`, 'VALIDATION.REQUIRED');
+          if (!g.email && parentEmailRequired)
+            err(`${who[g.relation]} e-mail`, 'VALIDATION.REQUIRED');
         }
       }
       // The member's own fields (a label the form has too is the same column).
@@ -447,12 +493,17 @@ export class MemberUploadsService {
     return report;
   }
 
-  /** The staff rows (SRS 6.18): as before. */
+  /**
+   * The staff rows (SRS 6.18): as before, and each one's console role (client 2026-10-22) — a role's
+   * name (or code), or None — given only by a role that may give roles (members.roles), checked as
+   * the access page checks it.
+   */
   private async staffRows(
     institutionId: string,
     data: readonly (readonly string[])[],
     index: ReadonlyMap<string, number>,
     fields: readonly CfField[],
+    canGiveRoles: boolean,
   ) {
     const db = this.deps.db;
     const types = await userTypesRepository.list(db, institutionId);
@@ -461,6 +512,11 @@ export class MemberUploadsService {
       .select(['public_id', 'user_type_id', 'name'])
       .where('institution_id', '=', institutionId)
       .execute();
+    const roles = await this.roles();
+    const roleNames = roles
+      .filter((r) => !(r.code && NOT_FOR_STAFF.has(r.code)))
+      .map((r) => r.name)
+      .join(', ');
     const seenMobile = new Map<string, number>();
     const report: RowReport[] = [];
     for (const [i, cells] of data.entries()) {
@@ -485,6 +541,27 @@ export class MemberUploadsService {
       if (depName && ut && !dep)
         err('Department', 'IDN.DEPARTMENT_UNKNOWN', { d: depName, t: ut.name });
       if (!depName) err('Department', 'VALIDATION.REQUIRED');
+      const roleText = cell('Role');
+      let role: (typeof roles)[number] | null = null;
+      if (!roleText) err('Role', 'UPL.ROLE_REQUIRED', { roles: roleNames });
+      else if (roleKey(roleText) !== 'none') {
+        const r = roles.find(
+          (x) =>
+            roleKey(x.name) === roleKey(roleText) || roleKey(x.code ?? '') === roleKey(roleText),
+        );
+        if (!r) err('Role', 'UPL.ROLE_UNKNOWN', { role: roleText, roles: roleNames });
+        else if (!canGiveRoles) err('Role', 'IDN.ROLE_NOT_PERMITTED');
+        else if (r.code === ADMIN) err('Role', 'IDN.ROLE_NOT_ASSIGNABLE');
+        else if (ut) {
+          try {
+            checkProfileForRole(r, { category: ut.category, merchant_type: null });
+            role = r;
+          } catch (e) {
+            if (!(e instanceof CustomAPIError)) throw e;
+            err('Role', e.code as MessageKey, e.params ?? {});
+          }
+        }
+      }
       const first = cell('First name');
       if (!first) err('First name', 'VALIDATION.REQUIRED');
       const last = cell('Last name');
@@ -552,6 +629,7 @@ export class MemberUploadsService {
           joinedOn: joined,
           employeeNo: employeeNo || null,
           customFields: customRaw,
+          roleId: role ? binToUuid(role.public_id) : null,
         };
       }
       report.push({
@@ -665,6 +743,14 @@ export class MemberUploadsService {
       ) as RowReport[];
       const rows = report.filter((r) => r.accepted && (r.input || r.sealed));
       if (!rows.length) throw new CustomAPIError(422, 'UPL.NOTHING_ACCEPTED');
+      // Rows that give a console role are committed only by a role that may give roles.
+      if (
+        u.kind === 'STAFF' &&
+        !p.subTasks.includes('members.roles') &&
+        rows.some((r) => (r.input as StaffInput | undefined)?.roleId)
+      ) {
+        throw new AuthorizationError('IDN.ROLE_NOT_PERMITTED');
+      }
       for (const r of rows) {
         try {
           if (u.kind === 'STAFF') {

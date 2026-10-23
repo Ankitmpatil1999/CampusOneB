@@ -2557,6 +2557,41 @@ paths:
           schema:
             type: string
             maxLength: 40
+  /api/v1/console/attendance/payroll:
+    get:
+      operationId: ATT-032
+      summary: "Payroll from attendance (client 2026-10-22): each teacher’s and staff member’s month (default this month; type ALL, TEACHERS or STAFF) — working days, present, late, half day, approved leave by type, absent and not marked, loss-of-pay days (an absent day without approved leave, half of a half day) and payable days (the month less loss of pay and days before joining or after leaving), with each day to check"
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.view
+      responses:
+        "200":
+          description: Payroll month
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^\d{4}-(0[1-9]|1[0-2])$
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - ALL
+              - TEACHERS
+              - STAFF
   /api/v1/console/attendance/reports:
     get:
       operationId: ATT-009
@@ -6447,7 +6482,7 @@ paths:
   /api/v1/console/members/uploads/templates/{kind}:
     get:
       operationId: IDN-052
-      summary: "The template (CSV): kind members has the admission form columns (client 2026-10-19), required ones marked *, staff the staff columns; the institution fields follow as extra columns"
+      summary: "The template (CSV): kind members has the admission form columns (client 2026-10-19), required ones marked *, staff the staff columns with each one’s console role — a role’s name, or None (client 2026-10-22); the institution fields follow as extra columns"
       tags:
         - Members
       x-ringpe-auth: members.onboard
@@ -8464,7 +8499,7 @@ paths:
   /api/v1/console/staff:
     post:
       operationId: IDN-053
-      summary: "Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given"
+      summary: "Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given; the console role chosen is given with the profile (client 2026-10-22; needs members.roles)"
       tags:
         - Members
       x-ringpe-auth: members.onboard
@@ -48322,6 +48357,13 @@ components:
                 items:
                   type: string
               - type: "null"
+        roleId:
+          description: "The console role given with the profile (client 2026-10-22; IDN-062): needs members.roles; not the Institution Administrator role; one that fits the user type"
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
       required:
         - userTypeId
         - departmentId
@@ -48349,11 +48391,17 @@ components:
         temporaryPassword:
           description: Shown once (setting idn.staff.passwordShownOnce; never stored, not in a replay); changed at first sign-in
           type: string
+        role:
+          description: The console role given, by name; null when none
+          type:
+            - string
+            - "null"
       required:
         - id
         - memberNo
         - employeeNo
         - newAccount
+        - role
       additionalProperties: false
     StaffPasswordChangeRequired:
       type: object

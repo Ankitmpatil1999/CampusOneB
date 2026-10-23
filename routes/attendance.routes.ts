@@ -132,6 +132,14 @@ const staffQuery = z.object({
   date: date.optional(),
   type: z.enum(['ALL', 'TEACHERS', 'STAFF']).optional(),
 });
+// Payroll from attendance (client 2026-10-22): a month, YYYY-MM.
+const payrollQuery = z.object({
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'VALIDATION.FORMAT' })
+    .optional(),
+  type: z.enum(['ALL', 'TEACHERS', 'STAFF']).optional(),
+});
 export const deskTapSchema = z
   .strictObject({ cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(32) })
   .meta({ id: 'StaffCardTap' });
@@ -372,6 +380,16 @@ doc({
   request: deskCheckSchema,
   responses: { 200: { description: 'CHECKED_IN or CHECKED_OUT, with the member and status' } },
 });
+doc({
+  id: 'ATT-032',
+  method: 'get',
+  path: '/api/v1/console/attendance/payroll',
+  summary:
+    'Payroll from attendance (client 2026-10-22): each teacher’s and staff member’s month (default this month; type ALL, TEACHERS or STAFF) — working days, present, late, half day, approved leave by type, absent and not marked, loss-of-pay days (an absent day without approved leave, half of a half day) and payable days (the month less loss of pay and days before joining or after leaving), with each day to check',
+  auth: 'attendance.view',
+  query: payrollQuery,
+  responses: { 200: { description: 'Payroll month' } },
+});
 
 export function attendanceRoutes(deps: {
   db: Kysely<Database>;
@@ -448,6 +466,12 @@ export function attendanceRoutes(deps: {
     ...console,
     authorize('attendance.view', L),
     json((req) => deps.attendance.staffRoster(principal(req), staffQuery.parse(req.query))),
+  );
+  router.get(
+    '/console/attendance/payroll',
+    ...console,
+    authorize('attendance.view', L),
+    json((req) => deps.attendance.payroll(principal(req), payrollQuery.parse(req.query))),
   );
   router.post(
     '/console/attendance/staff/card-taps',

@@ -520,6 +520,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     "This role can't be given or taken away here. RingPe assigns the Institution Administrator role, and students have no console roles.",
   'IDN.ROLE_NOT_EDITABLE':
     "These are the platform's default institution roles; they can't be changed here.",
+  'IDN.ROLE_NOT_PERMITTED':
+    'Your role can’t give console roles. Onboard the staff member without one, and ask the institution administrator to give it.',
   'IDN.ROLE_WRONG_PROFILE': 'The {role} role can be given only to {who}.',
   'IDN.SECURITY_ANSWER_FORMAT': 'Invalid security_answer Format !!!',
   'IDN.SECURITY_ANSWER_WRONG': 'Security Answer Not Matched for User !!!!',
@@ -964,9 +966,14 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'UPL.NOT_CSV':
     'This is an Excel workbook, not a CSV file. In Excel choose File › Save As › CSV (Comma delimited), then upload that file.',
   'UPL.NO_ROWS': 'No records received',
+  'UPL.OLD_STAFF_TEMPLATE':
+    'This file is the earlier staff template, without the Role column. Download the template again, or add a “Role” column after Department.',
   'UPL.OLD_TEMPLATE':
     'This file is the earlier members template. Download the template again — it now has the admission form’s columns.',
   'UPL.PERIOD_UNKNOWN': 'There is no period “{period}” in the bell schedule.',
+  'UPL.ROLE_REQUIRED':
+    'Write the console role — {roles} — or None for staff who don’t use the console.',
+  'UPL.ROLE_UNKNOWN': 'There is no console role “{role}”. Write one of {roles}, or None.',
   'UPL.ROW_CHANGED':
     'Row {row} can no longer be onboarded: {reason} Nothing was onboarded; upload the sheet again.',
   'UPL.SECTION_REQUIRED': 'Name at least one section.',

@@ -297,6 +297,8 @@ const ACCOUNTANT_TASKS = [
   'approvals',
   // Submitted applications are visible to Accounts (client 2026-10-09); they are not edited there.
   'admissions',
+  // The attendance reports — students, teachers and staff — read, never marked (client 2026-10-22).
+  'attendance',
 ];
 
 export interface RoleTemplate {
@@ -359,9 +361,13 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     code: 'ACCOUNTANT',
     scope: 'INSTITUTION',
     name: 'Accountant',
-    description: 'Fees, collections, settlements and accounting',
+    description: 'Fees, collections, settlements, accounting and attendance reports',
     tasks: ACCOUNTANT_TASKS,
-    subTasks: grantsExcept('ACCOUNTANT', ACCOUNTANT_TASKS, ['admissions.edit']),
+    subTasks: grantsExcept('ACCOUNTANT', ACCOUNTANT_TASKS, [
+      'admissions.edit',
+      'attendance.mark',
+      'attendance.config',
+    ]),
   },
   {
     code: 'COUNSELLOR',
