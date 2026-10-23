@@ -25927,7 +25927,7 @@ components:
         cardToken:
           type: string
           minLength: 1
-          maxLength: 32
+          maxLength: 128
       required:
         - cardToken
       additionalProperties: false
@@ -28680,7 +28680,7 @@ components:
         cardToken:
           type: string
           minLength: 1
-          maxLength: 32
+          maxLength: 128
         tapId:
           type: string
           minLength: 1
@@ -40426,7 +40426,7 @@ components:
         cardToken:
           type: string
           minLength: 1
-          maxLength: 32
+          maxLength: 128
         nonce:
           type: string
           minLength: 1
@@ -44449,7 +44449,7 @@ components:
         cardToken:
           type: string
           minLength: 1
-          maxLength: 40
+          maxLength: 128
         requestId:
           description: The order’s NFC request (not for a coupon)
           type: string
@@ -44833,7 +44833,7 @@ components:
               cardToken:
                 type: string
                 minLength: 1
-                maxLength: 40
+                maxLength: 128
               instrument:
                 type: string
                 enum:
@@ -45409,7 +45409,7 @@ components:
               cardToken:
                 type: string
                 minLength: 1
-                maxLength: 40
+                maxLength: 128
               instrument:
                 type: string
                 enum:
@@ -46211,7 +46211,7 @@ components:
       properties:
         cardToken:
           type: string
-          maxLength: 32
+          maxLength: 128
         tapId:
           type: string
           maxLength: 64
@@ -48498,7 +48498,7 @@ components:
       properties:
         cardToken:
           type: string
-          maxLength: 32
+          maxLength: 128
       required:
         - cardToken
       additionalProperties: false
@@ -49192,7 +49192,7 @@ components:
       properties:
         cardToken:
           type: string
-          maxLength: 32
+          maxLength: 128
         mode:
           type: string
           enum:

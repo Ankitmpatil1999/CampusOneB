@@ -91,7 +91,7 @@ export const posRequestInputSchema = z
 export const collectionInputSchema = z
   .strictObject({
     instrument: z.enum(['WALLET', 'ALLOWANCE', 'COUPON'], { message: 'VALIDATION.FORMAT' }),
-    cardToken: text(40),
+    cardToken: text(128),
     requestId: z
       .string()
       .trim()
@@ -111,7 +111,7 @@ const captureSchema = z.strictObject({
     .strictObject({ type: orderType, lines })
     .optional()
     .describe('An order created while offline: priced from the menu when it arrives'),
-  cardToken: text(40),
+  cardToken: text(128),
   instrument: z.enum(['WALLET', 'ALLOWANCE'], { message: 'VALIDATION.FORMAT' }),
   amount: moneyIn,
   capturedAt: z.iso.datetime({ offset: true, message: 'VALIDATION.DATE' }),

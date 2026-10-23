@@ -103,7 +103,7 @@ export const terminalSessionSchema = z
   .meta({ id: 'TerminalSession' });
 
 // --- cards ----------------------------------------------------------------------------------------------
-export const cardTokenSchema = z.strictObject({ cardToken: text(32) }).meta({ id: 'CardTap' });
+export const cardTokenSchema = z.strictObject({ cardToken: text(128) }).meta({ id: 'CardTap' });
 export const kioskSchema = z
   .object({
     member: z.object({ id: z.uuid(), name: z.string() }),
@@ -176,7 +176,7 @@ export const lossSchema = z
 
 export const nfcTapSchema = z
   .strictObject({
-    cardToken: text(32),
+    cardToken: text(128),
     nonce: text(64),
     readerSignature: z.string().max(200).optional(),
   })

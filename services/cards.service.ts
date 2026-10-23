@@ -25,6 +25,19 @@ import { recordAudit } from './audit.service';
 import { notify } from './notifications.service';
 import { defaultValues, type SettingValues } from './settings.service';
 
+/**
+ * The value read off a card carried over from the earlier application (client 2026-10-23): that
+ * application wrote an encrypted token — base64 beginning "U2FsdGVkX1" ("Salted__") — instead of
+ * RingPe's plain one. Up to 128 characters.
+ */
+export const LEGACY_CARD_VALUE = /^U2FsdGVkX1[A-Za-z0-9+/]{30,116}={0,2}$/;
+
+/** The SHA-256 a carried-over card is found by (migration 0087), or null for a RingPe token. */
+export function legacyCardHash(value: string): Buffer | null {
+  const v = value.trim();
+  return LEGACY_CARD_VALUE.test(v) ? createHash('sha256').update(v, 'utf8').digest() : null;
+}
+
 const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const CODE = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const iso = (d: Date | string | null) => (d ? new Date(d).toISOString() : null);
@@ -72,6 +85,7 @@ export class CardsService {
 
   /** An Active card of the institution by its token (another institution's card is unknown). */
   async activeCard(institutionId: string, token: string) {
+    const legacy = legacyCardHash(token);
     const c = await this.deps.db
       .selectFrom('cards as c')
       .innerJoin('member_profiles as m', 'm.id', 'c.profile_id')
@@ -87,7 +101,12 @@ export class CardsService {
         'm.status as member_status',
       ])
       .where('c.institution_id', '=', institutionId)
-      .where('c.token', '=', token.trim().toUpperCase())
+      .where((eb) =>
+        // A card carried over from the earlier application answers with that application's value.
+        legacy
+          ? eb('c.legacy_token_hash', '=', legacy)
+          : eb('c.token', '=', token.trim().toUpperCase()),
+      )
       .executeTakeFirst();
     if (!c || c.status !== 'ACTIVE') throw new CustomAPIError(409, 'ATT.CARD_NOT_ACTIVE');
     return c;

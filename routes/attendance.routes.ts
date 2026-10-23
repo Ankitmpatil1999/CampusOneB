@@ -24,7 +24,7 @@ const status = z.enum(['PRESENT', 'LATE', 'HALF_DAY', 'ABSENT'], { message: 'VAL
 
 export const tapSchema = z
   .strictObject({
-    cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(32),
+    cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(128),
     tapId: z.string().max(64).optional(),
     tappedAt: z.string().max(40).optional(),
   })
@@ -32,7 +32,7 @@ export const tapSchema = z
 /** ATT-028: a card on the teacher's own reader, for the daily register or a running period. */
 export const teacherTapSchema = z
   .strictObject({
-    cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(32),
+    cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(128),
     mode: z.enum(['DAILY', 'PERIOD'], { message: 'VALIDATION.FORMAT' }),
     classSectionId: uuid
       .optional()
@@ -141,7 +141,7 @@ const payrollQuery = z.object({
   type: z.enum(['ALL', 'TEACHERS', 'STAFF']).optional(),
 });
 export const deskTapSchema = z
-  .strictObject({ cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(32) })
+  .strictObject({ cardToken: z.string({ message: 'ATT.CARD_NOT_ACTIVE' }).max(128) })
   .meta({ id: 'StaffCardTap' });
 export const deskCheckSchema = z
   .strictObject({

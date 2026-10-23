@@ -99,7 +99,7 @@ export const redeemSchema = z
   .strictObject({ merchantQrPayload: text(200), couponTypeId: text(40) })
   .meta({ id: 'CouponRedeemInput' });
 export const tapSchema = z
-  .strictObject({ cardToken: text(32), tapId: text(64) })
+  .strictObject({ cardToken: text(128), tapId: text(64) })
   .meta({ id: 'CouponTapInput' });
 export const tapRedeemSchema = z
   .strictObject({ tapId: text(64), couponTypeId: text(40) })

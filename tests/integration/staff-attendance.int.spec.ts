@@ -7,7 +7,7 @@
  *   refused;
  * - the records reach the staff list, the console's overview and the staff member's own app.
  */
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { schoolFixture, type Auth, type Payer } from './school';
@@ -176,5 +176,28 @@ describe.skipIf(!adminUrl)('staff attendance at the front desk on real MySQL', (
     const day = mine.body.items.find((d: { date: string }) => d.date === today());
     expect(day).toMatchObject({ status: 'HALF_DAY' });
     expect(day.checkInAt).toBeTruthy();
+  });
+
+  // Last: Kumar's day is complete by now, so the tap only has to find him.
+  it('finds a staff card carried over from the earlier application by its value (2026-10-23)', async () => {
+    const kumarCard = await f.card(kumar.rowId);
+    // Such a card holds the earlier application's encrypted token; the card row keeps its SHA-256.
+    const cug = 'U2FsdGVkX1+iHwx1dvayNs1hBmdPsYCkB8aDTE74fQzQPbFs3xMgnbZ8dhbzHVda';
+    await f.t.db
+      .updateTable('cards')
+      .set({ legacy_token_hash: createHash('sha256').update(cug).digest() })
+      .where('token', '=', kumarCard)
+      .execute();
+    const tap = await post('/console/attendance/staff/card-taps', { cardToken: cug });
+    expect(tap.status, JSON.stringify(tap.body)).toBe(200);
+    expect(tap.body).toMatchObject({
+      result: 'COMPLETE',
+      member: { name: expect.stringMatching(/^Kumar/) },
+    });
+    // Another earlier value, or the same one changed, finds no card.
+    const other = await post('/console/attendance/staff/card-taps', {
+      cardToken: cug.slice(0, -4) + 'AAAA',
+    });
+    expect(other.body.code).toBe('ATT.CARD_NOT_ACTIVE');
   });
 });

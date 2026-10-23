@@ -239,19 +239,23 @@ export const LIMITS = {
     basis: 'register',
     refs: ['27.4 §13', 'RNG-SAS-003', 'prototype c.institution'],
   }),
-  /**
-   * Whether a family may ask for fee financing from the app (prototype m.financing) besides the
-   * institution registering the student (SRS 13.12). OQ-03 / OI-FEE-17 are open: example value.
-   */
-  feeFinancingMemberRegisters: def({
-    key: 'fee.financing.memberRegisters',
-    value: 1,
-    unit: 'flag',
-    adjustable: { min: 0, max: 1 },
-    scope: 'P/I',
-    basis: 'proposed',
-    refs: ['13.11', '13.12', 'OI-FEE-17', 'OQ-03', 'prototype m.financing', 'example value'],
-  }),
+  // FINANCING-OFF (client 2026-10-22): the fee financing partner is commented out in the whole
+  // application, so its setting is out of the register (and the back office's settings list). To
+  // bring it back, uncomment it here and use LIMITS.feeFinancingMemberRegisters again in
+  // financing.service.ts instead of FINANCING_OFF_LIMITS.
+  // /**
+  //  * Whether a family may ask for fee financing from the app (prototype m.financing) besides the
+  //  * institution registering the student (SRS 13.12). OQ-03 / OI-FEE-17 are open: example value.
+  //  */
+  // feeFinancingMemberRegisters: def({
+  //   key: 'fee.financing.memberRegisters',
+  //   value: 1,
+  //   unit: 'flag',
+  //   adjustable: { min: 0, max: 1 },
+  //   scope: 'P/I',
+  //   basis: 'proposed',
+  //   refs: ['13.11', '13.12', 'OI-FEE-17', 'OQ-03', 'prototype m.financing', 'example value'],
+  // }),
   /**
    * Admission age bands (27.4 §19, BR-50; prototype p.admission): Nursery starts at this age and each
    * class accepts a band this many years wide, one year older per class. Measured on 1 June of the
@@ -1477,6 +1481,22 @@ export const LIMITS = {
 } as const;
 
 export type LimitName = keyof typeof LIMITS;
+
+/**
+ * FINANCING-OFF (client 2026-10-22): the financing setting, outside the register while the fee
+ * financing partner is commented out — the dormant financing code reads its default; it is listed
+ * nowhere and can't be changed.
+ */
+export const FINANCING_OFF_LIMITS = {
+  feeFinancingMemberRegisters: def({
+    key: 'fee.financing.memberRegisters',
+    value: 1,
+    unit: 'flag',
+    scope: 'P/I',
+    basis: 'proposed',
+    refs: ['13.11', '13.12', 'OI-FEE-17', 'OQ-03', 'prototype m.financing', 'example value'],
+  }),
+} as const;
 
 export function allLimits(): readonly LimitDefinition<unknown>[] {
   return Object.values(LIMITS);

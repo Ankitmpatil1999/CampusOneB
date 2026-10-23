@@ -74,6 +74,8 @@ export interface CardsTable {
   institution_id: Ref;
   profile_id: Ref;
   token: string;
+  /** SHA-256 of the earlier application's value on the card (migration 0087), for a carried-over card. */
+  legacy_token_hash: Buffer | null;
   hardware_uid: string | null;
   status: ColumnType<
     'ACTIVE' | 'INACTIVE',
