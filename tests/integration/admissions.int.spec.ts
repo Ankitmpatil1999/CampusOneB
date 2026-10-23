@@ -1931,6 +1931,170 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         children: null,
       },
     });
+    // The admission record on the Members page (client 2026-10-22): the student's own, the child's
+    // for a parent; the administrator edits it and adds documents, the identity stays.
+    const appId = binToUuid(imported.public_id);
+    const studentId = binToUuid(
+      (
+        await f.t.db
+          .selectFrom('member_profiles')
+          .select('public_id')
+          .where('id', '=', profileId)
+          .executeTakeFirstOrThrow()
+      ).public_id,
+    );
+    const records = (memberId: string) =>
+      request(f.app).get(`/api/v1/console/members/${memberId}/admission`).set(con);
+    const own = await records(studentId);
+    expect(own.status, JSON.stringify(own.body)).toBe(200);
+    expect(own.body.records).toEqual([
+      expect.objectContaining({
+        relation: 'STUDENT',
+        student: { id: studentId, name: 'Neha Kamath' },
+        editable: true,
+        application: expect.objectContaining({ id: appId, source: 'IMPORT', status: 'APPROVED' }),
+      }),
+    ]);
+    const father = await f.t.db
+      .selectFrom('guardianships as g')
+      .innerJoin('member_profiles as m', 'm.id', 'g.guardian_profile_id')
+      .select('m.public_id')
+      .where('g.ward_profile_id', '=', profileId)
+      .where('g.relation', '=', 'FATHER')
+      .executeTakeFirstOrThrow();
+    const theirs = await records(binToUuid(father.public_id));
+    expect(theirs.body.records).toEqual([
+      expect.objectContaining({
+        relation: 'FATHER',
+        student: { id: studentId, name: 'Neha Kamath' },
+        application: expect.objectContaining({ id: appId }),
+      }),
+    ]);
+    expect((await records(randomUUID())).status).toBe(404);
+    // An edit: the address changes, the name and the father's mobile do not.
+    const recordUrl = `/api/v1/console/applications/${appId}/record`;
+    const edit = (version: number, section: string, data: object) =>
+      request(f.app)
+        .patch(recordUrl)
+        .set(con)
+        .set('If-Match', `"v${version}"`)
+        .send({ section, data });
+    const v0 = own.body.records[0].application.version as number;
+    const moved = await edit(v0, 'addresses', {
+      residential: {
+        line1: '14 5th Cross',
+        line2: 'Vinoba Nagar',
+        city: 'Shivamogga',
+        state: 'Karnataka',
+        pin: '577204',
+      },
+      sameAsResidential: true,
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect(moved.headers.etag).toBe(`"v${moved.body.version}"`);
+    expect(moved.body.addresses.residential.line1).toBe('14 5th Cross');
+    expect((await edit(v0, 'addresses', {})).status).toBe(412);
+    // The section as shown (Aadhaar and PAN are never in it), the stop by its id.
+    const { transportStop, ...parents } = shown.body.parents as Record<string, unknown> & {
+      transportStop: { id: string } | null;
+    };
+    const locked = await edit(moved.body.version, 'parents', {
+      ...parents,
+      // The sheet leaves the children question open; an edit answers it.
+      children: 'SINGLE',
+      transportStopId: transportStop?.id ?? null,
+      father: { ...(parents.father as object), mobile: '9845099999' },
+    });
+    expect(locked.status, JSON.stringify(locked.body)).toBe(422);
+    expect(locked.body.errors).toEqual([
+      expect.objectContaining({ field: 'parents.father.mobile', code: 'IDN.PII_READ_ONLY' }),
+    ]);
+    const renamed = await edit(moved.body.version, 'student', {
+      firstName: 'Nisha',
+      lastName: 'Kamath',
+      gender: 'FEMALE',
+      dob: '2014-03-03',
+    });
+    expect(renamed.status).toBe(422);
+    expect(renamed.body.errors).toEqual([
+      expect.objectContaining({ field: 'student.firstName', code: 'IDN.PII_READ_ONLY' }),
+    ]);
+    expect((await edit(moved.body.version, 'class', { sectionId: grade6.sectionId })).status).toBe(
+      409,
+    );
+    // A document added to the record, as the console adds one.
+    const docAdded = await attach(
+      `/api/v1/console/applications/${appId}/record-documents`,
+      null,
+      'BIRTH',
+      con,
+    );
+    expect(docAdded.status, JSON.stringify(docAdded.body)).toBe(201);
+    expect(docAdded.body.documents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'BIRTH' })]),
+    );
+    expect(
+      (await records(studentId)).body.records[0].application.documents.map(
+        (d: { type: string }) => d.type,
+      ),
+    ).toContain('BIRTH');
+    expect(
+      await f.t.db
+        .selectFrom('audit_log')
+        .select('action')
+        .where('entity_ref', '=', imported.public_id)
+        .where('action', 'in', ['ADMISSION_RECORD_UPDATED', 'ADMISSION_RECORD_DOCUMENT'])
+        .orderBy('id')
+        .execute(),
+    ).toEqual([{ action: 'ADMISSION_RECORD_UPDATED' }, { action: 'ADMISSION_RECORD_DOCUMENT' }]);
+    // An older bulk upload's record: no last name and no mother stored. Each is filled once, then
+    // stays (client 2026-10-22).
+    await f.t.db
+      .updateTable('admission_applications')
+      .set({ last_name: null, data: sql`JSON_SET(data, '$.parents.mother', NULL)` })
+      .where('public_id', '=', imported.public_id)
+      .execute();
+    const legacy = (await request(f.app).get(`/api/v1/console/applications/${appId}`).set(con))
+      .body;
+    expect(legacy.student.lastName).toBeNull();
+    const named = await edit(legacy.version, 'student', {
+      firstName: 'Neha',
+      lastName: 'Kamath',
+      gender: 'FEMALE',
+      dob: '2014-03-03',
+    });
+    expect(named.status, JSON.stringify(named.body)).toBe(200);
+    expect(named.body.student.lastName).toBe('Kamath');
+    const mother = { name: 'Rekha Kamath', mobile: `96${String(Date.now()).slice(-8)}` };
+    const added = await edit(named.body.version, 'parents', {
+      ...parents,
+      children: 'SINGLE',
+      transportStopId: transportStop?.id ?? null,
+      mother,
+    });
+    expect(added.status, JSON.stringify(added.body)).toBe(200);
+    expect(added.body.parents.mother).toMatchObject(mother);
+    expect(
+      (
+        await edit(added.body.version, 'student', {
+          firstName: 'Neha',
+          lastName: 'Kamat',
+          gender: 'FEMALE',
+          dob: '2014-03-03',
+        })
+      ).body.errors,
+    ).toEqual([expect.objectContaining({ field: 'student.lastName', code: 'IDN.PII_READ_ONLY' })]);
+    // Not a record yet: the rejected application stays with admissions.
+    expect(
+      (
+        await attach(
+          `/api/v1/console/applications/${target.id}/record-documents`,
+          null,
+          'BIRTH',
+          con,
+        )
+      ).status,
+    ).toBe(409);
     // The same admission number again, and the earlier template: refused.
     const again = await send([lines[0], row(good)].join('\n'));
     expect(again.body.rows[0].errors[0]).toMatchObject({ column: 'Admission number' });

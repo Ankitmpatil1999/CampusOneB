@@ -583,6 +583,37 @@ doc({
   responses: { 200: { description: 'Paid, as ADM-011' } },
 });
 doc({
+  id: 'ADM-039',
+  method: 'get',
+  path: '/api/v1/console/members/{memberId}/admission',
+  summary:
+    'A member’s admission records (client 2026-10-22): a student’s own application — from the public form, the counsellor’s or the members bulk upload — or each child’s for a parent, with how the member appears on it (STUDENT, FATHER, MOTHER, GUARDIAN), as ADM-014 shows it with the documents; `editable` when the caller may edit an admitted record',
+  auth: 'members.view',
+  responses: { 200: { description: 'Records' } },
+});
+doc({
+  id: 'ADM-040',
+  method: 'patch',
+  path: '/api/v1/console/applications/{applicationId}/record',
+  summary:
+    'Edit a section of an admitted record (client 2026-10-22; If-Match): as ADM-016, except that the identity stays — the student’s name, gender and date of birth, each person’s name and mobile, the primary contact and every Aadhaar and PAN (omitted) — else 422 IDN.PII_READ_ONLY on the field; one with nothing stored (an older bulk upload’s) is filled once, a parent it never had added; the class section is the enrolment’s',
+  auth: 'members.edit',
+  request: sectionUpdateSchema,
+  responses: { 200: { description: 'Application', schema: application } },
+});
+doc({
+  id: 'ADM-041',
+  method: 'post',
+  path: '/api/v1/console/applications/{applicationId}/record-documents',
+  summary:
+    'Add a document to an admitted record, or replace one of the same type (client 2026-10-22; multipart: documentType + file; 2 MB)',
+  auth: 'members.edit',
+  request: z.object({ documentType: docType, file: z.string() }),
+  requestContentType: 'multipart/form-data',
+  idempotent: 'required',
+  responses: { 201: { description: 'Application', schema: application } },
+});
+doc({
   id: 'ADM-031',
   method: 'post',
   path: '/api/v1/console/admission-payments/{paymentId}/confirmation',
@@ -1023,6 +1054,46 @@ export function admissionsRoutes(deps: {
       res
         .status(201)
         .json(await A.consoleDocument(principal(req), param(req, 'applicationId'), fileOf(req)));
+    }),
+  );
+  // A member's admission record (client 2026-10-22): the Members page reads and edits it.
+  router.get(
+    '/console/members/:memberId/admission',
+    ...console,
+    authorize('members.view', L),
+    wrap(async (req, res) => {
+      res.json(await A.memberRecords(principal(req), param(req, 'memberId')));
+    }),
+  );
+  router.patch(
+    '/console/applications/:applicationId/record',
+    ...console,
+    authorize('members.edit', L),
+    wrap(async (req, res) => {
+      const { section, data } = sectionUpdateSchema.parse(req.body ?? {});
+      const out = await A.recordUpdate(
+        principal(req),
+        param(req, 'applicationId'),
+        expectedVersion(req),
+        { section, data },
+      );
+      setEtag(res, out.version);
+      res.json(out);
+    }),
+  );
+  router.post(
+    '/console/applications/:applicationId/record-documents',
+    ...console,
+    authorize('members.edit', L),
+    once,
+    singleFileUpload,
+    uploadErrors,
+    wrap(async (req, res) => {
+      // The application first: another institution's id is a 404 whatever the upload holds.
+      await A.detail(principal(req), param(req, 'applicationId'));
+      res
+        .status(201)
+        .json(await A.recordDocument(principal(req), param(req, 'applicationId'), fileOf(req)));
     }),
   );
   router.delete(

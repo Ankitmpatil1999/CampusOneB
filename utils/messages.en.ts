@@ -361,6 +361,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'The payment could not be confirmed. If money was taken from your account, the school will confirm it shortly; otherwise please try again.',
   'FEE.PAY_LINK_INVALID':
     'This payment link is not valid or has expired. Ask the school office for a new one.',
+  'FEE.RECEIPT_TAKEN':
+    'Receipt number {no} is already used. Check the counterfoil book, or leave it empty for RingPe to number it.',
   'FEE.RECORD_PAID': 'This fee is already paid or cancelled, or its amount has changed.',
   'FEE.SHARES_NOT_100': 'Instalment shares add up to {total}%. They must add up to exactly 100%.',
   'FEE.STRUCTURE_LOCKED': 'Waiting for approval — it can’t be changed now.',

@@ -117,19 +117,104 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
       }),
     ]);
 
-    const cash = await post(`/api/v1/console/fee-records/${term1.id}/cash`, { paidBy: 'Ramesh' });
+    // As the admission fee's cash (client 2026-10-22): the day received, who paid, the counterfoil.
+    const cashOn = (recordId: string, body: object) =>
+      post(`/api/v1/console/fee-records/${recordId}/cash`, body);
+    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const missing = await cashOn(term1.id, {});
+    expect(missing.status).toBe(422);
+    expect(missing.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
+      'paidBy',
+      'receivedAt',
+    ]);
+    expect(
+      (await cashOn(term1.id, { receivedAt: tomorrow, paidBy: 'Ramesh' })).body.errors[0],
+    ).toMatchObject({ field: 'receivedAt' });
+    const cash = await cashOn(term1.id, { receivedAt: today, paidBy: 'Ramesh' });
     expect(cash.status, JSON.stringify(cash.body)).toBe(201);
     expect(cash.body).toMatchObject({
       amount: inr('12500.00'),
       mode: 'CASH',
       status: 'PAID',
       receiptNo: expect.stringMatching(/^[A-Z0-9]{2,5}\/FR\/\d{4}\/\d{6}$/),
+      collectionId: expect.any(String),
+      // The receipt shown at once, with what matters on it.
+      receipt: {
+        receiptNo: cash.body.receiptNo,
+        mode: 'CASH',
+        paidBy: 'Ramesh',
+        transactionId: null,
+        student: { name: 'Asha Rao' },
+        year: year.label,
+        instalment: { label: 'Term 1', dueDate: today },
+        amount: inr('12500.00'),
+        fine: inr('0.00'),
+        total: inr('12500.00'),
+      },
     });
+    // Received today: the receipt carries the time it was recorded (IST date).
+    expect(
+      new Date(Date.parse(cash.body.receipt.paidAt) + 330 * 60_000).toISOString().slice(0, 10),
+    ).toBe(today);
     expect(await row(term1.id)).toMatchObject({
       status: 'PAID',
       paid_paise: '1250000',
       paid_reference: cash.body.receiptNo,
     });
+    // Its PDF (FEE-054).
+    const pdf = await request(f.app)
+      .get(`/api/v1/console/fee-collections/${cash.body.collectionId}/receipt`)
+      .set(con)
+      .buffer(true)
+      .parse((res, done) => {
+        const parts: Buffer[] = [];
+        res.on('data', (d: Buffer) => parts.push(d));
+        res.on('end', () => done(null, Buffer.concat(parts)));
+      });
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    // The counterfoil's number, once in the school.
+    const termB = await raise(asha, '900.00', 'Books');
+    const counterfoil = await cashOn(termB.id, {
+      receivedAt: today,
+      paidBy: 'Ramesh',
+      receiptNo: 'CF/1001',
+    });
+    expect(counterfoil.body.receiptNo).toBe('CF/1001');
+    const termC = await raise(asha, '400.00', 'Uniform');
+    const taken = await cashOn(termC.id, {
+      receivedAt: today,
+      paidBy: 'Ramesh',
+      receiptNo: 'CF/1001',
+    });
+    expect(taken.status).toBe(409);
+    expect(taken.body.code).toBe('FEE.RECEIPT_TAKEN');
+    expect(await row(termC.id)).toMatchObject({ status: 'DUE', paid_paise: '0' });
+    await cashOn(termC.id, { receivedAt: today, paidBy: 'Ramesh' });
+    // A paid instalment opens its receipt (client 2026-10-22): its collections, then FEE-056.
+    const paidRow = (await view()).body.instalments.find(
+      (x: { recordId: string }) => x.recordId === term1.id,
+    );
+    expect(paidRow.collections).toEqual([
+      {
+        collectionId: cash.body.collectionId,
+        receiptNo: cash.body.receiptNo,
+        paidAt: cash.body.receipt.paidAt,
+        mode: 'CASH',
+        total: inr('12500.00'),
+      },
+    ]);
+    const opened = await request(f.app)
+      .get(`/api/v1/console/fee-collections/${cash.body.collectionId}`)
+      .set(con);
+    expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+    expect(opened.body).toEqual(cash.body.receipt);
+    expect(
+      (await request(f.app).get(`/api/v1/console/fee-collections/${randomUUID()}`).set(con)).status,
+    ).toBe(404);
     // The record's collections and the collection details count it.
     const detail = await request(f.app).get(`/api/v1/console/fee-records/${term1.id}`).set(con);
     expect(detail.body.collections).toEqual([
@@ -141,14 +226,21 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
       }),
     ]);
     const fc = await request(f.app).get(`/api/v1/console/fee-collection?q=Asha`).set(con);
-    expect(fc.body.students[0].total.collected).toEqual(inr('12500.00'));
-    // Nothing more to collect on it.
-    const again = await post(`/api/v1/console/fee-records/${term1.id}/cash`, {});
+    expect(fc.body.students[0].total.collected).toEqual(inr('13800.00'));
+    // Nothing more to collect (client 2026-10-22: no Collect fee button then).
+    expect(fc.body.students[0]).toMatchObject({ due: inr('0.00'), collectable: false });
+    const again = await cashOn(term1.id, { receivedAt: today, paidBy: 'Ramesh' });
     expect(again.body.code).toBe('FEE.RECORD_PAID');
-    expect((await view()).body.instalments[0]).toMatchObject({
+    expect(
+      (await view()).body.instalments.find((x: { recordId: string }) => x.recordId === term1.id),
+    ).toMatchObject({
       outstanding: inr('0.00'),
       collectable: false,
     });
+    // A new instalment makes the student collectable again, for what it owes.
+    await raise(asha, '750.00', 'Term 1 balance');
+    const fc2 = await request(f.app).get(`/api/v1/console/fee-collection?q=Asha`).set(con);
+    expect(fc2.body.students[0]).toMatchObject({ due: inr('750.00'), collectable: true });
   });
 
   it('shows a QR code whose page takes the payment through the gateway, once (FEE-048…051)', async () => {
@@ -165,13 +257,34 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
     // The page: the school, the student, the instalment, the amount.
     const p = await page(f.app, id, token);
     expect(p.status, JSON.stringify(p.body)).toBe(200);
+    // The student's admission number, class and year too (client 2026-10-22).
+    const me = await f.t.db
+      .selectFrom('member_profiles')
+      .select('admission_no')
+      .where('id', '=', asha.rowId)
+      .executeTakeFirstOrThrow();
     expect(p.body).toMatchObject({
       school: { name: expect.stringMatching(/^Collect Fee School/) },
-      student: { name: 'Asha Rao' },
+      student: { name: 'Asha Rao', admissionNo: me.admission_no },
+      year: { label: year.label },
       instalment: { label: 'Term 2', dueDate: today },
       amount: inr('6000.00'),
       status: 'OPEN',
+      receipt: null,
     });
+    expect(p.body.student).toHaveProperty('classSection');
+    // No receipt before it is paid.
+    const receiptPdf = () =>
+      request(f.app)
+        .get(`/api/v1/public/fee-payments/${id}/receipt`)
+        .set('X-Fee-Pay-Token', token)
+        .buffer(true)
+        .parse((res, done) => {
+          const parts: Buffer[] = [];
+          res.on('data', (d: Buffer) => parts.push(d));
+          res.on('end', () => done(null, Buffer.concat(parts)));
+        });
+    expect((await receiptPdf()).status).toBe(404);
     expect((await page(f.app, id, 'not-a-token')).body.code).toBe('FEE.PAY_LINK_INVALID');
     expect((await page(f.app, randomUUID(), token)).body.code).toBe('FEE.PAY_LINK_INVALID');
 
@@ -203,6 +316,19 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
     const twice = await verify({ gatewayPaymentId: t.paymentId, signature: t.signature });
     expect(twice.body.receiptNo).toBe(ok.body.receiptNo);
     expect(await row(term2.id)).toMatchObject({ status: 'PAID', paid_paise: '600000' });
+    // The receipt on the page at once, and as a PDF to keep.
+    expect(ok.body.receipt).toMatchObject({
+      receiptNo: ok.body.receiptNo,
+      mode: 'ONLINE',
+      transactionId: t.paymentId,
+      student: { name: 'Asha Rao', admissionNo: me.admission_no },
+      instalment: { label: 'Term 2' },
+      total: inr('6000.00'),
+    });
+    const kept = await receiptPdf();
+    expect(kept.status).toBe(200);
+    expect(kept.headers['content-type']).toBe('application/pdf');
+    expect((kept.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
     const detail = await request(f.app).get(`/api/v1/console/fee-records/${term2.id}`).set(con);
     expect(detail.body.collections).toEqual([
       expect.objectContaining({ mode: 'ONLINE', transactionId: t.paymentId }),
@@ -253,7 +379,10 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
     expect(notices[0]!.body).toContain(link.body.link);
 
     // Collected at the office before the family paid: the page says so; no order.
-    await post(`/api/v1/console/fee-records/${term3.id}/cash`, {});
+    await post(`/api/v1/console/fee-records/${term3.id}/cash`, {
+      receivedAt: today,
+      paidBy: 'Ramesh',
+    });
     const { id, token } = partsOf(link.body.link);
     expect((await page(f.app, id, token)).body.status).toBe('CLOSED');
     const order = await request(f.app)
@@ -437,5 +566,68 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
         .where('gateway_payment_id', '=', 'pay_DESKHOOK')
         .executeTakeFirstOrThrow(),
     ).toEqual({ source: 'CONSOLE', gateway_payment_id: 'pay_DESKHOOK' });
+  });
+
+  it('lists the year’s receipts with totals by mode, filtered and paged, each opening its receipt (FEE-056/057)', async () => {
+    const list = (query = '') =>
+      request(f.app).get(`/api/v1/console/fee-collections?yearId=${year.id}${query}`).set(con);
+    const all = await list('&pageSize=100');
+    expect(all.status, JSON.stringify(all.body)).toBe(200);
+    const { items, totals } = all.body as {
+      items: { collectionId: string; receiptNo: string; mode: string; total: { amount: string } }[];
+      totals: Record<
+        'cash' | 'online' | 'wallet',
+        { count: number; amount: { amount: string } }
+      > & {
+        count: number;
+        collected: { amount: string };
+      };
+    };
+    expect(items.length).toBe(totals.count);
+    expect(all.body.total).toBe(totals.count);
+    expect(totals.cash.count + totals.online.count + totals.wallet.count).toBe(totals.count);
+    const paise = (m: { amount: string }) => Math.round(Number(m.amount) * 100);
+    expect(
+      paise(totals.cash.amount) + paise(totals.online.amount) + paise(totals.wallet.amount),
+    ).toBe(paise(totals.collected));
+    expect(items.reduce((a, x) => a + paise(x.total), 0)).toBe(paise(totals.collected));
+    expect(totals.cash.count).toBeGreaterThan(0);
+    expect(totals.online.count).toBeGreaterThan(0);
+    expect(items[0]).toMatchObject({
+      student: { id: asha.id, name: 'Asha Rao' },
+      instalment: { recordId: expect.any(String), label: expect.any(String) },
+    });
+    // Newest first.
+    const times = (all.body.items as { paidAt: string }[]).map((x) => x.paidAt);
+    expect([...times].sort().reverse()).toEqual(times);
+    // By mode, by receipt number, and a page at a time; the totals follow the filters.
+    const cashOnly = await list('&mode=CASH&pageSize=100');
+    expect(cashOnly.body.items.every((x: { mode: string }) => x.mode === 'CASH')).toBe(true);
+    expect(cashOnly.body.totals).toMatchObject({
+      count: totals.cash.count,
+      collected: totals.cash.amount,
+      online: { count: 0 },
+    });
+    const one = await list('&q=CF%2F1001');
+    expect(one.body.items.map((x: { receiptNo: string }) => x.receiptNo)).toEqual(['CF/1001']);
+    const page2 = await list('&pageSize=2&page=2');
+    expect(page2.body).toMatchObject({ page: 2, pageSize: 2, total: totals.count });
+    expect(page2.body.items).toHaveLength(2);
+    expect(page2.body.items[0].collectionId).toBe(items[2]!.collectionId);
+    // Each row opens its receipt; the collection report keeps its own address.
+    const r = await request(f.app)
+      .get(`/api/v1/console/fee-collections/${items[0]!.collectionId}`)
+      .set(con);
+    expect(r.body).toMatchObject({
+      collectionId: items[0]!.collectionId,
+      receiptNo: items[0]!.receiptNo,
+    });
+    expect(
+      (
+        await request(f.app)
+          .get(`/api/v1/console/fee-collections/report?yearId=${year.id}`)
+          .set(con)
+      ).status,
+    ).toBe(200);
   });
 });
