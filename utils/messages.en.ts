@@ -361,6 +361,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'The payment could not be confirmed. If money was taken from your account, the school will confirm it shortly; otherwise please try again.',
   'FEE.PAY_LINK_INVALID':
     'This payment link is not valid or has expired. Ask the school office for a new one.',
+  'FEE.RECEIPT_TAKEN':
+    'Receipt number {no} is already used. Check the counterfoil book, or leave it empty for RingPe to number it.',
   'FEE.RECORD_PAID': 'This fee is already paid or cancelled, or its amount has changed.',
   'FEE.SHARES_NOT_100': 'Instalment shares add up to {total}%. They must add up to exactly 100%.',
   'FEE.STRUCTURE_LOCKED': 'Waiting for approval — it can’t be changed now.',
@@ -494,6 +496,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'IDN.MOBILE_IN_OTHER_INSTITUTION':
     'This mobile number is already registered with RingPe in another institution.',
   'IDN.MOBILE_NOT_REGISTERED': 'Error !!! Mobile Not Registered ! Please Register !',
+  'IDN.MOBILE_OTHER_FAMILY':
+    'This mobile belongs to {name} at this school. Use their details, or enter another mobile.',
   'IDN.NAME_LETTERS_ONLY': 'Please enter a name containing only alphabets.',
   'IDN.NOTHING_TO_UPDATE': 'Nothing has changed.',
   'IDN.OWN_ACCOUNT_DISABLE': "You can't disable your own account",

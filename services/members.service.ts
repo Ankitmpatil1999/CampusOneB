@@ -73,6 +73,34 @@ const personName = (first: string | null, last: string | null) =>
 
 const maskMobile = (m: string | null) => (m ? `${'•'.repeat(6)}${m.slice(-4)}` : null);
 
+/** A name as people write it: case, dots and spacing aside (any script). */
+const nameKey = (first: string | null | undefined, last: string | null | undefined) =>
+  `${first ?? ''} ${last ?? ''}`
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Client 2026-10-22: the same person on a shared mobile — the same full name, the same first and
+ * last word ("Ramesh Kumar" and "Ramesh S Kumar"), or the same first word when one of them is a
+ * single word ("Ravi", as a staff profile may hold it, and "Ravi Rao").
+ */
+export function sameName(
+  a: { first: string | null | undefined; last: string | null | undefined },
+  b: { first: string | null | undefined; last: string | null | undefined },
+): boolean {
+  const x = nameKey(a.first, a.last);
+  const y = nameKey(b.first, b.last);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const xs = x.split(' ');
+  const ys = y.split(' ');
+  if (xs[0] !== ys[0]) return false;
+  return xs.length === 1 || ys.length === 1 || xs.at(-1) === ys.at(-1);
+}
+
 export interface OnboardInput {
   readonly userTypeId: string;
   readonly departmentId?: string | null | undefined;
@@ -675,6 +703,242 @@ export class MembersService {
     };
   }
 
+  // --- IDN-090 ------------------------------------------------------------------------------------
+  /**
+   * Who a mobile belongs to at this school (client 2026-10-22), for the forms that enter a parent —
+   * onboarding and admissions — so they fill in what is known and a new child joins that family
+   * knowingly: the family (its children here, its parents, and the parents and address as the
+   * latest admission of one of its children had them), or a staff member working here (a teacher
+   * who is also a parent). Staff screens only: it shows a family's details. Aadhaar numbers and PANs
+   * are never given back.
+   */
+  async familyLookup(p: Principal, input: { mobile: string }) {
+    const inst = await this.own(p);
+    const db = this.deps.db;
+    const mobile = input.mobile;
+    const all = await repo.profilesOfMobile(db, mobile);
+    const account = Boolean(await accountRepository.findByMobile(db, mobile));
+    const none = { mobile, account, family: null, staff: null };
+    if (all.some((x) => String(x.institution_id) !== String(inst.id))) {
+      return { ...none, status: 'OTHER_INSTITUTION' as const };
+    }
+    const here = all.filter((x) => String(x.institution_id) === String(inst.id));
+
+    // A staff member working here on this mobile.
+    const staffRow = here.find(
+      (x) => STAFF_CATEGORIES.includes(x.category) && x.status === 'ACTIVE',
+    );
+    const staffMore = staffRow
+      ? await db
+          .selectFrom('member_profiles')
+          .select(['contact_email', 'gender', 'employee_no'])
+          .where('id', '=', String(staffRow.id))
+          .executeTakeFirst()
+      : undefined;
+    const staff = staffRow
+      ? {
+          id: binToUuid(staffRow.public_id),
+          firstName: staffRow.first_name ?? '',
+          lastName: staffRow.last_name,
+          name: personName(staffRow.first_name, staffRow.last_name),
+          email: staffMore?.contact_email ?? null,
+          gender: staffMore?.gender ?? null,
+          userType: staffRow.user_type_name,
+          employeeNo: staffMore?.employee_no ?? null,
+          relation:
+            staffMore?.gender === 'MALE'
+              ? ('FATHER' as const)
+              : staffMore?.gender === 'FEMALE'
+                ? ('MOTHER' as const)
+                : null,
+        }
+      : null;
+
+    // The family: the children of the parents on this mobile, and the children under it.
+    const parentIds = here.filter((x) => x.category === 'PARENT').map((x) => String(x.id));
+    const wards = parentIds.length
+      ? await db
+          .selectFrom('guardianships')
+          .select('ward_profile_id')
+          .where('institution_id', '=', inst.id)
+          .where('guardian_profile_id', 'in', parentIds)
+          .execute()
+      : [];
+    const childIds = [
+      ...new Set([
+        ...wards.map((w) => String(w.ward_profile_id)),
+        ...here.filter((x) => x.category === 'STUDENT').map((x) => String(x.id)),
+      ]),
+    ];
+    if (!childIds.length && !parentIds.length) {
+      return { ...none, staff, status: staff ? ('STAFF' as const) : ('NEW' as const) };
+    }
+    const links = childIds.length
+      ? await db
+          .selectFrom('guardianships')
+          .select(['guardian_profile_id', 'relation', 'is_primary_contact'])
+          .where('institution_id', '=', inst.id)
+          .where('ward_profile_id', 'in', childIds)
+          .execute()
+      : [];
+    const guardianIds = [
+      ...new Set([...parentIds, ...links.map((l) => String(l.guardian_profile_id))]),
+    ];
+    const parentRows = await db
+      .selectFrom('member_profiles')
+      .select(['id', 'public_id', 'first_name', 'last_name', 'contact_mobile', 'contact_email'])
+      .where('id', 'in', guardianIds)
+      .orderBy('id')
+      .execute();
+    const relationOf = (id: string) => {
+      const r = links.find((l) => String(l.guardian_profile_id) === id)?.relation;
+      return r === 'FATHER' || r === 'MOTHER' || r === 'GUARDIAN' ? r : null;
+    };
+    const parents = parentRows.map((r) => ({
+      id: binToUuid(r.public_id),
+      relation: relationOf(String(r.id)),
+      firstName: r.first_name ?? '',
+      lastName: r.last_name,
+      name: personName(r.first_name, r.last_name),
+      mobile: r.contact_mobile,
+      email: r.contact_email,
+      onThisMobile: r.contact_mobile === mobile,
+    }));
+    const childRows = childIds.length
+      ? await db
+          .selectFrom('member_profiles as m')
+          .leftJoin('enrolments as e', (j) =>
+            j
+              .onRef('e.student_profile_id', '=', 'm.id')
+              .on('e.year_id', 'in', (eb) =>
+                eb
+                  .selectFrom('academic_years')
+                  .select('id')
+                  .where('institution_id', '=', inst.id)
+                  .where('is_current', '=', 1),
+              ),
+          )
+          .leftJoin('sections as s', 's.id', 'e.section_id')
+          .leftJoin('classes as c', 'c.id', 's.class_id')
+          .select([
+            'm.id',
+            'm.public_id',
+            'm.first_name',
+            'm.last_name',
+            'm.admission_no',
+            'm.status',
+            'c.name as class_name',
+            's.name as section_name',
+          ])
+          .where('m.id', 'in', childIds)
+          .orderBy('m.id')
+          .execute()
+      : [];
+    const seen = new Set<string>();
+    const children = childRows
+      .filter((r) => !seen.has(String(r.id)) && seen.add(String(r.id)))
+      .map((r) => ({
+        id: binToUuid(r.public_id),
+        name: personName(r.first_name, r.last_name),
+        grade: r.class_name ? `${r.class_name} ${r.section_name ?? ''}`.trim() : null,
+        admissionNo: r.admission_no,
+        status: r.status,
+      }));
+
+    // The parents and the address as the latest admission of one of the children had them.
+    const app = childIds.length
+      ? await db
+          .selectFrom('admission_applications')
+          .select(['data'])
+          .where('institution_id', '=', inst.id)
+          .where('member_profile_id', 'in', childIds)
+          .orderBy('decided_at', 'desc')
+          .orderBy('id', 'desc')
+          .executeTakeFirst()
+      : undefined;
+    const data = (typeof app?.data === 'string' ? JSON.parse(app.data) : (app?.data ?? {})) as {
+      parents?: Record<string, Record<string, unknown> | null | undefined> & { primary?: string };
+      addresses?: { residential?: Record<string, unknown> | null };
+    };
+    const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const personFrom = (relation: 'FATHER' | 'MOTHER') => {
+      const a = data.parents?.[relation.toLowerCase()];
+      if (a && text(a['name'])) {
+        return {
+          name: text(a['name'])!,
+          mobile: text(a['mobile']),
+          email: text(a['email']),
+          occupation: text(a['occupation']),
+          annualIncome: text(a['annualIncome']),
+        };
+      }
+      const pr = parents.find((x) => x.relation === relation);
+      return pr
+        ? {
+            name: pr.name,
+            mobile: pr.mobile,
+            email: pr.email,
+            occupation: null,
+            annualIncome: null,
+          }
+        : null;
+    };
+    const g = data.parents?.['guardian'];
+    const guardianRow = parents.find((x) => x.relation === 'GUARDIAN');
+    const guardian =
+      g && text(g['name'])
+        ? {
+            name: text(g['name'])!,
+            mobile: text(g['mobile']),
+            email: text(g['email']),
+            occupation: text(g['occupation']),
+            annualIncome: null,
+            relation: text(g['relation']) ?? 'Guardian',
+          }
+        : guardianRow
+          ? {
+              name: guardianRow.name,
+              mobile: guardianRow.mobile,
+              email: guardianRow.email,
+              occupation: null,
+              annualIncome: null,
+              relation: 'Guardian',
+            }
+          : null;
+    const primaryLink = links.find((l) => Number(l.is_primary_contact));
+    const primaryRaw = text(data.parents?.['primary']) ?? primaryLink?.relation ?? null;
+    const primary =
+      primaryRaw === 'FATHER' || primaryRaw === 'MOTHER' || primaryRaw === 'GUARDIAN'
+        ? primaryRaw
+        : null;
+    const res = data.addresses?.residential;
+    const address =
+      res && text(res['line1'])
+        ? {
+            line1: text(res['line1'])!,
+            line2: text(res['line2']) ?? '',
+            city: text(res['city']) ?? '',
+            state: text(res['state']) ?? '',
+            pin: text(res['pin']) ?? '',
+          }
+        : null;
+    return {
+      mobile,
+      status: 'FAMILY' as const,
+      account,
+      family: {
+        children,
+        parents,
+        father: personFrom('FATHER'),
+        mother: personFrom('MOTHER'),
+        guardian,
+        primary,
+        address,
+      },
+      staff,
+    };
+  }
+
   /** BR-01 inside a transaction: the mobile's account, refused when it belongs elsewhere. */
   private async mobileFor(
     trx: Kysely<Database>,
@@ -692,19 +956,70 @@ export class MembersService {
     return account ? String(account.id) : null;
   }
 
-  /** The institution's Parent profile on this mobile, if any (the active one first). */
-  private async parentOf(trx: Kysely<Database>, institutionId: string, mobile: string) {
-    const p = await trx
+  /**
+   * The institution's Parent profile on this mobile with this name, if any (the active one first):
+   * a brother's or sister's parent (client 2026-10-13) — the same person only (2026-10-22).
+   */
+  private async parentOf(
+    trx: Kysely<Database>,
+    institutionId: string,
+    mobile: string,
+    first: string | null | undefined,
+    last: string | null | undefined,
+  ) {
+    const rows = await trx
       .selectFrom('member_profiles as m')
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
-      .select('m.id')
+      .select(['m.id', 'm.first_name', 'm.last_name'])
       .where('m.institution_id', '=', institutionId)
       .where('ut.category', '=', 'PARENT')
       .where('m.contact_mobile', '=', mobile)
       .orderBy(sql`m.status = 'ACTIVE'`, 'desc')
       .orderBy('m.id')
-      .executeTakeFirst();
+      .execute();
+    const p = rows.find((r) =>
+      sameName({ first: r.first_name, last: r.last_name }, { first, last }),
+    );
     return p ? String(p.id) : null;
+  }
+
+  /** The adults here who hold a mobile (its parents, staff and others; students sit under them). */
+  private async adultsOn(db: Kysely<Database>, institutionId: string, mobile: string) {
+    return (await repo.profilesOfMobile(db, mobile)).filter(
+      (x) => String(x.institution_id) === String(institutionId) && x.category !== 'STUDENT',
+    );
+  }
+
+  private otherFamily(
+    adults: readonly { first_name: string | null; last_name: string | null }[],
+    field: string,
+  ): never {
+    const name = personName(adults[0]!.first_name, adults[0]!.last_name);
+    throw new CustomAPIError(409, 'IDN.MOBILE_OTHER_FAMILY', {
+      params: { name },
+      errors: [{ field, code: 'IDN.MOBILE_OTHER_FAMILY', params: { name } }],
+    });
+  }
+
+  /**
+   * Client 2026-10-22: a mobile used at this school belongs to the adults who hold it — a parent or
+   * a staff member. Someone entered with it must be one of them (the same name); another name is
+   * another family's mobile, refused rather than joining two families on one account (the
+   * family lookup, IDN-090, fills the form with the holder's details).
+   */
+  private async holderCheck(
+    db: Kysely<Database>,
+    institutionId: string,
+    mobile: string,
+    first: string | null | undefined,
+    last: string | null | undefined,
+    field: string,
+  ) {
+    const adults = await this.adultsOn(db, institutionId, mobile);
+    if (!adults.length) return;
+    if (adults.some((a) => sameName({ first: a.first_name, last: a.last_name }, { first, last })))
+      return;
+    this.otherFamily(adults, field);
   }
 
   private async userType(trx: Kysely<Database>, institutionId: string, userTypeId: string) {
@@ -783,6 +1098,19 @@ export class MembersService {
     errors.push(...cf.errors);
     if (errors.length) throw new ValidationError(errors);
 
+    // Client 2026-10-22: a mobile used here belongs to its holders — a student's own mobile may be
+    // one of their parents' (a child without a phone), another adult's only as that same person.
+    if (mobile && student) {
+      const adults = await this.adultsOn(trx, inst.id, mobile);
+      const theirs = (input.guardians ?? []).some(
+        (g) =>
+          g.mobile === mobile ||
+          (g.memberId && adults.some((a) => binToUuid(a.public_id) === g.memberId)),
+      );
+      if (adults.length && !theirs) this.otherFamily(adults, 'mobile');
+    } else if (mobile) {
+      await this.holderCheck(trx, inst.id, mobile, input.firstName, input.lastName, 'mobile');
+    }
     let accountId = mobile ? await this.mobileFor(trx, inst.id, mobile, 'mobile') : null;
     let contactMobile = mobile;
     if (student && !mobile && input.guardians?.[0]) {
@@ -869,8 +1197,20 @@ export class MembersService {
       const linked = new Set<string>();
       for (const [i, g] of (input.guardians ?? []).entries()) {
         let guardianId: string;
+        if (!g.memberId && g.mobile) {
+          await this.holderCheck(
+            trx,
+            inst.id,
+            g.mobile,
+            g.firstName,
+            g.lastName,
+            `guardians.${i}.mobile`,
+          );
+        }
         const sibling =
-          !g.memberId && g.mobile ? await this.parentOf(trx, inst.id, g.mobile) : null;
+          !g.memberId && g.mobile
+            ? await this.parentOf(trx, inst.id, g.mobile, g.firstName, g.lastName)
+            : null;
         if (sibling) {
           // A brother's or sister's parent is a member here already (the same mobile): the child is
           // linked to that profile, not to a second one (client 2026-10-13).

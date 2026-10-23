@@ -53,7 +53,8 @@ import { posRoutes } from './pos.routes';
 import { feesRoutes } from './fees.routes';
 import { pushRoutes } from './push.routes';
 import { feeDuesRoutes } from './fee-dues.routes';
-import { financingRoutes } from './financing.routes';
+// FINANCING-OFF (client 2026-10-22): the fee financing partner is commented out in the whole application; uncomment to bring it back.
+// import { financingRoutes } from './financing.routes';
 import { admissionsRoutes } from './admissions.routes';
 import { paymentGatewaysRoutes } from './payment-gateways.routes';
 import { corporateCodesRoutes } from './corporate-codes.routes';
@@ -414,12 +415,13 @@ export function apiRouters(s: ApiServices): Router[] {
       loggers: s.loggers,
     }),
     feeDuesRoutes({ db: s.db, dues: s.feeDues, loggers: s.loggers }),
-    financingRoutes({
-      db: s.db,
-      financing: s.financing,
-      partners: s.partners,
-      loggers: s.loggers,
-    }),
+    // FINANCING-OFF (client 2026-10-22): the fee financing partner is commented out in the whole application; uncomment to bring it back.
+    // financingRoutes({
+    //   db: s.db,
+    //   financing: s.financing,
+    //   partners: s.partners,
+    //   loggers: s.loggers,
+    // }),
     admissionsRoutes({
       db: s.db,
       admissions: s.admissions,

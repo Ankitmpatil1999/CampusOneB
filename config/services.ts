@@ -645,7 +645,13 @@ export function buildApiServices(args: {
     fees,
     feeRecords,
     feeUploads: new FeeUploadsService({ db, settings, ...(now ? { now } : {}) }),
-    feeDues: new FeeDuesService({ db, records: feeRecords, settings, ...(now ? { now } : {}) }),
+    feeDues: new FeeDuesService({
+      db,
+      records: feeRecords,
+      payments: feePayments,
+      settings,
+      ...(now ? { now } : {}),
+    }),
     financing: new FinancingService({
       db,
       partner: createFinancingPartner(config.financing.mode, config.financing.partnerName),

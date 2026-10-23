@@ -5,6 +5,7 @@ import {
   commitSchema,
   delinkSchema,
   eligibilitySchema,
+  familyLookupSchema,
   memberUpdateSchema,
   membersQuerySchema,
   onboardSchema,
@@ -74,6 +75,12 @@ export function membersController(
       );
       setEtag(res, out.version);
       res.json(out);
+    }),
+    familyLookup: wrap(async (req, res) => {
+      fresh(res);
+      res.json(
+        await members.familyLookup(principal(req), familyLookupSchema.parse(req.body ?? {})),
+      );
     }),
     eligibility: wrap(async (req, res) => {
       fresh(res);

@@ -237,7 +237,8 @@ export interface FeePaymentRequestsTable {
   public_id: Buffer;
   institution_id: Ref;
   record_id: Ref;
-  channel: 'LINK' | 'QR' | 'DESK';
+  /** APP: the family's own "Pay online" from the app (client 2026-10-22). */
+  channel: 'LINK' | 'QR' | 'DESK' | 'APP';
   amount_paise: Paise;
   status: ColumnType<
     FeePaymentRequestStatus,

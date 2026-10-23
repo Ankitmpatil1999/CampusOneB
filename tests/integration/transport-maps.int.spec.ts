@@ -237,7 +237,10 @@ describe.skipIf(!adminUrl)('maps, live tracking and the transport fee on real My
     const before = await dues(asha.rowId);
     // The last month is paid at the office before the change.
     const last = before.at(-1)!;
-    const paid = await post(`/console/fee-records/${binToUuid(last.public_id)}/cash`, con, {});
+    const paid = await post(`/console/fee-records/${binToUuid(last.public_id)}/cash`, con, {
+      receivedAt: today(),
+      paidBy: 'Ramesh',
+    });
     expect(paid.status, JSON.stringify(paid.body)).toBe(201);
 
     const current = (await get('/console/passenger-allocations?assigned=true')).body.items.find(

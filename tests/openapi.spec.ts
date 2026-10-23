@@ -261,10 +261,10 @@ describe('OpenAPI 3.1 document', () => {
       'FEE-021',
       'FEE-022',
       'FEE-023',
-      'FEE-024',
-      'FEE-025',
-      'FEE-026',
-      'FEE-027',
+      // 'FEE-024', // FINANCING-OFF (client 2026-10-22)
+      // 'FEE-025', // FINANCING-OFF (client 2026-10-22)
+      // 'FEE-026', // FINANCING-OFF (client 2026-10-22)
+      // 'FEE-027', // FINANCING-OFF (client 2026-10-22)
       'FEE-028',
       'FEE-029',
       'FEE-030',
@@ -275,11 +275,11 @@ describe('OpenAPI 3.1 document', () => {
       'FEE-035',
       'FEE-036',
       'FEE-037',
-      'FEE-038',
+      // 'FEE-038', // FINANCING-OFF (client 2026-10-22)
       'FEE-039',
       'FEE-040',
       'FEE-041',
-      'FEE-042',
+      // 'FEE-042', // FINANCING-OFF (client 2026-10-22)
       'FEE-043',
       'FEE-044',
       'FEE-045',
@@ -291,6 +291,11 @@ describe('OpenAPI 3.1 document', () => {
       'FEE-051',
       'FEE-052',
       'FEE-053',
+      'FEE-054',
+      'FEE-055',
+      'FEE-056',
+      'FEE-057',
+      'FEE-058',
       'FIN-001',
       'FIN-002',
       'FIN-003',
@@ -419,6 +424,7 @@ describe('OpenAPI 3.1 document', () => {
       'IDN-087',
       'IDN-088',
       'IDN-089',
+      'IDN-090',
       'INS-001',
       'INS-002',
       'INS-003',

@@ -22,6 +22,7 @@ import { recordAudit } from './audit.service';
 import type { FeeRecordsService } from './fee-records.service';
 import { outstandingOf } from './payment-engine.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import type { FeePaymentsService } from './fee-payments.service';
 
 /** The consent text's version (OI-FEE-11: the institution's active template, served here). */
 export const CONSENT_TEMPLATE_VERSION = '2026.10';
@@ -42,6 +43,8 @@ export class FeeDuesService {
     private readonly deps: {
       readonly db: Kysely<Database>;
       readonly records: FeeRecordsService;
+      /** "Pay online" (FEE-058): the school's payment page. */
+      readonly payments?: Pick<FeePaymentsService, 'appLink'>;
       readonly settings?: { values(): Promise<SettingValues> };
       readonly now?: () => Date;
     },
@@ -466,6 +469,18 @@ export class FeeDuesService {
       { kind: 'pin', accountId: t.accountRowId, pin: input.pin },
     );
     return { ...out, record: await this.detail(p, id, forProfile) };
+  }
+
+  // --- FEE-058 ------------------------------------------------------------------------------------
+  /**
+   * "Pay online" (client 2026-10-22): a link to the school's payment page for one of the family's
+   * own instalments (the holder's, or a child's on the account with `for`), for the app to open.
+   */
+  async payOnline(p: Principal, id: string, forProfile?: string) {
+    const t = await this.target(p, forProfile);
+    await this.own(t, id);
+    if (!this.deps.payments) throw new CustomAPIError(409, 'FEE.GATEWAY_NOT_CONFIGURED');
+    return this.deps.payments.appLink(t.institutionId, id, uuidToBin(p.subject));
   }
 
   // --- FEE-023 ------------------------------------------------------------------------------------

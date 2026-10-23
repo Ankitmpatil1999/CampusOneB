@@ -188,6 +188,27 @@ doc({
   },
 });
 doc({
+  id: 'FEE-058',
+  method: 'post',
+  path: '/api/v1/me/fees/{recordId}/online-payments',
+  summary:
+    "Pay online (client 2026-10-22): a link to the school's payment page (its gateway: UPI, cards, net banking) for what is outstanding on one of the family's own instalments, for the app to open in the browser; nothing is sent",
+  auth: 'member',
+  responses: {
+    201: {
+      description: 'The payment page',
+      schema: z
+        .object({
+          id: z.uuid(),
+          link: z.string(),
+          amount: money,
+          expiresAt: z.iso.datetime(),
+        })
+        .meta({ id: 'MemberFeeOnlinePayment' }),
+    },
+  },
+});
+doc({
   id: 'FEE-023',
   method: 'get',
   path: '/api/v1/me/fees/{recordId}/receipt.pdf',
@@ -239,6 +260,16 @@ export function feeDuesRoutes(deps: {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
       res.send(out.pdf);
+    }),
+  );
+  router.post(
+    '/me/fees/:recordId/online-payments',
+    member,
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res
+        .status(201)
+        .json(await deps.dues.payOnline(principal(req), param(req, 'recordId'), q(req, 'for')));
     }),
   );
   router.get(

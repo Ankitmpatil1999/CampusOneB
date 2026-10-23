@@ -20,6 +20,7 @@ import type { FeesService } from '../services/fees.service';
 import { AuthenticationError, ValidationError } from '../utils/CustomAPIError';
 import { expectedVersion, setEtag } from '../utils/etag';
 import { MoneyError, parseAmount } from '../utils/money';
+import { PATTERNS } from '../utils/validators';
 
 const money = z.object({ amount: z.string(), currency: z.literal('INR') });
 const moneyIn = z.object({
@@ -518,6 +519,10 @@ fee({
               applicationFee: entryFee.nullable(),
               admissionFee: entryFee.nullable(),
               total: sums,
+              due: money.describe(
+                'What the open, unfinanced instalments still owe (client 2026-10-22)',
+              ),
+              collectable: z.boolean().describe('Collect fee has an instalment to take'),
             }),
           ),
           page: z.number().int(),
@@ -826,10 +831,37 @@ const gatewayOrderSchema = z.object({
   test: z.object({ paymentId: z.string(), signature: z.string() }).optional(),
   checkout: z.object({ keyId: z.string(), name: z.string() }).optional(),
 });
+/** A collection's receipt (client 2026-10-22): what the receipt view and its PDF show. */
+const feeReceipt = z
+  .object({
+    collectionId: z.uuid(),
+    receiptNo: z.string(),
+    paidAt: z.string(),
+    mode: z.enum(['CASH', 'ONLINE', 'WALLET']),
+    paidBy: z.string().nullable().describe('Cash: who paid'),
+    transactionId: z.string().nullable().describe('Online: the gateway’s payment id'),
+    school: z.object({ name: z.string() }),
+    student: z.object({
+      name: z.string(),
+      admissionNo: z.string().nullable(),
+      classSection: z.string().nullable(),
+    }),
+    year: z.string().nullable(),
+    instalment: z.object({ label: z.string(), dueDate: z.string() }),
+    amount: money.describe('The fee part'),
+    fine: money.describe('The late fine part'),
+    total: money,
+  })
+  .meta({ id: 'FeeReceipt' });
 const feePaySummary = z
   .object({
     school: z.object({ id: z.uuid(), name: z.string() }),
-    student: z.object({ name: z.string() }),
+    student: z.object({
+      name: z.string(),
+      admissionNo: z.string().nullable(),
+      classSection: z.string().nullable(),
+    }),
+    year: z.object({ label: z.string() }).nullable(),
     instalment: z.object({ label: z.string(), dueDate: z.string() }),
     amount: money,
     status: z
@@ -837,10 +869,27 @@ const feePaySummary = z
       .describe('PAID: paid through this link; CLOSED: paid another way, or withdrawn'),
     receiptNo: z.string().nullable(),
     transactionId: z.string().nullable(),
+    receipt: feeReceipt.nullable().describe('Once this link paid it'),
   })
   .meta({ id: 'FeePaymentPage' });
+/** Cash at the desk, recorded as the admission fee's (ADM-022; client 2026-10-22). */
 export const feeCashSchema = z
-  .strictObject({ paidBy: z.string().trim().max(100).nullish() })
+  .strictObject({
+    receivedAt: date,
+    receiptNo: z
+      .string()
+      .trim()
+      .max(30, { message: 'VALIDATION.FORMAT' })
+      .regex(/^[A-Za-z0-9/-]*$/, { message: 'VALIDATION.FORMAT' })
+      .nullish()
+      .describe('The counterfoil book’s number, unique in the school; empty: RingPe numbers it'),
+    paidBy: z
+      .string({ message: 'VALIDATION.REQUIRED' })
+      .trim()
+      .min(1, { message: 'VALIDATION.REQUIRED' })
+      .max(100, { message: 'VALIDATION.FORMAT' })
+      .regex(PATTERNS.personName, { message: 'VALIDATION.FORMAT' }),
+  })
   .meta({ id: 'FeeCashInput' });
 export const feePayRequestSchema = z
   .strictObject({ channel: z.enum(['LINK', 'QR'], { message: 'VALIDATION.FORMAT' }) })
@@ -884,6 +933,19 @@ fee({
               status: z.string(),
               financed: z.boolean(),
               collectable: z.boolean(),
+              collections: z
+                .array(
+                  z.object({
+                    collectionId: z.uuid(),
+                    receiptNo: z.string(),
+                    paidAt: z.string(),
+                    mode: z.enum(['CASH', 'ONLINE', 'WALLET']),
+                    total: money,
+                  }),
+                )
+                .describe(
+                  'What was collected on it, oldest first; each opens its receipt (FEE-056)',
+                ),
             }),
           ),
         })
@@ -896,7 +958,7 @@ fee({
   method: 'post',
   path: '/api/v1/console/fee-records/{recordId}/cash',
   summary:
-    'Collect an instalment’s outstanding amount (with any late fine) in cash: the record is paid, with a receipt number; any auto-debit waiting and the record’s open payment links end',
+    'Collect an instalment’s outstanding amount (with any late fine) in cash, recorded as the admission fee’s (client 2026-10-22): the day received (not in the future), who paid and the counterfoil’s receipt number (unique; empty: RingPe numbers it — 409 FEE.RECEIPT_TAKEN when used); the record is paid; any auto-debit waiting and the record’s open payment links end',
   auth: 'fees.collect',
   idempotent: 'required',
   request: feeCashSchema,
@@ -910,6 +972,8 @@ fee({
           mode: z.literal('CASH'),
           recordId: z.uuid(),
           status: z.literal('PAID'),
+          collectionId: z.uuid(),
+          receipt: feeReceipt,
         })
         .meta({ id: 'FeeCashCollected' }),
     },
@@ -984,8 +1048,95 @@ fee({
           mode: z.literal('ONLINE'),
           recordId: z.uuid(),
           status: z.literal('PAID'),
+          collectionId: z.uuid().nullable(),
+          receipt: feeReceipt.nullable(),
         })
         .meta({ id: 'FeeDeskCollected' }),
+    },
+  },
+});
+fee({
+  id: 'FEE-054',
+  method: 'get',
+  path: '/api/v1/console/fee-collections/{collectionId}/receipt',
+  summary:
+    'A collection’s receipt (PDF; client 2026-10-22): the school, the student with the admission number, class and year, the instalment, fee and fine, how and when it was paid',
+  auth: 'fees.view',
+  responses: { 200: { description: 'PDF', contentType: 'application/pdf' } },
+});
+fee({
+  id: 'FEE-055',
+  method: 'get',
+  path: '/api/v1/public/fee-payments/{requestId}/receipt',
+  summary: `The receipt (PDF) of an instalment this link paid, for the family to keep (client 2026-10-22). ${feePayToken}`,
+  auth: 'public (payment link token)',
+  responses: { 200: { description: 'PDF', contentType: 'application/pdf' } },
+});
+fee({
+  id: 'FEE-056',
+  method: 'get',
+  path: '/api/v1/console/fee-collections/{collectionId}',
+  summary:
+    'A collection’s receipt for the console’s receipt view (client 2026-10-22): a paid instalment’s, or a row of the Receipts tab; a wallet collection is numbered by its payment reference',
+  auth: 'fees.view',
+  responses: { 200: { description: 'Receipt', schema: feeReceipt } },
+});
+const feeReceiptsQuery = z.object({
+  yearId: z.string().max(40).optional(),
+  classId: z.string().max(40).optional(),
+  sectionId: z.string().max(40).optional(),
+  q: z.string().max(60).optional(),
+  mode: z.enum(['CASH', 'ONLINE', 'WALLET'], { message: 'VALIDATION.FORMAT' }).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+const modeTotal = z.object({ count: z.number().int(), amount: money });
+fee({
+  id: 'FEE-057',
+  method: 'get',
+  path: '/api/v1/console/fee-collections',
+  summary:
+    'The receipts of an academic year (?yearId, the current one by default), newest first, for the Receipts tab of the fee collection details (client 2026-10-22): narrowed by ?classId, ?sectionId, ?mode and ?q (the student’s name or admission number, or the receipt number); totals by mode over every receipt the filters keep; ?page and ?pageSize (15, at most 100)',
+  auth: 'fees.view',
+  query: feeReceiptsQuery,
+  responses: {
+    200: {
+      description: 'Receipts',
+      schema: z
+        .object({
+          year: z.object({ id: z.uuid(), label: z.string() }),
+          items: z.array(
+            z.object({
+              collectionId: z.uuid(),
+              receiptNo: z.string(),
+              paidAt: z.string(),
+              mode: z.enum(['CASH', 'ONLINE', 'WALLET']),
+              paidBy: z.string().nullable(),
+              transactionId: z.string().nullable(),
+              amount: money,
+              fine: money,
+              total: money,
+              student: z.object({
+                id: z.uuid(),
+                name: z.string(),
+                admissionNo: z.string().nullable(),
+                classSection: z.string().nullable(),
+              }),
+              instalment: z.object({ recordId: z.uuid(), label: z.string() }),
+            }),
+          ),
+          totals: z.object({
+            count: z.number().int(),
+            collected: money,
+            cash: modeTotal,
+            online: modeTotal,
+            wallet: modeTotal,
+          }),
+          page: z.number().int(),
+          pageSize: z.number().int(),
+          total: z.number().int(),
+        })
+        .meta({ id: 'FeeReceipts' }),
     },
   },
 });
@@ -1295,6 +1446,28 @@ export function feesRoutes(deps: {
     }),
   );
   router.get(
+    '/public/fee-payments/:requestId/receipt',
+    wrap(async (req, res) => {
+      const out = await P.publicReceiptPdf(param(req, 'requestId'), payToken(req));
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
+      res.send(out.pdf);
+    }),
+  );
+  router.get(
+    '/console/fee-collections/:collectionId/receipt',
+    ...console,
+    authorize('fees.view', L),
+    wrap(async (req, res) => {
+      const out = await P.collectionReceiptPdf(principal(req), param(req, 'collectionId'));
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
+      res.send(out.pdf);
+    }),
+  );
+  router.get(
     '/console/fee-records/students',
     ...console,
     authorize('fees.edit', L),
@@ -1445,6 +1618,23 @@ export function feesRoutes(deps: {
           to: date.optional().parse(q(req, 'to')),
         }),
       );
+    }),
+  );
+  // After /fee-collections/report, which /:collectionId would otherwise take.
+  router.get(
+    '/console/fee-collections',
+    ...console,
+    authorize('fees.view', L),
+    wrap(async (req, res) => {
+      res.json(await P.receipts(principal(req), feeReceiptsQuery.parse(req.query)));
+    }),
+  );
+  router.get(
+    '/console/fee-collections/:collectionId',
+    ...console,
+    authorize('fees.view', L),
+    wrap(async (req, res) => {
+      res.json(await P.collectionReceipt(principal(req), param(req, 'collectionId')));
     }),
   );
   router.get(

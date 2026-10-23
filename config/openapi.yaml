@@ -4664,6 +4664,135 @@ paths:
           required: false
           schema:
             type: string
+  /api/v1/console/fee-collections:
+    get:
+      operationId: FEE-057
+      summary: "The receipts of an academic year (?yearId, the current one by default), newest first, for the Receipts tab of the fee collection details (client 2026-10-22): narrowed by ?classId, ?sectionId, ?mode and ?q (the student’s name or admission number, or the receipt number); totals by mode over every receipt the filters keep; ?page and ?pageSize (15, at most 100)"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.view
+      responses:
+        "200":
+          description: Receipts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeReceipts"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: yearId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: classId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: sectionId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 60
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - CASH
+              - ONLINE
+              - WALLET
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+  /api/v1/console/fee-collections/{collectionId}:
+    get:
+      operationId: FEE-056
+      summary: "A collection’s receipt for the console’s receipt view (client 2026-10-22): a paid instalment’s, or a row of the Receipts tab; a wallet collection is numbered by its payment reference"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.view
+      responses:
+        "200":
+          description: Receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeReceipt"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: collectionId
+          in: path
+          required: true
+          schema:
+            type: string
+  /api/v1/console/fee-collections/{collectionId}/receipt:
+    get:
+      operationId: FEE-054
+      summary: "A collection’s receipt (PDF; client 2026-10-22): the school, the student with the admission number, class and year, the instalment, fee and fine, how and when it was paid"
+      tags:
+        - Fees
+      x-ringpe-auth: fees.view
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: collectionId
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/console/fee-collections/report:
     get:
       operationId: FEE-017
@@ -4885,7 +5014,7 @@ paths:
   /api/v1/console/fee-records/{recordId}/cash:
     post:
       operationId: FEE-047
-      summary: "Collect an instalment’s outstanding amount (with any late fine) in cash: the record is paid, with a receipt number; any auto-debit waiting and the record’s open payment links end"
+      summary: "Collect an instalment’s outstanding amount (with any late fine) in cash, recorded as the admission fee’s (client 2026-10-22): the day received (not in the future), who paid and the counterfoil’s receipt number (unique; empty: RingPe numbers it — 409 FEE.RECEIPT_TAKEN when used); the record is paid; any auto-debit waiting and the record’s open payment links end"
       tags:
         - Fees
       x-ringpe-auth: fees.collect
@@ -5504,70 +5633,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/FeeStructureSubmit"
-  /api/v1/console/financing-applications:
-    get:
-      operationId: FEE-024
-      summary: Financing registrations of the institution (?status) with their records and the partner
-      tags:
-        - Fee financing
-      x-ringpe-auth: fees.view
-      responses:
-        "200":
-          description: Registrations
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FinancingRegistrations"
-        default:
-          description: Error (RFC 9457 problem details)
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-      security:
-        - bearer: []
-        - cookie: []
-      parameters:
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-    post:
-      operationId: FEE-025
-      summary: Register a student with the financing partner (unpaid records of the current year; one live registration per student); the partner receives the minimum data
-      tags:
-        - Fee financing
-      x-ringpe-auth: fees.edit
-      responses:
-        "201":
-          description: Registered (Pending)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FinancingRegistered"
-        default:
-          description: Error (RFC 9457 problem details)
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-      security:
-        - bearer: []
-        - cookie: []
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-            maxLength: 100
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/FinancingRegistrationInput"
   /api/v1/console/held-credits:
     get:
       operationId: WAL-010
@@ -6351,6 +6416,35 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/MemberEligibilityCheck"
+  /api/v1/console/members/family-lookup:
+    post:
+      operationId: IDN-090
+      summary: "Who a mobile belongs to here, for the forms that enter a parent (client 2026-10-22): the family — its children here, its parents, the parents and address as its latest admission had them — or a staff member working here. No Aadhaar or PAN."
+      tags:
+        - Members
+      x-ringpe-auth: members.onboard,admissions.edit,admissions.approve
+      responses:
+        "200":
+          description: Who holds the mobile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyLookup"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyLookupRequest"
   /api/v1/console/members/uploads:
     post:
       operationId: IDN-049
@@ -11553,6 +11647,35 @@ paths:
           required: false
           schema:
             type: string
+  /api/v1/me/fees/{recordId}/online-payments:
+    post:
+      operationId: FEE-058
+      summary: "Pay online (client 2026-10-22): a link to the school's payment page (its gateway: UPI, cards, net banking) for what is outstanding on one of the family's own instalments, for the app to open in the browser; nothing is sent"
+      tags:
+        - Fees
+      x-ringpe-auth: member
+      responses:
+        "201":
+          description: The payment page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberFeeOnlinePayment"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
   /api/v1/me/fees/{recordId}/payments:
     post:
       operationId: FEE-022
@@ -11623,69 +11746,6 @@ paths:
           required: true
           schema:
             type: string
-  /api/v1/me/financing:
-    get:
-      operationId: FEE-038
-      summary: "Fee financing for the student in context (?for): status, partner, records, and whether the family may register here"
-      tags:
-        - Fee financing
-      x-ringpe-auth: member
-      responses:
-        "200":
-          description: Financing
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MemberFinancing"
-        default:
-          description: Error (RFC 9457 problem details)
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-      security:
-        - bearer: []
-        - cookie: []
-      parameters:
-        - name: for
-          in: query
-          required: false
-          schema:
-            type: string
-    post:
-      operationId: FEE-042
-      summary: Ask to register with the financing partner from the app (?for), while fee.financing.memberRegisters is on (prototype m.financing; OQ-03 example)
-      tags:
-        - Fee financing
-      x-ringpe-auth: member
-      responses:
-        "201":
-          description: Registered (Pending)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MemberFinancingRegistered"
-        default:
-          description: Error (RFC 9457 problem details)
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-      security:
-        - bearer: []
-        - cookie: []
-      parameters:
-        - name: for
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-            maxLength: 100
   /api/v1/me/fraud-reports:
     post:
       operationId: GRV-005
@@ -17504,64 +17564,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/BankCreditCall"
-  /api/v1/partners/financing/students/{partnerRef}/fees:
-    get:
-      operationId: FEE-027
-      summary: "A registered student’s fee details for the partner — the minimum data: name, class, admission number, the financed records (RNG-GOV-007)"
-      tags:
-        - Fee financing
-      x-ringpe-auth: "partner (signed): fee.read"
-      responses:
-        "200":
-          description: Fees
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FinancingStudentFees"
-        default:
-          description: Error (RFC 9457 problem details)
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-      security:
-        - bearer: []
-        - cookie: []
-      parameters:
-        - name: partnerRef
-          in: path
-          required: true
-          schema:
-            type: string
-  /api/v1/partners/financing/webhooks:
-    post:
-      operationId: FEE-026
-      summary: "The partner’s decision or payment (HMAC-signed, timestamped, IP allow-list, once per eventId): APPROVED — the records become financed and are no longer debited; REJECTED — with its reason; PAID — financed records marked paid with the partner’s reference (no wallet debit, no posting)"
-      tags:
-        - Fee financing
-      x-ringpe-auth: "partner (signed): fee.webhook"
-      responses:
-        "200":
-          description: Applied
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FinancingWebhookResult"
-        default:
-          description: Error (RFC 9457 problem details)
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-      security:
-        - bearer: []
-        - cookie: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/FinancingWebhook"
   /api/v1/partners/gateway/webhooks:
     post:
       operationId: SAS-033
@@ -19737,6 +19739,40 @@ paths:
           schema:
             type: string
             maxLength: 100
+  /api/v1/public/fee-payments/{requestId}/receipt:
+    get:
+      operationId: FEE-055
+      summary: "The receipt (PDF) of an instalment this link paid, for the family to keep (client 2026-10-22). X-Fee-Pay-Token: the payment link's token (or ?token=)"
+      tags:
+        - Fees
+      x-ringpe-auth: public (payment link token)
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
   /api/v1/public/fee-payments/{requestId}/verify:
     post:
       operationId: FEE-051
@@ -30048,6 +30084,303 @@ components:
         - sectionIds
         - items
       additionalProperties: false
+    FamilyLookup:
+      type: object
+      properties:
+        mobile:
+          type: string
+        status:
+          type: string
+          enum:
+            - NEW
+            - FAMILY
+            - STAFF
+            - OTHER_INSTITUTION
+          description: "NEW: no one here; FAMILY: a parent or a child of a family studying here; STAFF: a staff member working here (and no family); OTHER_INSTITUTION: used at another institution"
+        account:
+          type: boolean
+          description: A RingPe account holds this mobile
+        family:
+          anyOf:
+            - type: object
+              properties:
+                children:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      name:
+                        type: string
+                      grade:
+                        type:
+                          - string
+                          - "null"
+                      admissionNo:
+                        type:
+                          - string
+                          - "null"
+                      status:
+                        type: string
+                        enum:
+                          - ACTIVE
+                          - INACTIVE
+                          - SUSPENDED
+                    required:
+                      - id
+                      - name
+                      - grade
+                      - admissionNo
+                      - status
+                    additionalProperties: false
+                parents:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      relation:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - FATHER
+                              - MOTHER
+                              - GUARDIAN
+                          - type: "null"
+                      firstName:
+                        type: string
+                      lastName:
+                        type:
+                          - string
+                          - "null"
+                      name:
+                        type: string
+                      mobile:
+                        type:
+                          - string
+                          - "null"
+                      email:
+                        type:
+                          - string
+                          - "null"
+                      onThisMobile:
+                        type: boolean
+                    required:
+                      - id
+                      - relation
+                      - firstName
+                      - lastName
+                      - name
+                      - mobile
+                      - email
+                      - onThisMobile
+                    additionalProperties: false
+                father:
+                  anyOf:
+                    - type: object
+                      properties:
+                        name:
+                          type: string
+                        mobile:
+                          type:
+                            - string
+                            - "null"
+                        email:
+                          type:
+                            - string
+                            - "null"
+                        occupation:
+                          type:
+                            - string
+                            - "null"
+                        annualIncome:
+                          type:
+                            - string
+                            - "null"
+                      required:
+                        - name
+                        - mobile
+                        - email
+                        - occupation
+                        - annualIncome
+                      additionalProperties: false
+                    - type: "null"
+                mother:
+                  anyOf:
+                    - type: object
+                      properties:
+                        name:
+                          type: string
+                        mobile:
+                          type:
+                            - string
+                            - "null"
+                        email:
+                          type:
+                            - string
+                            - "null"
+                        occupation:
+                          type:
+                            - string
+                            - "null"
+                        annualIncome:
+                          type:
+                            - string
+                            - "null"
+                      required:
+                        - name
+                        - mobile
+                        - email
+                        - occupation
+                        - annualIncome
+                      additionalProperties: false
+                    - type: "null"
+                guardian:
+                  anyOf:
+                    - type: object
+                      properties:
+                        name:
+                          type: string
+                        mobile:
+                          type:
+                            - string
+                            - "null"
+                        email:
+                          type:
+                            - string
+                            - "null"
+                        occupation:
+                          type:
+                            - string
+                            - "null"
+                        annualIncome:
+                          type:
+                            - string
+                            - "null"
+                        relation:
+                          type: string
+                      required:
+                        - name
+                        - mobile
+                        - email
+                        - occupation
+                        - annualIncome
+                        - relation
+                      additionalProperties: false
+                    - type: "null"
+                primary:
+                  anyOf:
+                    - type: string
+                      enum:
+                        - FATHER
+                        - MOTHER
+                        - GUARDIAN
+                    - type: "null"
+                address:
+                  anyOf:
+                    - type: object
+                      properties:
+                        line1:
+                          type: string
+                        line2:
+                          type: string
+                        city:
+                          type: string
+                        state:
+                          type: string
+                        pin:
+                          type: string
+                      required:
+                        - line1
+                        - line2
+                        - city
+                        - state
+                        - pin
+                      additionalProperties: false
+                    - type: "null"
+              required:
+                - children
+                - parents
+                - father
+                - mother
+                - guardian
+                - primary
+                - address
+              additionalProperties: false
+            - type: "null"
+          description: "The family: its children here, its parents, and the parents and address as its latest admission had them"
+        staff:
+          anyOf:
+            - type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                firstName:
+                  type: string
+                lastName:
+                  type:
+                    - string
+                    - "null"
+                name:
+                  type: string
+                email:
+                  type:
+                    - string
+                    - "null"
+                gender:
+                  type:
+                    - string
+                    - "null"
+                userType:
+                  type: string
+                employeeNo:
+                  type:
+                    - string
+                    - "null"
+                relation:
+                  anyOf:
+                    - type: string
+                      enum:
+                        - FATHER
+                        - MOTHER
+                    - type: "null"
+              required:
+                - id
+                - firstName
+                - lastName
+                - name
+                - email
+                - gender
+                - userType
+                - employeeNo
+                - relation
+              additionalProperties: false
+            - type: "null"
+          description: A staff member working here on this mobile (a teacher who is also a parent)
+      required:
+        - mobile
+        - status
+        - account
+        - family
+        - staff
+      additionalProperties: false
+    FamilyLookupRequest:
+      type: object
+      properties:
+        mobile:
+          type: string
+          pattern: ^[6-9]\d{9}$
+      required:
+        - mobile
+      additionalProperties: false
     FeatureChangeLog:
       type: object
       properties:
@@ -30463,21 +30796,42 @@ components:
         status:
           type: string
           const: PAID
+        collectionId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        receipt:
+          $ref: "#/components/schemas/FeeReceipt"
       required:
         - receiptNo
         - amount
         - mode
         - recordId
         - status
+        - collectionId
+        - receipt
       additionalProperties: false
     FeeCashInput:
       type: object
       properties:
-        paidBy:
+        receivedAt:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        receiptNo:
+          description: "The counterfoil book’s number, unique in the school; empty: RingPe numbers it"
           anyOf:
             - type: string
-              maxLength: 100
+              maxLength: 30
+              pattern: ^[A-Za-z0-9/-]*$
             - type: "null"
+        paidBy:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: ^[A-Za-zÀ-ÿ.'-]+(?:\s[A-Za-zÀ-ÿ.'-]+)*$
+      required:
+        - receivedAt
+        - paidBy
       additionalProperties: false
     FeeCollected:
       type: object
@@ -31051,6 +31405,22 @@ components:
                   - collected
                   - pending
                 additionalProperties: false
+              due:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+                description: What the open, unfinanced instalments still owe (client 2026-10-22)
+              collectable:
+                type: boolean
+                description: Collect fee has an instalment to take
             required:
               - id
               - name
@@ -31060,6 +31430,8 @@ components:
               - applicationFee
               - admissionFee
               - total
+              - due
+              - collectable
             additionalProperties: false
         page:
           type: integer
@@ -31511,6 +31883,45 @@ components:
                 type: boolean
               collectable:
                 type: boolean
+              collections:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    collectionId:
+                      type: string
+                      format: uuid
+                      pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                    receiptNo:
+                      type: string
+                    paidAt:
+                      type: string
+                    mode:
+                      type: string
+                      enum:
+                        - CASH
+                        - ONLINE
+                        - WALLET
+                    total:
+                      type: object
+                      properties:
+                        amount:
+                          type: string
+                        currency:
+                          type: string
+                          const: INR
+                      required:
+                        - amount
+                        - currency
+                      additionalProperties: false
+                  required:
+                    - collectionId
+                    - receiptNo
+                    - paidAt
+                    - mode
+                    - total
+                  additionalProperties: false
+                description: What was collected on it, oldest first; each opens its receipt (FEE-056)
             required:
               - recordId
               - label
@@ -31522,6 +31933,7 @@ components:
               - status
               - financed
               - collectable
+              - collections
             additionalProperties: false
       required:
         - year
@@ -31703,6 +32115,16 @@ components:
         status:
           type: string
           const: PAID
+        collectionId:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+        receipt:
+          anyOf:
+            - $ref: "#/components/schemas/FeeReceipt"
+            - type: "null"
       required:
         - receiptNo
         - transactionId
@@ -31710,6 +32132,8 @@ components:
         - mode
         - recordId
         - status
+        - collectionId
+        - receipt
       additionalProperties: false
     FeeDeskOrder:
       type: object
@@ -31915,9 +32339,29 @@ components:
           properties:
             name:
               type: string
+            admissionNo:
+              type:
+                - string
+                - "null"
+            classSection:
+              type:
+                - string
+                - "null"
           required:
             - name
+            - admissionNo
+            - classSection
           additionalProperties: false
+        year:
+          anyOf:
+            - type: object
+              properties:
+                label:
+                  type: string
+              required:
+                - label
+              additionalProperties: false
+            - type: "null"
         instalment:
           type: object
           properties:
@@ -31956,14 +32400,21 @@ components:
           type:
             - string
             - "null"
+        receipt:
+          anyOf:
+            - $ref: "#/components/schemas/FeeReceipt"
+            - type: "null"
+          description: Once this link paid it
       required:
         - school
         - student
+        - year
         - instalment
         - amount
         - status
         - receiptNo
         - transactionId
+        - receipt
       additionalProperties: false
     FeePaymentRequest:
       type: object
@@ -32049,6 +32500,370 @@ components:
       required:
         - gatewayPaymentId
         - signature
+      additionalProperties: false
+    FeeReceipt:
+      type: object
+      properties:
+        collectionId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        receiptNo:
+          type: string
+        paidAt:
+          type: string
+        mode:
+          type: string
+          enum:
+            - CASH
+            - ONLINE
+            - WALLET
+        paidBy:
+          description: "Cash: who paid"
+          type:
+            - string
+            - "null"
+        transactionId:
+          description: "Online: the gateway’s payment id"
+          type:
+            - string
+            - "null"
+        school:
+          type: object
+          properties:
+            name:
+              type: string
+          required:
+            - name
+          additionalProperties: false
+        student:
+          type: object
+          properties:
+            name:
+              type: string
+            admissionNo:
+              type:
+                - string
+                - "null"
+            classSection:
+              type:
+                - string
+                - "null"
+          required:
+            - name
+            - admissionNo
+            - classSection
+          additionalProperties: false
+        year:
+          type:
+            - string
+            - "null"
+        instalment:
+          type: object
+          properties:
+            label:
+              type: string
+            dueDate:
+              type: string
+          required:
+            - label
+            - dueDate
+          additionalProperties: false
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+          description: The fee part
+        fine:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+          description: The late fine part
+        total:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+      required:
+        - collectionId
+        - receiptNo
+        - paidAt
+        - mode
+        - paidBy
+        - transactionId
+        - school
+        - student
+        - year
+        - instalment
+        - amount
+        - fine
+        - total
+      additionalProperties: false
+    FeeReceipts:
+      type: object
+      properties:
+        year:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            label:
+              type: string
+          required:
+            - id
+            - label
+          additionalProperties: false
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              collectionId:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              receiptNo:
+                type: string
+              paidAt:
+                type: string
+              mode:
+                type: string
+                enum:
+                  - CASH
+                  - ONLINE
+                  - WALLET
+              paidBy:
+                type:
+                  - string
+                  - "null"
+              transactionId:
+                type:
+                  - string
+                  - "null"
+              amount:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              fine:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              total:
+                type: object
+                properties:
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                    const: INR
+                required:
+                  - amount
+                  - currency
+                additionalProperties: false
+              student:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  name:
+                    type: string
+                  admissionNo:
+                    type:
+                      - string
+                      - "null"
+                  classSection:
+                    type:
+                      - string
+                      - "null"
+                required:
+                  - id
+                  - name
+                  - admissionNo
+                  - classSection
+                additionalProperties: false
+              instalment:
+                type: object
+                properties:
+                  recordId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  label:
+                    type: string
+                required:
+                  - recordId
+                  - label
+                additionalProperties: false
+            required:
+              - collectionId
+              - receiptNo
+              - paidAt
+              - mode
+              - paidBy
+              - transactionId
+              - amount
+              - fine
+              - total
+              - student
+              - instalment
+            additionalProperties: false
+        totals:
+          type: object
+          properties:
+            count:
+              type: integer
+              minimum: -9007199254740991
+              maximum: 9007199254740991
+            collected:
+              type: object
+              properties:
+                amount:
+                  type: string
+                currency:
+                  type: string
+                  const: INR
+              required:
+                - amount
+                - currency
+              additionalProperties: false
+            cash:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                amount:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+              required:
+                - count
+                - amount
+              additionalProperties: false
+            online:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                amount:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+              required:
+                - count
+                - amount
+              additionalProperties: false
+            wallet:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                amount:
+                  type: object
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                      const: INR
+                  required:
+                    - amount
+                    - currency
+                  additionalProperties: false
+              required:
+                - count
+                - amount
+              additionalProperties: false
+          required:
+            - count
+            - collected
+            - cash
+            - online
+            - wallet
+          additionalProperties: false
+        page:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        pageSize:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        total:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+      required:
+        - year
+        - items
+        - totals
+        - page
+        - pageSize
+        - total
       additionalProperties: false
     FeeRecord:
       type: object
@@ -33531,461 +34346,6 @@ components:
       required:
         - purpose
         - file
-    FinancingRegistered:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        partnerRef:
-          type: string
-        partnerName:
-          type: string
-        status:
-          type: string
-          enum:
-            - PENDING
-            - SUCCESS
-            - FAILED
-        requestedBy:
-          type: string
-          enum:
-            - STAFF
-            - MEMBER
-        failureReason:
-          type:
-            - string
-            - "null"
-        student:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            name:
-              type: string
-            admissionNo:
-              type:
-                - string
-                - "null"
-          required:
-            - id
-            - name
-            - admissionNo
-          additionalProperties: false
-        records:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                format: uuid
-                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-              label:
-                type: string
-              dueDate:
-                type: string
-              amount:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              outstanding:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              status:
-                type: string
-              financed:
-                type: boolean
-            required:
-              - id
-              - label
-              - dueDate
-              - amount
-              - outstanding
-              - status
-              - financed
-            additionalProperties: false
-        total:
-          type: object
-          properties:
-            amount:
-              type: string
-            currency:
-              type: string
-              const: INR
-          required:
-            - amount
-            - currency
-          additionalProperties: false
-        createdAt:
-          type:
-            - string
-            - "null"
-        decidedAt:
-          type:
-            - string
-            - "null"
-        version:
-          type: integer
-          minimum: -9007199254740991
-          maximum: 9007199254740991
-        sent:
-          type: boolean
-          description: "false: the partner is not connected yet; it stays pending"
-        test:
-          type: boolean
-          description: Sent to the test partner (never in production)
-      required:
-        - id
-        - partnerRef
-        - partnerName
-        - status
-        - requestedBy
-        - failureReason
-        - student
-        - records
-        - total
-        - createdAt
-        - decidedAt
-        - version
-        - sent
-        - test
-      additionalProperties: false
-    FinancingRegistration:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        partnerRef:
-          type: string
-        partnerName:
-          type: string
-        status:
-          type: string
-          enum:
-            - PENDING
-            - SUCCESS
-            - FAILED
-        requestedBy:
-          type: string
-          enum:
-            - STAFF
-            - MEMBER
-        failureReason:
-          type:
-            - string
-            - "null"
-        student:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            name:
-              type: string
-            admissionNo:
-              type:
-                - string
-                - "null"
-          required:
-            - id
-            - name
-            - admissionNo
-          additionalProperties: false
-        records:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                format: uuid
-                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-              label:
-                type: string
-              dueDate:
-                type: string
-              amount:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              outstanding:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              status:
-                type: string
-              financed:
-                type: boolean
-            required:
-              - id
-              - label
-              - dueDate
-              - amount
-              - outstanding
-              - status
-              - financed
-            additionalProperties: false
-        total:
-          type: object
-          properties:
-            amount:
-              type: string
-            currency:
-              type: string
-              const: INR
-          required:
-            - amount
-            - currency
-          additionalProperties: false
-        createdAt:
-          type:
-            - string
-            - "null"
-        decidedAt:
-          type:
-            - string
-            - "null"
-        version:
-          type: integer
-          minimum: -9007199254740991
-          maximum: 9007199254740991
-      required:
-        - id
-        - partnerRef
-        - partnerName
-        - status
-        - requestedBy
-        - failureReason
-        - student
-        - records
-        - total
-        - createdAt
-        - decidedAt
-        - version
-      additionalProperties: false
-    FinancingRegistrationInput:
-      type: object
-      properties:
-        studentProfileId:
-          type: string
-          maxLength: 40
-        recordIds:
-          description: The records to finance; default every unpaid one of the current year
-          maxItems: 24
-          type: array
-          items:
-            type: string
-            maxLength: 40
-      required:
-        - studentProfileId
-      additionalProperties: false
-    FinancingRegistrations:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/FinancingRegistration"
-        partner:
-          type: object
-          properties:
-            name:
-              type: string
-            mode:
-              type: string
-              enum:
-                - test
-                - live
-          required:
-            - name
-            - mode
-          additionalProperties: false
-      required:
-        - items
-        - partner
-      additionalProperties: false
-    FinancingStudentFees:
-      type: object
-      properties:
-        partnerRef:
-          type: string
-        status:
-          type: string
-          enum:
-            - PENDING
-            - SUCCESS
-            - FAILED
-        institution:
-          type: string
-        student:
-          type: object
-          properties:
-            name:
-              type: string
-            admissionNo:
-              type:
-                - string
-                - "null"
-            classSection:
-              type:
-                - string
-                - "null"
-          required:
-            - name
-            - admissionNo
-            - classSection
-          additionalProperties: false
-        records:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                format: uuid
-                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-              label:
-                type: string
-              dueDate:
-                type: string
-              amount:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              outstanding:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              status:
-                type: string
-              financed:
-                type: boolean
-            required:
-              - id
-              - label
-              - dueDate
-              - amount
-              - outstanding
-              - status
-              - financed
-            additionalProperties: false
-      required:
-        - partnerRef
-        - status
-        - institution
-        - student
-        - records
-      additionalProperties: false
-    FinancingWebhook:
-      type: object
-      properties:
-        eventId:
-          type: string
-          minLength: 1
-          maxLength: 64
-          description: "Unique per event: a repeat answers the first result"
-        partnerRef:
-          type: string
-          minLength: 1
-          maxLength: 40
-        event:
-          type: string
-          enum:
-            - APPROVED
-            - REJECTED
-            - PAID
-        reason:
-          type: string
-          maxLength: 300
-        recordIds:
-          maxItems: 24
-          type: array
-          items:
-            type: string
-            format: uuid
-            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        paidOn:
-          type: string
-          pattern: ^\d{4}-\d{2}-\d{2}$
-      required:
-        - eventId
-        - partnerRef
-        - event
-      additionalProperties: false
-    FinancingWebhookResult:
-      type: object
-      properties:
-        partnerRef:
-          type: string
-        status:
-          type: string
-          enum:
-            - PENDING
-            - SUCCESS
-            - FAILED
-        recordsPaid:
-          type: number
-      required:
-        - partnerRef
-        - status
-        - recordsPaid
-      additionalProperties: false
     FraudReport:
       type: object
       properties:
@@ -36771,6 +37131,37 @@ components:
       required:
         - mobile
       additionalProperties: false
+    MemberFeeOnlinePayment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        link:
+          type: string
+        amount:
+          type: object
+          properties:
+            amount:
+              type: string
+            currency:
+              type: string
+              const: INR
+          required:
+            - amount
+            - currency
+          additionalProperties: false
+        expiresAt:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+      required:
+        - id
+        - link
+        - amount
+        - expiresAt
+      additionalProperties: false
     MemberFeePaid:
       type: object
       properties:
@@ -37391,206 +37782,6 @@ components:
         - consent
         - financing
         - wallet
-      additionalProperties: false
-    MemberFinancing:
-      type: object
-      properties:
-        status:
-          type: string
-          enum:
-            - NOT_REGISTERED
-            - PENDING
-            - SUCCESS
-            - FAILED
-        partnerName:
-          type: string
-        partnerRef:
-          type:
-            - string
-            - "null"
-        failureReason:
-          type:
-            - string
-            - "null"
-        registeredAt:
-          type:
-            - string
-            - "null"
-        decidedAt:
-          type:
-            - string
-            - "null"
-        records:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                format: uuid
-                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-              label:
-                type: string
-              dueDate:
-                type: string
-              amount:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              outstanding:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              status:
-                type: string
-              financed:
-                type: boolean
-            required:
-              - id
-              - label
-              - dueDate
-              - amount
-              - outstanding
-              - status
-              - financed
-            additionalProperties: false
-        canRegister:
-          type: boolean
-          description: fee.financing.memberRegisters on and no live registration
-        sharedData:
-          type: array
-          items:
-            type: string
-      required:
-        - status
-        - partnerName
-        - partnerRef
-        - failureReason
-        - registeredAt
-        - decidedAt
-        - records
-        - canRegister
-        - sharedData
-      additionalProperties: false
-    MemberFinancingRegistered:
-      type: object
-      properties:
-        status:
-          type: string
-          enum:
-            - NOT_REGISTERED
-            - PENDING
-            - SUCCESS
-            - FAILED
-        partnerName:
-          type: string
-        partnerRef:
-          type:
-            - string
-            - "null"
-        failureReason:
-          type:
-            - string
-            - "null"
-        registeredAt:
-          type:
-            - string
-            - "null"
-        decidedAt:
-          type:
-            - string
-            - "null"
-        records:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                format: uuid
-                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-              label:
-                type: string
-              dueDate:
-                type: string
-              amount:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              outstanding:
-                type: object
-                properties:
-                  amount:
-                    type: string
-                  currency:
-                    type: string
-                    const: INR
-                required:
-                  - amount
-                  - currency
-                additionalProperties: false
-              status:
-                type: string
-              financed:
-                type: boolean
-            required:
-              - id
-              - label
-              - dueDate
-              - amount
-              - outstanding
-              - status
-              - financed
-            additionalProperties: false
-        canRegister:
-          type: boolean
-          description: fee.financing.memberRegisters on and no live registration
-        sharedData:
-          type: array
-          items:
-            type: string
-        sent:
-          type: boolean
-          description: "false: the partner is not connected yet; it stays pending"
-        test:
-          type: boolean
-          description: Sent to the test partner (never in production)
-      required:
-        - status
-        - partnerName
-        - partnerRef
-        - failureReason
-        - registeredAt
-        - decidedAt
-        - records
-        - canRegister
-        - sharedData
-        - sent
-        - test
       additionalProperties: false
     MemberHistory:
       type: object

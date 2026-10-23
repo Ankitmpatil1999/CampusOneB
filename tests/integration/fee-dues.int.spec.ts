@@ -168,7 +168,8 @@ describe.skipIf(!adminUrl)('members’ dues and fee financing on real MySQL', ()
     );
   });
 
-  it('registers for financing once; the partner approves, rejects or pays on its signed webhook (FEE-024…027, FEE-038, FEE-042)', async () => {
+  // FINANCING-OFF (client 2026-10-22): the fee financing partner is commented out in the whole application; uncomment to bring it back.
+  it.skip('registers for financing once; the partner approves, rejects or pays on its signed webhook (FEE-024…027, FEE-038, FEE-042)', async () => {
     const term3 = await raise(ravi, '2000.00', 'Term 3');
     const before = await request(f.app).get('/api/v1/me/financing').set(ravi.auth);
     expect(before.body).toMatchObject({ status: 'NOT_REGISTERED', canRegister: true });

@@ -93,7 +93,7 @@ export async function queuePushes(db: Db, n: PushQueueInput, at: Date) {
             title_key: n.titleKey,
             params: JSON.stringify(n.params),
             body: n.body.slice(0, 300),
-            link: n.link ? n.link.slice(0, 300) : null,
+            link: n.link ? n.link.slice(0, 600) : null,
             next_attempt_at: at,
             created_at: at,
           },

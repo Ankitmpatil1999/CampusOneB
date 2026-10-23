@@ -245,6 +245,83 @@ export const eligibilityResultSchema = z
   })
   .meta({ id: 'MemberEligibility' });
 
+/** IDN-090 (client 2026-10-22): who a mobile belongs to here, for the forms that enter a parent. */
+export const familyLookupSchema = z.strictObject({ mobile }).meta({ id: 'FamilyLookupRequest' });
+
+const lookupPerson = z.object({
+  name: z.string(),
+  mobile: z.string().nullable(),
+  email: z.string().nullable(),
+  occupation: z.string().nullable(),
+  annualIncome: z.string().nullable(),
+});
+const lookupAddress = z.object({
+  line1: z.string(),
+  line2: z.string(),
+  city: z.string(),
+  state: z.string(),
+  pin: z.string(),
+});
+
+export const familyLookupResultSchema = z
+  .object({
+    mobile: z.string(),
+    status: z
+      .enum(['NEW', 'FAMILY', 'STAFF', 'OTHER_INSTITUTION'])
+      .describe(
+        'NEW: no one here; FAMILY: a parent or a child of a family studying here; STAFF: a staff member working here (and no family); OTHER_INSTITUTION: used at another institution',
+      ),
+    account: z.boolean().describe('A RingPe account holds this mobile'),
+    family: z
+      .object({
+        children: z.array(
+          z.object({
+            id: z.uuid(),
+            name: z.string(),
+            grade: z.string().nullable(),
+            admissionNo: z.string().nullable(),
+            status,
+          }),
+        ),
+        parents: z.array(
+          z.object({
+            id: z.uuid(),
+            relation: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).nullable(),
+            firstName: z.string(),
+            lastName: z.string().nullable(),
+            name: z.string(),
+            mobile: z.string().nullable(),
+            email: z.string().nullable(),
+            onThisMobile: z.boolean(),
+          }),
+        ),
+        father: lookupPerson.nullable(),
+        mother: lookupPerson.nullable(),
+        guardian: lookupPerson.extend({ relation: z.string() }).nullable(),
+        primary: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).nullable(),
+        address: lookupAddress.nullable(),
+      })
+      .nullable()
+      .describe(
+        'The family: its children here, its parents, and the parents and address as its latest admission had them',
+      ),
+    staff: z
+      .object({
+        id: z.uuid(),
+        firstName: z.string(),
+        lastName: z.string().nullable(),
+        name: z.string(),
+        email: z.string().nullable(),
+        gender: z.string().nullable(),
+        userType: z.string(),
+        employeeNo: z.string().nullable(),
+        relation: z.enum(['FATHER', 'MOTHER']).nullable(),
+      })
+      .nullable()
+      .describe('A staff member working here on this mobile (a teacher who is also a parent)'),
+  })
+  .meta({ id: 'FamilyLookup' });
+
 export const onboardSchema = z
   .strictObject({
     userTypeId: uuid,

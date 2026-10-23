@@ -4079,6 +4079,8 @@ export class AdmissionsService {
             titleKey: 'NTF.ADMISSION_PAY_LINK',
             params: { amount, name: child },
             body: text,
+            // The payment page itself: the app opens it in the browser (client 2026-10-22).
+            link,
             email: false,
           },
           this.now(),

@@ -23,6 +23,8 @@ import {
   delinkSchema,
   eligibilityResultSchema,
   eligibilitySchema,
+  familyLookupResultSchema,
+  familyLookupSchema,
   memberDetailSchema,
   memberHistorySchema,
   memberListSchema,
@@ -93,6 +95,17 @@ doc({
   auth: 'members.onboard',
   request: eligibilitySchema,
   responses: { 200: { description: 'Eligibility', schema: eligibilityResultSchema } },
+});
+doc({
+  id: 'IDN-090',
+  method: 'post',
+  path: '/api/v1/console/members/family-lookup',
+  summary:
+    'Who a mobile belongs to here, for the forms that enter a parent (client 2026-10-22): the family — its children here, its parents, the parents and address as its latest admission had them — or a staff member working here. No Aadhaar or PAN.',
+  tags,
+  auth: 'members.onboard,admissions.edit,admissions.approve',
+  request: familyLookupSchema,
+  responses: { 200: { description: 'Who holds the mobile', schema: familyLookupResultSchema } },
 });
 doc({
   id: 'IDN-048',
@@ -327,6 +340,12 @@ export function membersRoutes(deps: {
   router.get('/me/school-record', requireSurface(L, 'member'), c.schoolRecord);
   router.get('/console/members', ...con, can('members.view'), c.list);
   router.post('/console/members/eligibility', ...con, can('members.onboard'), c.eligibility);
+  router.post(
+    '/console/members/family-lookup',
+    ...con,
+    authorizeAny(['members.onboard', 'admissions.edit', 'admissions.approve'], L),
+    c.familyLookup,
+  );
   router.get(
     '/console/members/uploads/templates/:kind',
     ...con,

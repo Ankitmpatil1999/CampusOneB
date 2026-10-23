@@ -264,8 +264,9 @@ export const envSchema = z
         'ACCOUNTING_MODE',
         'must be off in production until the accounting package is chosen (test package)',
       );
-    if (env.FINANCING_PARTNER_MODE === 'test')
-      problem('FINANCING_PARTNER_MODE', 'must be live in production (test financing partner)');
+    // FINANCING-OFF (client 2026-10-22): the fee financing partner is commented out in the whole application; uncomment to bring it back.
+    // if (env.FINANCING_PARTNER_MODE === 'test')
+    //   problem('FINANCING_PARTNER_MODE', 'must be live in production (test financing partner)');
     if (env.SOCIAL_MODE === 'test')
       problem('SOCIAL_MODE', 'must be live in production (test sign-in providers)');
     if (env.SMS_PROVIDER === 'log')

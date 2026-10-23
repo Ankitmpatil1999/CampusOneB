@@ -75,6 +75,15 @@ const n = (
   }) as const;
 
 export const MEMBER_MESSAGES = [
+  // Client 2026-10-22: a mobile used at this school belongs to that person or family; another
+  // family is never joined to it without the school choosing it.
+  n(
+    'IDN.MOBILE_OTHER_FAMILY',
+    409,
+    'This mobile belongs to {name} at this school. Use their details, or enter another mobile.',
+    ['client 2026-10-22'],
+    ['name'],
+  ),
   r(
     'IDN.MOBILE_IN_OTHER_INSTITUTION',
     'MSG-IDN-288',
