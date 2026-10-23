@@ -93,6 +93,13 @@ export const ROLE_MESSAGES = [
     ['6.28', 'client 2026-10-13'],
     ['role', 'who'],
   ),
+  // A staff member's role given as they are onboarded (client 2026-10-22) needs members.roles.
+  n(
+    'IDN.ROLE_NOT_PERMITTED',
+    403,
+    'Your role can’t give console roles. Onboard the staff member without one, and ask the institution administrator to give it.',
+    ['6.28', 'client 2026-10-22'],
+  ),
 ] as const satisfies readonly MessageDefinition[];
 
 export type RoleMessageKey = (typeof ROLE_MESSAGES)[number]['key'];

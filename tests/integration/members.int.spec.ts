@@ -630,9 +630,11 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     const header = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
     const cols = header.split(',');
     const row = (v: Record<string, string>) => cols.map((c) => v[c] ?? '').join(',');
-    const person = (first: string) => ({
+    const person = (first: string, role: string) => ({
       'User type': 'Teacher',
       Department: teacher.departments[0]!.name,
+      // Each row's console role, or None (client 2026-10-22).
+      Role: role,
       'First name': first,
       'Last name': 'Hegde',
       Gender: 'Female',
@@ -642,7 +644,9 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       'Joining date': '01/06/2026',
       'Blood group': 'O+',
     });
-    const csv = [header, row(person('Asha')), row(person('Bhavya'))].join('\r\n');
+    const asha = person('Asha', 'teacher');
+    const bhavya = person('Bhavya', 'None');
+    const csv = [header, row(asha), row(bhavya)].join('\r\n');
     const up = await request(app)
       .post('/api/v1/console/members/uploads')
       .set(a.con)
@@ -670,6 +674,127 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     const again = await commit();
     expect(again.headers['idempotent-replayed']).toBe('true');
     expect(again.body).toEqual({ created: 2, skipped: 0 });
+    // Asha has the Teacher role from her row; Bhavya, None, has no console role.
+    expect(await rolesByEmail(asha['E-mail'])).toEqual(['TEACHER']);
+    expect(await rolesByEmail(bhavya['E-mail'])).toEqual([]);
+  });
+
+  /** The console roles of the staff member with this work e-mail. */
+  const rolesByEmail = async (email: string) =>
+    (
+      await t.db
+        .selectFrom('profile_roles as pr')
+        .innerJoin('roles as r', 'r.id', 'pr.role_id')
+        .innerJoin('member_profiles as m', 'm.id', 'pr.profile_id')
+        .select('r.code')
+        .where('m.contact_email', '=', email.toLowerCase())
+        .execute()
+    ).map((x) => x.code);
+
+  it('gives staff the console role chosen at onboarding, one by one (client 2026-10-22)', async () => {
+    const teacher = await userType(a.con, 'Teacher');
+    const roles = (await request(app).get('/api/v1/console/roles').set(a.con)).body.items as {
+      id: string;
+      code: string | null;
+    }[];
+    const id = (code: string) => roles.find((r) => r.code === code)!.id;
+    const body = (roleId?: string) => ({
+      userTypeId: teacher.id,
+      departmentId: teacher.departments[0]!.id,
+      firstName: 'Nandini',
+      lastName: 'Shetty',
+      gender: 'FEMALE',
+      dateOfBirth: '1991-03-04',
+      mobile: mobile(),
+      email: `nandini.${randomInt(0, 1e9)}@school.example.in`,
+      joinedOn: '2026-06-01',
+      customFields: { [blood]: 'O+' },
+      ...(roleId ? { roleId } : {}),
+    });
+    const post = (b: object) =>
+      request(app)
+        .post('/api/v1/console/staff')
+        .set(a.con)
+        .set('Idempotency-Key', randomUUID())
+        .send(b);
+    // RingPe gives the Institution Administrator role; the Principal role is the principal's.
+    expect((await post(body(id('INSTITUTION_ADMIN')))).body.code).toBe('IDN.ROLE_NOT_ASSIGNABLE');
+    expect((await post(body(id('PRINCIPAL')))).body.code).toBe('IDN.ROLE_WRONG_PROFILE');
+    const b = body(id('TEACHER'));
+    const r = await post(b);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.role).toBe('Teacher');
+    expect(await rolesByEmail(b.email)).toEqual(['TEACHER']);
+    // The access page shows it, as if given there.
+    const accounts = (await request(app).get('/api/v1/console/staff-accounts').set(a.con)).body
+      .items as { id: string; roles: { code: string }[] }[];
+    expect(accounts.find((x) => x.id === r.body.id)!.roles.map((x) => x.code)).toEqual(['TEACHER']);
+    // Without one, none.
+    const none = body();
+    const plain = await post(none);
+    expect(plain.status).toBe(201);
+    expect(plain.body.role).toBeNull();
+    expect(await rolesByEmail(none.email)).toEqual([]);
+  });
+
+  it('refuses a staff sheet row without a role it can give (client 2026-10-22)', async () => {
+    const teacher = await userType(a.con, 'Teacher');
+    const tpl = await request(app)
+      .get('/api/v1/console/members/uploads/templates/staff')
+      .set(a.con);
+    const lines = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n');
+    const header = lines[0]!;
+    const cols = header.split(',');
+    expect(cols.slice(0, 3)).toEqual(['User type', 'Department', 'Role']);
+    // The example row names the Teacher role.
+    expect(lines[1]!.split(',')[2]).toBe('Teacher');
+    const row = (role: string) =>
+      cols
+        .map(
+          (c) =>
+            ({
+              'User type': 'Teacher',
+              Department: teacher.departments[0]!.name,
+              Role: role,
+              'First name': 'Chitra',
+              Gender: 'Female',
+              'Date of birth': '12/07/1990',
+              Mobile: mobile(),
+              'E-mail': `chitra.${randomInt(0, 1e9)}@school.example.in`,
+              'Joining date': '01/06/2026',
+              'Blood group': 'O+',
+            })[c] ?? '',
+        )
+        .join(',');
+    const send = (csv: string) =>
+      request(app)
+        .post('/api/v1/console/members/uploads')
+        .set(a.con)
+        .set('Idempotency-Key', randomUUID())
+        .field('kind', 'staff')
+        .attach('file', Buffer.from(csv), { filename: 'staff.csv', contentType: 'text/csv' });
+    const up = await send(
+      [header, row(''), row('Librarian'), row('Principal'), row('Institution Administrator')].join(
+        '\r\n',
+      ),
+    );
+    expect(up.status, JSON.stringify(up.body)).toBe(201);
+    expect(up.body).toMatchObject({ total: 4, accepted: 0, rejected: 4 });
+    const roleError = (i: number) =>
+      (up.body.rows[i].errors as { column: string; message: string }[]).find(
+        (e) => e.column === 'Role',
+      )?.message;
+    expect(roleError(0)).toMatch(/^Write the console role — .*Teacher.* — or None/);
+    expect(roleError(1)).toMatch(
+      /^There is no console role “Librarian”\. Write one of .*, or None\.$/,
+    );
+    expect(roleError(2)).toBe(
+      'The Principal role can be given only to the principal or management.',
+    );
+    expect(roleError(3)).toMatch(/^This role can't be given or taken away here\./);
+    // The template from before the Role column.
+    const old = await send([cols.filter((c) => c !== 'Role').join(','), 'Teacher'].join('\r\n'));
+    expect(old.body.code).toBe('UPL.OLD_STAFF_TEMPLATE');
   });
 
   /** An Aadhaar number (twelve digits, not starting with 0 or 1) and a PAN, each new. */

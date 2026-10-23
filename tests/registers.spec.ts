@@ -172,3 +172,13 @@ describe('admission roles (client 2026-10-09)', () => {
     ]);
   });
 });
+
+describe('attendance reports for Accounts (client 2026-10-22)', () => {
+  it('lets Accounts read attendance, never mark it or change its rules', () => {
+    const accountant = ROLE_TEMPLATES.find((r) => r.code === 'ACCOUNTANT')!;
+    expect(accountant.tasks).toContain('attendance');
+    expect(grantsOf(accountant).filter((s) => s.startsWith('attendance.'))).toEqual([
+      'attendance.view',
+    ]);
+  });
+});

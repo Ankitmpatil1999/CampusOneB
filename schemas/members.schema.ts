@@ -371,6 +371,11 @@ export const staffSchema = z
     joinedOn: date,
     employeeNo: optional(30),
     customFields,
+    roleId: uuid
+      .nullish()
+      .describe(
+        'The console role given with the profile (client 2026-10-22; IDN-062): needs members.roles; not the Institution Administrator role; one that fits the user type',
+      ),
   })
   .meta({ id: 'StaffOnboard' });
 
@@ -386,6 +391,7 @@ export const staffResultSchema = z
       .describe(
         'Shown once (setting idn.staff.passwordShownOnce; never stored, not in a replay); changed at first sign-in',
       ),
+    role: z.string().nullable().describe('The console role given, by name; null when none'),
   })
   .meta({ id: 'StaffOnboarded' });
 

@@ -236,6 +236,27 @@ export const MEMBER_MESSAGES = [
     'This file is the earlier members template. Download the template again — it now has the admission form’s columns.',
     ['6.18', 'client 2026-10-19'],
   ),
+  // Each staff member's console role, given as they are onboarded (client 2026-10-22).
+  n(
+    'UPL.OLD_STAFF_TEMPLATE',
+    422,
+    'This file is the earlier staff template, without the Role column. Download the template again, or add a “Role” column after Department.',
+    ['6.18', 'client 2026-10-22'],
+  ),
+  n(
+    'UPL.ROLE_REQUIRED',
+    422,
+    'Write the console role — {roles} — or None for staff who don’t use the console.',
+    ['client 2026-10-22'],
+    ['roles'],
+  ),
+  n(
+    'UPL.ROLE_UNKNOWN',
+    422,
+    'There is no console role “{role}”. Write one of {roles}, or None.',
+    ['client 2026-10-22'],
+    ['role', 'roles'],
+  ),
   n('UPL.YES_NO', 422, 'Write Yes or No.', ['client 2026-10-19']),
   n(
     'UPL.YEAR_UNKNOWN',

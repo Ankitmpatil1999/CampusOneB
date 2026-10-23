@@ -21,6 +21,7 @@
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
+import { KIND_CATEGORIES } from '../repositories/members.repository';
 import type { CardsService } from './cards.service';
 import type { Database, DailyStatus } from '../models/ringpe_models';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
@@ -34,6 +35,7 @@ import { tellMembers } from './member-notices';
 import { occurrences } from './calendar.service';
 import { memberOf, principalOf, teacherOf } from './member-roles';
 import { notify } from './notifications.service';
+import { payrollMonth, type DayStatus, type LeaveType } from './payroll-attendance';
 import type { SettingsService } from './settings.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -42,6 +44,8 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = ['PRESENT', 'LATE', 'HALF_DAY', 'ABSENT'] as const;
 /** Teachers, the principal and non-teaching staff (the front desk's staff attendance). */
 const STAFF_CATEGORIES = ['TEACHER', 'PRINCIPAL', 'STAFF'] as const;
+/** Teaching staff: payroll's Teaching filter (client 2026-10-22). */
+const TEACHING: readonly string[] = ['TEACHER', 'PRINCIPAL'];
 const nameOf = (first: string | null | undefined, last: string | null | undefined) =>
   [first, last].filter(Boolean).join(' ');
 const ymd = (d: Date | string) => (typeof d === 'string' ? d.slice(0, 10) : istBusinessDate(d));
@@ -1496,6 +1500,159 @@ export class AttendanceService {
         };
       }),
       nextCursor: page.length > 100 ? String(list.at(-1)!.id) : null,
+    };
+  }
+
+  /**
+   * ATT-032: each staff member's month for payroll (client 2026-10-22) — days worked, approved leave
+   * and loss of pay, with the days to check. Teachers, the principal and non-teaching staff employed
+   * in the month, someone who left during it too; the rules are payroll-attendance.ts's.
+   */
+  async payroll(
+    p: Principal,
+    f: { month?: string | undefined; type?: 'ALL' | 'TEACHERS' | 'STAFF' | undefined },
+  ) {
+    const inst = await institutionOf(this.deps.db, p);
+    const today = istBusinessDate(this.now());
+    const month = f.month ?? today.slice(0, 7);
+    const from = `${month}-01`;
+    const next = new Date(`${from}T00:00:00Z`);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    const to = addDays(next.toISOString().slice(0, 10), -1);
+    const through = today < to ? today : to;
+    const type = f.type ?? 'ALL';
+    // Everyone on the payroll is staff as onboarding has it: management, crew and other staff too.
+    const cats =
+      type === 'TEACHERS'
+        ? TEACHING
+        : type === 'STAFF'
+          ? KIND_CATEGORIES.STAFF.filter((c) => !TEACHING.includes(c))
+          : KIND_CATEGORIES.STAFF;
+    const db = this.deps.db;
+    const rows = await db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .leftJoin('departments as dp', 'dp.id', 'm.department_id')
+      .select([
+        'm.id',
+        'm.public_id',
+        'm.first_name',
+        'm.last_name',
+        'm.employee_no',
+        'm.joined_on',
+        'm.status',
+        'm.status_changed_at',
+        'ut.name as type_name',
+        'ut.category',
+        'dp.name as department',
+      ])
+      .where('m.institution_id', '=', inst.id)
+      .where('ut.category', 'in', cats as never[])
+      // Who left before the month began isn't on its payroll; who joined after it ended neither.
+      .where((eb) =>
+        eb.or([
+          eb('m.status', '!=', 'INACTIVE'),
+          eb('m.status_changed_at', '>=', new Date(`${from}T00:00:00+05:30`)),
+        ]),
+      )
+      .where((eb) => eb.or([eb('m.joined_on', 'is', null), eb('m.joined_on', '<=', to)]))
+      .orderBy('m.first_name')
+      .orderBy('m.last_name')
+      .execute();
+    const ids = rows.map((r) => String(r.id));
+    const [records, leaves, holidays] = await Promise.all([
+      ids.length
+        ? db
+            .selectFrom('attendance_days')
+            .select(['profile_id', 'att_date', 'status'])
+            .where('institution_id', '=', inst.id)
+            .where('att_date', '>=', from)
+            .where('att_date', '<=', to)
+            .where('profile_id', 'in', ids)
+            .execute()
+        : Promise.resolve([]),
+      ids.length
+        ? db
+            .selectFrom('staff_leaves')
+            .select(['profile_id', 'leave_type', 'from_date', 'to_date'])
+            .where('institution_id', '=', inst.id)
+            .where('final_status', '=', 'APPROVED')
+            .where('from_date', '<=', to)
+            .where('to_date', '>=', from)
+            .where('profile_id', 'in', ids)
+            .execute()
+        : Promise.resolve([]),
+      this.holidays(db, inst.id, from, to),
+    ]);
+    const statuses = new Map<string, Map<string, DayStatus>>();
+    for (const r of records) {
+      const m = statuses.get(String(r.profile_id)) ?? new Map<string, DayStatus>();
+      m.set(ymd(r.att_date), r.status);
+      statuses.set(String(r.profile_id), m);
+    }
+    const onLeave = new Map<string, Map<string, LeaveType>>();
+    for (const l of leaves) {
+      const m = onLeave.get(String(l.profile_id)) ?? new Map<string, LeaveType>();
+      const start = ymd(l.from_date) < from ? from : ymd(l.from_date);
+      for (let d = start; d <= ymd(l.to_date) && d <= to; d = addDays(d, 1)) m.set(d, l.leave_type);
+      onLeave.set(String(l.profile_id), m);
+    }
+    let days = 0;
+    let sundays = 0;
+    let workingDays = 0;
+    const offs: { date: string; title: string }[] = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      days++;
+      if (weekday(d) === 7) sundays++;
+      else if (holidays.has(d)) offs.push({ date: d, title: holidays.get(d)! });
+      else workingDays++;
+    }
+    const items = rows.map((r) => {
+      const joinedOn = r.joined_on ? ymd(r.joined_on) : null;
+      const leftOn =
+        r.status === 'INACTIVE' && r.status_changed_at
+          ? istBusinessDate(new Date(r.status_changed_at))
+          : null;
+      return {
+        member: {
+          id: binToUuid(r.public_id),
+          name: nameOf(r.first_name, r.last_name),
+          employeeNo: r.employee_no,
+          type: r.type_name,
+          teaching: TEACHING.includes(r.category),
+          department: r.department ?? null,
+          joinedOn,
+          leftOn,
+        },
+        ...payrollMonth({
+          from,
+          to,
+          through,
+          holidays,
+          joinedOn,
+          leftOn,
+          statuses: statuses.get(String(r.id)) ?? new Map(),
+          leave: onLeave.get(String(r.id)) ?? new Map(),
+        }),
+      };
+    });
+    return {
+      month,
+      from,
+      to,
+      /** The last day read: today in a running month; null before the month begins. */
+      through: through >= from ? through : null,
+      complete: today > to,
+      days,
+      workingDays,
+      sundays,
+      holidays: offs,
+      counts: {
+        staff: items.length,
+        withLop: items.filter((i) => i.lopDays > 0).length,
+        notMarked: items.reduce((n, i) => n + i.notMarked, 0),
+      },
+      items,
     };
   }
 

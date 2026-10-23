@@ -2836,6 +2836,170 @@ export class AdmissionsService {
     return this.detail(p, id);
   }
 
+  // --- ADM-039…041: a member's admission record (client 2026-10-22) -----------------------------------
+  /**
+   * ADM-039: a member's admission records — the student's own application (from the public form, the
+   * counsellor's or the members bulk upload), or each child's for a parent, with how the member
+   * appears on it — as the console's application view, documents included.
+   */
+  async memberRecords(p: Principal, memberId: string) {
+    const i = await this.consoleInst(p);
+    if (!isUuid(memberId)) throw new NotFoundError();
+    const db = this.deps.db;
+    const m = await db
+      .selectFrom('member_profiles')
+      .select('id')
+      .where('institution_id', '=', i.id)
+      .where('public_id', '=', uuidToBin(memberId))
+      .executeTakeFirst();
+    if (!m) throw new NotFoundError();
+    const wards = await db
+      .selectFrom('guardianships')
+      .select(['ward_profile_id', 'relation'])
+      .where('institution_id', '=', i.id)
+      .where('guardian_profile_id', '=', String(m.id))
+      .execute();
+    const relationOf = new Map<string, 'STUDENT' | 'FATHER' | 'MOTHER' | 'GUARDIAN'>([
+      [String(m.id), 'STUDENT'],
+      ...wards.map(
+        (w) =>
+          [
+            String(w.ward_profile_id),
+            w.relation === 'FATHER' || w.relation === 'MOTHER' ? w.relation : 'GUARDIAN',
+          ] as const,
+      ),
+    ]);
+    const rows = await this.rows(db)
+      .where('a.institution_id', '=', i.id)
+      .where('a.member_profile_id', 'in', [...relationOf.keys()])
+      .where('a.status', '<>', 'REJECTED')
+      .orderBy('a.id', 'desc')
+      .execute();
+    const canEdit = p.subTasks.includes('members.edit');
+    return {
+      records: await Promise.all(
+        rows.map(async (r) => ({
+          relation: relationOf.get(String(r.member_profile_id)) ?? 'STUDENT',
+          student: {
+            id: r.member_public_id ? binToUuid(r.member_public_id) : '',
+            name: fullName(r.first_name, r.last_name),
+          },
+          editable: canEdit && r.status === 'APPROVED',
+          application: await this.view(r, { console: true, p }),
+        })),
+      ),
+    };
+  }
+
+  /** An admitted record: approved, its student a member. */
+  private assertRecord(r: { status: ApplicationStatus; member_profile_id: string | null }) {
+    if (r.status !== 'APPROVED' || !r.member_profile_id) {
+      throw new CustomAPIError(409, 'ADM.NOT_EDITABLE');
+    }
+  }
+
+  /**
+   * What an edit of an admitted record may not change (CR-06): the student's name, gender and date
+   * of birth, each person's name and mobile (a parent's mobile is their RingPe account), the primary
+   * contact, and every Aadhaar and PAN number — those are fixed through a correction request. Each
+   * person on the record stays on it. One with nothing stored — an older bulk upload's missing last
+   * name, or a parent it never had — is filled once (client 2026-10-22); the middle name is not.
+   */
+  private identityChanges(s: State, section: SectionName, raw: unknown) {
+    const errors: { field: string; code: string }[] = [];
+    const locked = (field: string) => errors.push({ field, code: 'IDN.PII_READ_ONLY' });
+    const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
+    // One with nothing stored (an older bulk upload's) is filled once; the middle name stays.
+    const fixed = (was: unknown, now: unknown, k: string) =>
+      (was ?? '') !== '' || k === 'middleName' ? !same(now, was) : false;
+    if (section === 'student') {
+      const v = SECTIONS.student.safeParse(raw);
+      if (!v.success) return errors; // the form's own errors come from apply()
+      const was = {
+        firstName: s.firstName,
+        middleName: s.middleName,
+        lastName: s.lastName,
+        gender: s.gender,
+        dob: s.dob,
+      };
+      for (const [k, cur] of Object.entries(was)) {
+        if (fixed(cur, v.data[k as keyof typeof was], k)) locked(`student.${k}`);
+      }
+      if (v.data.aadhaar !== undefined) locked('student.aadhaar');
+      if (v.data.pan !== undefined) locked('student.pan');
+    }
+    if (section === 'parents') {
+      const v = SECTIONS.parents.safeParse(raw);
+      if (!v.success) return errors;
+      const stored = s.data.parents;
+      if (stored?.primary && v.data.primary !== stored.primary) locked('parents.primary');
+      for (const h of ID_HOLDERS) {
+        const now = v.data[h];
+        const was = stored?.[h] as { name?: string; mobile?: string | null } | null | undefined;
+        if (was) {
+          if (!now) {
+            locked(`parents.${h}`);
+            continue;
+          }
+          if (fixed(was.name, now.name, 'name')) locked(`parents.${h}.name`);
+          if (fixed(was.mobile, (now as { mobile?: string | null }).mobile, 'mobile')) {
+            locked(`parents.${h}.mobile`);
+          }
+        }
+        if (now?.aadhaar !== undefined) locked(`parents.${h}.aadhaar`);
+        if (now?.pan !== undefined) locked(`parents.${h}.pan`);
+      }
+    }
+    return errors;
+  }
+
+  /**
+   * ADM-040: a section of an admitted record, edited by the Institution Administrator; the identity
+   * stays as it is (identityChanges) and the class is the enrolment's, not the record's.
+   */
+  async recordUpdate(
+    p: Principal,
+    id: string,
+    expected: number,
+    input: { section: SectionName; data: unknown },
+  ) {
+    const i = await this.consoleInst(p);
+    const r = await this.lockless(i.id, id);
+    this.assertRecord(r);
+    if (input.section === 'class') throw new CustomAPIError(409, 'ADM.NOT_EDITABLE');
+    const errors = this.identityChanges(this.stateOf(r), input.section, input.data);
+    if (errors.length) throw new ValidationError(errors);
+    await this.updateSection(i.id, id, expected, input, ['APPROVED']);
+    await recordAudit(this.deps.db, {
+      institutionId: i.id,
+      action: 'ADMISSION_RECORD_UPDATED',
+      entityType: 'admission_application',
+      entityRef: id,
+      after: { section: input.section },
+    });
+    return this.detail(p, id);
+  }
+
+  /** ADM-041: a document added to (or replacing one on) an admitted record. */
+  async recordDocument(
+    p: Principal,
+    id: string,
+    input: { docType: AdmissionDocType; fileName: string; data: Buffer },
+  ) {
+    const i = await this.consoleInst(p);
+    const r = await this.lockless(i.id, id);
+    this.assertRecord(r);
+    await this.addDocument(i.id, binToUuid(i.public_id), r, input, p);
+    await recordAudit(this.deps.db, {
+      institutionId: i.id,
+      action: 'ADMISSION_RECORD_DOCUMENT',
+      entityType: 'admission_application',
+      entityRef: id,
+      after: { documentType: input.docType },
+    });
+    return this.detail(p, id);
+  }
+
   // --- ADM-018 / ADM-019 -------------------------------------------------------------------------------
   private decidable(r: { status: ApplicationStatus }) {
     if (r.status === 'APPROVED' || r.status === 'REJECTED') {

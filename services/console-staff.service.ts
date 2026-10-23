@@ -21,7 +21,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../utils/CustomAP
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
 
-const ADMIN = 'INSTITUTION_ADMIN';
+export const ADMIN = 'INSTITUTION_ADMIN';
 
 /**
  * The roles of one person's own work go only to the matching profile (client 2026-10-13): the
@@ -39,7 +39,7 @@ const ROLE_PROFILE: Readonly<
   VENDOR_MERCHANT: { who: 'a vendor merchant', fits: (c, t) => c === 'MERCHANT' && t === 'VENDOR' },
 };
 
-function checkProfileForRole(
+export function checkProfileForRole(
   role: { code: string | null; name: string },
   m: { category: string; merchant_type: string | null },
 ) {
