@@ -24,6 +24,7 @@ import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
 import { notify } from './notifications.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 /**
  * The value read off a card carried over from the earlier application (client 2026-10-23): that
@@ -452,7 +453,7 @@ export class CardsService {
     if (!wanted || !isUuid(wanted)) throw new NotFoundError();
     const r = await this.deps.db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .select(['m.id', 'm.institution_id', 'm.first_name', 'm.last_name', 'm.account_id'])
       .where('a.public_id', '=', uuidToBin(p.subject))
       .where('m.public_id', '=', uuidToBin(wanted))

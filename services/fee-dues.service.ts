@@ -23,6 +23,7 @@ import type { FeeRecordsService } from './fee-records.service';
 import { outstandingOf } from './payment-engine.service';
 import { defaultValues, type SettingValues } from './settings.service';
 import type { FeePaymentsService } from './fee-payments.service';
+import { usesProfile } from './member-roles';
 
 /** The consent text's version (OI-FEE-11: the institution's active template, served here). */
 export const CONSENT_TEMPLATE_VERSION = '2026.10';
@@ -66,7 +67,7 @@ export class FeeDuesService {
     if (!wanted || !isUuid(wanted)) throw new NotFoundError();
     const m = await this.deps.db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
       .innerJoin('institutions as i', 'i.id', 'm.institution_id')
       .leftJoin('academic_years as y', (j) =>

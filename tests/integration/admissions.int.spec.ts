@@ -538,6 +538,41 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(f.h.email.sent.findLast((m) => m.to === 'rakesh@example.in')?.purpose).toBe(
       'admission.submitted',
     );
+    // The e-mail carries the application's details and its payment, with the submitted form as a
+    // PDF (client 2026-10-23); the father is the primary contact, so his address gets one.
+    const mails = f.h.email.sent.filter(
+      (m) => m.purpose === 'admission.submitted' && m.text.includes(app.applicationNo),
+    );
+    expect(mails.map((m) => m.to)).toEqual(['rakesh@example.in']);
+    const mail = mails[0]!;
+    for (const words of [
+      `Application number: ${app.applicationNo}`,
+      'Class: Grade 6',
+      'Fees and payments',
+      `Application fee: ₹500.00, paid online on`,
+      `receipt ${ok.body.receiptNo}`,
+      `transaction ID ${txn}`,
+      'A copy of the application form is attached.',
+    ]) {
+      expect(mail.text, words).toContain(words);
+    }
+    expect(mail.attachments).toHaveLength(1);
+    const form = mail.attachments![0]!;
+    expect(form.fileName).toBe(
+      `Application-${app.applicationNo.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
+    );
+    expect(form.contentType).toBe('application/pdf');
+    const formText = form.content.toString('latin1');
+    expect(formText.startsWith('%PDF')).toBe(true);
+    for (const words of [
+      app.applicationNo,
+      'Fees and payments',
+      'Rs. 500.00, paid online on',
+      `transaction ID ${txn}`,
+      'Rakesh Shetty',
+    ]) {
+      expect(formText, words).toContain(words);
+    }
 
     const status = await post(
       '/api/v1/public/admissions/status',
@@ -1309,6 +1344,9 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         gender: 'MALE',
         dob: `${Number(currentYear.label.slice(0, 4)) - 12}-08-01`,
         aadhaar: aadhaar(),
+        // The student's own contact (client 2026-10-23): a RingPe account of their own.
+        mobile: '9845001144',
+        email: 'kiran.bhat@example.in',
       },
       addresses: {
         residential: {
@@ -1412,6 +1450,44 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     });
     expect(cashApp.status, JSON.stringify(cashApp.body)).toBe(201);
     expect(cashApp.body.application.status).toBe('SUBMITTED');
+    // Submitted: the student, the father and the mother have RingPe accounts (client 2026-10-23),
+    // made by the school — nobody signs up — and no login details have gone out yet.
+    const appRow = await f.t.db
+      .selectFrom('admission_applications')
+      .select('id')
+      .where('public_id', '=', uuidToBin(id))
+      .executeTakeFirstOrThrow();
+    const accountsOf = () =>
+      f.t.db
+        .selectFrom('admission_accounts as aa')
+        .innerJoin('platform_accounts as pa', 'pa.id', 'aa.account_id')
+        .select(['aa.person', 'aa.created', 'aa.credentials_sent_at', 'pa.id', 'pa.mobile'])
+        .where('aa.application_id', '=', String(appRow.id))
+        .orderBy('aa.person')
+        .execute();
+    const made = await accountsOf();
+    expect(made.map((a) => [a.person, a.mobile, Number(a.created), a.credentials_sent_at])).toEqual(
+      [
+        ['STUDENT', '9845001144', 1, null],
+        ['FATHER', '9845001122', 1, null],
+        ['MOTHER', '9845001133', 1, null],
+      ],
+    );
+    const studentAccount = String(made[0]!.id);
+    expect(
+      await f.t.db
+        .selectFrom('account_credentials')
+        .select('id')
+        .where(
+          'account_id',
+          'in',
+          made.map((a) => String(a.id)),
+        )
+        .execute(),
+    ).toEqual([]);
+    expect(
+      f.h.email.sent.some((m) => m.purpose === 'admission.submitted' && /password/.test(m.text)),
+    ).toBe(false);
 
     // Approval: the student, the parent and the enrolment, once.
     const detail = await request(f.app).get(`/api/v1/console/applications/${id}`).set(con);
@@ -1592,6 +1668,105 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       .where('public_id', '=', uuidToBin(ok.body.memberId))
       .executeTakeFirstOrThrow();
     expect(member).toMatchObject({ admission_no: 'ADM/2026/0042' });
+    // The approval e-mail carries the login details of every account (client 2026-10-23): to the
+    // primary contact, the student in copy; one-time passwords, changed at the first sign-in.
+    const approved = f.h.email.sent.findLast((m) => m.purpose === 'admission.approved')!;
+    expect(approved.to).toBe('mohan@example.in');
+    expect(approved.cc).toEqual(['kiran.bhat@example.in']);
+    expect(approved.text).toContain('is approved, admission number ADM/2026/0042');
+    const otpOf = (who: string) =>
+      new RegExp(`\\(${who}\\): mobile (\\d+), one-time password (\\S+)`).exec(approved.text);
+    expect(otpOf('father')?.[1]).toBe('9845001122');
+    expect(otpOf('mother')?.[1]).toBe('9845001133');
+    const studentOtp = otpOf('student')!;
+    expect(studentOtp[1]).toBe('9845001144');
+    expect((await accountsOf()).every((a) => a.credentials_sent_at !== null)).toBe(true);
+    const mustChange = await f.t.db
+      .selectFrom('account_credentials')
+      .select('must_change')
+      .where('account_id', '=', studentAccount)
+      .where('kind', '=', 'PASSWORD')
+      .executeTakeFirstOrThrow();
+    expect(Number(mustChange.must_change)).toBe(1);
+    // The family holds the child's profile (CR-04); the student signs in to it with their own.
+    expect(
+      await f.t.db
+        .selectFrom('member_profiles')
+        .select('own_account_id')
+        .where('id', '=', String(member.id))
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ own_account_id: studentAccount });
+    const loginsSent = f.h.email.sent.filter((m) => m.purpose === 'admission.approved').length;
+
+    // The first sign-in: the student's own password, and the PAN the form didn't have; then their
+    // own profile only, and no chat.
+    const phone = { installId: randomUUID(), model: 'Pixel 8', os: 'Android 15' };
+    const first = await request(f.app)
+      .post('/api/v1/auth/member/signin')
+      .send({ mobile: '9845001144', password: studentOtp[2], device: phone });
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect(first.body).toMatchObject({
+      passwordChangeRequired: true,
+      name: 'KIRAN BHAT',
+      needs: { pan: true, aadhaar: false, securityQuestion: true },
+    });
+    expect(first.body.securityQuestions).toContainEqual(
+      expect.objectContaining({ code: 'FIRST_SCHOOL' }),
+    );
+    expect(first.body.accessToken).toBeUndefined();
+    const firstSignIn = (body: object) =>
+      request(f.app)
+        .post('/api/v1/auth/member/first-signin')
+        .send({ resetToken: first.body.resetToken, ...body });
+    const missing = await firstSignIn({ newPassword: 'Kiran@2026' });
+    expect(missing.status).toBe(422);
+    expect(missing.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
+      'pan',
+      'securityAnswer',
+      'securityQuestion',
+    ]);
+    const answers = {
+      pan: 'BKRPB5566M',
+      securityQuestion: 'FIRST_SCHOOL',
+      securityAnswer: ' Vidyaniketan ',
+    };
+    const set = await firstSignIn({ newPassword: 'Kiran@2026', ...answers });
+    expect(set.status, JSON.stringify(set.body)).toBe(204);
+    expect(
+      await f.t.db
+        .selectFrom('account_credentials')
+        .select('question_code')
+        .where('account_id', '=', studentAccount)
+        .where('kind', '=', 'SECURITY_ANSWER')
+        .execute(),
+    ).toEqual([{ question_code: 'FIRST_SCHOOL' }]);
+    expect((await firstSignIn({ newPassword: 'Kiran@2027', ...answers })).status).toBe(401);
+    expect(
+      (
+        await request(f.app)
+          .post('/api/v1/auth/member/signin')
+          .send({ mobile: '9845001144', password: studentOtp[2], device: phone })
+      ).status,
+    ).toBe(401);
+    const challenged = await request(f.app)
+      .post('/api/v1/auth/member/signin')
+      .send({ mobile: '9845001144', password: 'Kiran@2026', device: phone });
+    expect(challenged.status, JSON.stringify(challenged.body)).toBe(202);
+    const bound = await request(f.app)
+      .post('/api/v1/auth/member/device/verify')
+      .send({
+        deviceChallengeId: challenged.body.deviceChallenge.challengeId,
+        otp: codeOf(f.h.sms.sent.findLast((m) => m.to.endsWith('9845001144'))),
+        device: phone,
+      });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(200);
+    const kiran = { Authorization: `Bearer ${bound.body.accessToken as string}` };
+    const me = await request(f.app).get('/api/v1/me').set(kiran);
+    expect(me.status, JSON.stringify(me.body)).toBe(200);
+    expect(me.body.profiles.map((x: { id: string }) => x.id)).toEqual([ok.body.memberId]);
+    const contacts = await request(f.app).get('/api/v1/me/contacts').set(kiran);
+    expect(contacts.status).toBe(403);
+    expect(contacts.body.code).toBe('COM.DM_STUDENTS');
     // Fee collection details (client 2026-10-19): the application and admission fees in their own
     // columns, counted in the student's total.
     const fc = await request(f.app)
@@ -1628,6 +1803,9 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       code: 'ADM.ALREADY_DECIDED',
       params: { status: 'Approved' },
     });
+    expect(f.h.email.sent.filter((m) => m.purpose === 'admission.approved')).toHaveLength(
+      loginsSent,
+    );
 
     const receipt = await request(f.app)
       .get(`/api/v1/console/admission-receipts/${order.body.paymentId}`)
@@ -1779,6 +1957,9 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       'Last name': 'Kamath',
       Gender: 'Female',
       'Date of birth': '03/03/2014',
+      // The student's own contact (client 2026-10-23).
+      'Student contact number': `96${String(Date.now()).slice(-8)}`,
+      'Student e-mail': 'neha.kamath@example.in',
       'Residential house number and street': '12 4th Cross',
       'Residential area or locality': 'Vinoba Nagar',
       'Residential city or town': 'Shivamogga',
@@ -1919,6 +2100,21 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(
       f.h.email.sent.some((m) => m.purpose === 'admission.approved' && m.text.includes(no)),
     ).toBe(false);
+    // The family's RingPe logins instead (client 2026-10-23): one e-mail, to the primary contact
+    // with the student in copy, and no word of an approval.
+    const logins = f.h.email.sent.filter((m) => m.purpose === 'admission.logins');
+    expect(logins).toHaveLength(1);
+    expect(logins[0]).toMatchObject({
+      to: good['Father e-mail'],
+      cc: ['neha.kamath@example.in'],
+    });
+    expect(logins[0]!.text).not.toMatch(/approved/i);
+    expect(logins[0]!.text).toMatch(
+      /Neha Kamath \(student\): mobile \d{10}, one-time password \S+/,
+    );
+    expect(logins[0]!.text).toMatch(
+      /Suresh Kamath \(father\): mobile \d{10}, one-time password \S+/,
+    );
     const shown = await request(f.app)
       .get(`/api/v1/console/applications/${binToUuid(imported.public_id)}`)
       .set(con);
@@ -1994,6 +2190,40 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(moved.headers.etag).toBe(`"v${moved.body.version}"`);
     expect(moved.body.addresses.residential.line1).toBe('14 5th Cross');
     expect((await edit(v0, 'addresses', {})).status).toBe(412);
+    // A new contact number for the student on the admitted record (client 2026-10-23): an account
+    // for it, and its login details at once — the family's other logins are not sent again.
+    const newStudentMobile = `95${String(Date.now()).slice(-8)}`;
+    const loginsBefore = f.h.email.sent.filter((m) => m.purpose === 'admission.logins').length;
+    const renumbered = await edit(moved.body.version, 'student', {
+      firstName: 'Neha',
+      lastName: 'Kamath',
+      gender: 'FEMALE',
+      dob: '2014-03-03',
+      bloodGroup: 'B+',
+      mobile: newStudentMobile,
+      email: 'neha.kamath@example.in',
+    });
+    expect(renumbered.status, JSON.stringify(renumbered.body)).toBe(200);
+    expect(renumbered.body.student.mobile).toBe(newStudentMobile);
+    const newLogins = f.h.email.sent
+      .filter((m) => m.purpose === 'admission.logins')
+      .slice(loginsBefore);
+    expect(newLogins).toHaveLength(1);
+    expect(newLogins[0]!.text).toMatch(
+      new RegExp(`Neha Kamath \\(student\\): mobile ${newStudentMobile}, one-time password \\S+`),
+    );
+    expect(newLogins[0]!.text).not.toContain('(father)');
+    expect(
+      (
+        await f.t.db
+          .selectFrom('member_profiles as m')
+          .innerJoin('platform_accounts as a', 'a.id', 'm.own_account_id')
+          .select('a.mobile')
+          .where('m.public_id', '=', uuidToBin(studentId))
+          .executeTakeFirstOrThrow()
+      ).mobile,
+    ).toBe(newStudentMobile);
+    moved.body.version = renumbered.body.version;
     // The section as shown (Aadhaar and PAN are never in it), the stop by its id.
     const { transportStop, ...parents } = shown.body.parents as Record<string, unknown> & {
       transportStop: { id: string } | null;
@@ -2046,7 +2276,11 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         .where('action', 'in', ['ADMISSION_RECORD_UPDATED', 'ADMISSION_RECORD_DOCUMENT'])
         .orderBy('id')
         .execute(),
-    ).toEqual([{ action: 'ADMISSION_RECORD_UPDATED' }, { action: 'ADMISSION_RECORD_DOCUMENT' }]);
+    ).toEqual([
+      { action: 'ADMISSION_RECORD_UPDATED' },
+      { action: 'ADMISSION_RECORD_UPDATED' },
+      { action: 'ADMISSION_RECORD_DOCUMENT' },
+    ]);
     // An older bulk upload's record: no last name and no mother stored. Each is filled once, then
     // stays (client 2026-10-22).
     await f.t.db
@@ -2169,6 +2403,66 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(rows[0]!.receipt_no).not.toBe(rows[1]!.receipt_no);
     const detail = await request(f.app).get(`/api/v1/console/applications/${app.id}`).set(con);
     expect(detail.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
+  });
+
+  it('takes both fees in one Pay now at the desk when the counsellor’s form chose it (client 2026-10-23)', async () => {
+    const created = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Ira',
+          lastName: 'Pai',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-03-02`,
+          aadhaar: aadhaar(),
+        },
+      },
+      {},
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const app = created.body.application;
+    const token = created.body.resumeToken as string;
+    await completeDraft(app.id, token, '9876507311');
+    const sub = await pub(
+      'post',
+      `/api/v1/public/admissions/applications/${app.id}/submission`,
+      token,
+      {
+        declarationAccepted: true,
+        registrationConsent: true,
+      },
+    );
+    expect(sub.body, JSON.stringify(sub.body)).toMatchObject({
+      status: 'DRAFT',
+      feeDue: { mandatory: true },
+    });
+    // The admission fee joins the application fee in the desk's one checkout: ₹500 + ₹10,000.
+    const order = await post(`/api/v1/console/applications/${app.id}/admission-fee/orders`, {
+      feeType: 'APPLICATION',
+      withAdmission: true,
+    });
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    expect(order.body).toMatchObject({
+      feeType: 'APPLICATION',
+      includes: ['APPLICATION', 'ADMISSION'],
+      amount: inr('10500.00'),
+    });
+    const t = order.body.gatewayOrder.test as { paymentId: string; signature: string };
+    const paid = await post(
+      `/api/v1/console/applications/${app.id}/admission-fee/orders/${order.body.paymentId}/verify`,
+      { gatewayPaymentId: t.paymentId, signature: t.signature },
+    );
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect(paid.body).toMatchObject({ status: 'PAID', applicationStatus: 'SUBMITTED' });
+    const detail = await request(f.app).get(`/api/v1/console/applications/${app.id}`).set(con);
+    expect(detail.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
+    expect(
+      detail.body.fees.map((x: { feeType: string; mode: string }) => [x.feeType, x.mode]),
+    ).toEqual([
+      ['APPLICATION', 'ONLINE'],
+      ['ADMISSION', 'ONLINE'],
+    ]);
   });
 
   it('keeps each person’s numbers and cards, asks a guardian who is the contact and a hostel student’s local guardian for theirs; the application fee is never left for later by the family, and the desk can still take the fees — Pay now or cash (client 2026-10-13, 2026-10-22)', async () => {

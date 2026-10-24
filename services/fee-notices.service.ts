@@ -26,12 +26,12 @@ export async function familyAccountsByStudent(db: Db, studentRowIds: readonly st
     .selectFrom('member_profiles as m')
     .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
     .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
-    .select(['m.id', 'm.account_id', 'gm.account_id as guardian_account'])
+    .select(['m.id', 'm.account_id', 'm.own_account_id', 'gm.account_id as guardian_account'])
     .where('m.id', 'in', studentRowIds as string[])
     .execute();
   for (const r of rows) {
     const list = out.get(String(r.id)) ?? [];
-    for (const a of [r.account_id, r.guardian_account]) {
+    for (const a of [r.account_id, r.own_account_id, r.guardian_account]) {
       if (a !== null && a !== undefined && !list.includes(String(a))) list.push(String(a));
     }
     out.set(String(r.id), list);

@@ -17,6 +17,7 @@ import {
   resendSchema,
   resetTokenSchema,
   signInSchema,
+  firstSignInSchema,
   signupCompleteSchema,
   signupReferenceSchema,
   signupStartSchema,
@@ -103,6 +104,17 @@ defineRoute({
   },
 });
 defineRoute({
+  id: 'IDN-091',
+  method: 'post',
+  path: '/api/v1/auth/member/first-signin',
+  summary:
+    'An account the school made at admission (client 2026-10-23): after sign-in answers passwordChangeRequired, its own password in place of the one-time one, the PAN and Aadhaar number the account lacks and a security question (needs); then sign in again',
+  tags,
+  auth: 'public',
+  request: firstSignInSchema,
+  responses: { 204: { description: 'Password set' } },
+});
+defineRoute({
   id: 'IDN-007',
   method: 'post',
   path: '/api/v1/auth/member/device/verify',
@@ -116,17 +128,18 @@ defineRoute({
   id: 'IDN-010',
   method: 'post',
   path: '/api/v1/auth/member/password/forgot',
-  summary: 'Password recovery: registered mobile → the stored security question and a code',
+  summary:
+    'Password recovery: registered mobile → a code to it (client 2026-10-23: no security question)',
   tags,
   auth: 'public',
   request: recoveryStartSchema,
-  responses: { 202: { description: 'Question and code', schema: recoveryStartedSchema } },
+  responses: { 202: { description: 'Code sent', schema: recoveryStartedSchema } },
 });
 defineRoute({
   id: 'IDN-011',
   method: 'post',
   path: '/api/v1/auth/member/password/forgot/verify',
-  summary: 'Security answer and code (both required, OI-IDN-09) → single-use reset token',
+  summary: 'The code (client 2026-10-23: no security answer) → single-use reset token',
   tags,
   auth: 'public',
   request: recoveryVerifySchema,
@@ -194,6 +207,7 @@ export function memberAuthRoutes(deps: {
   );
   r.post('/auth/otp/resend', limit, c.resend);
   r.post('/auth/member/signin', limit, c.signIn);
+  r.post('/auth/member/first-signin', limit, c.firstSignIn);
   r.post('/auth/member/device/verify', limit, c.deviceVerify);
   r.post('/auth/member/password/forgot', limit, c.recoveryStart);
   r.post('/auth/member/password/forgot/verify', limit, c.recoveryVerify);

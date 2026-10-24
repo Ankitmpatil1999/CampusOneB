@@ -22,6 +22,7 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
   let con: Record<string, string>;
   let ravi: Payer;
   let asha: Payer;
+  let meena: Payer;
   const post = (path: string, auth: Auth, body: object = {}) =>
     request(f.app).post(`/api/v1${path}`).set(auth).set('Idempotency-Key', randomUUID()).send(body);
   const get = (path: string, auth: Auth = con) =>
@@ -42,6 +43,7 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
     f = await schoolFixture('Comm Report School');
     con = f.school.con;
     ravi = await f.payer('Ravi', 0);
+    meena = await f.payer('Meena', 0);
     asha = await f.student('Asha');
     const classes = (await get('/console/classes')).body.items as {
       name: string;
@@ -67,9 +69,9 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
       if (d.body.dispatch?.status === 'COMPLETED') break;
       await wait(100);
     }
-    // A private direct message.
+    // A private direct message, between two teachers (chat is not for students, client 2026-10-23).
     const dm = await post('/me/conversations', ravi.auth, {
-      recipientProfileId: asha.id,
+      recipientProfileId: meena.id,
       text: 'Your marks card is ready to collect.',
     });
     expect(dm.status, JSON.stringify(dm.body)).toBe(201);
@@ -154,7 +156,7 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
     expect(byKind['DIRECT_MESSAGE']).toMatchObject({
       subject: null,
       raisedBy: { name: expect.stringMatching(/ravi/i) },
-      recipient: { name: 'Asha Rao' },
+      recipient: { name: expect.stringMatching(/meena/i) },
     });
     expect(
       r.body.items.find(

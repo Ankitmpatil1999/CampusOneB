@@ -76,6 +76,9 @@ export const CUG_TABLES: readonly string[] = [
   'location_attendance',
   'auto_absent_settings',
   'auto_absent_runs',
+  'staff_timings',
+  'staff_timing_roles',
+  'staff_absent_runs',
   'terminals',
   'terminal_changes',
   'terminal_nonces',
@@ -106,6 +109,7 @@ export const CUG_TABLES: readonly string[] = [
   'admission_references',
   'admission_payments',
   'admission_imports',
+  'admission_accounts',
   // --- fees
   'fee_heads',
   'fee_structures',

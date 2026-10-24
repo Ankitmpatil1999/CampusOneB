@@ -35,6 +35,7 @@ import { notify } from './notifications.service';
 import { notificationsRepository } from '../repositories/notifications.repository';
 import type { RefundsService } from './refunds.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -148,7 +149,7 @@ export class GrievancesService {
     if (!isUuid(p.subject) || !p.profileId || !isUuid(p.profileId)) throw new NotFoundError();
     const m = await this.deps.db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .select(['m.id', 'm.public_id', 'm.institution_id', 'm.account_id'])
       .where('a.public_id', '=', uuidToBin(p.subject))
       .where('m.public_id', '=', uuidToBin(p.profileId))

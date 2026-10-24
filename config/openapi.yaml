@@ -154,16 +154,38 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/DeviceVerify"
+  /api/v1/auth/member/first-signin:
+    post:
+      operationId: IDN-091
+      summary: "An account the school made at admission (client 2026-10-23): after sign-in answers passwordChangeRequired, its own password in place of the one-time one, the PAN and Aadhaar number the account lacks and a security question (needs); then sign in again"
+      tags:
+        - Member auth
+      x-ringpe-auth: public
+      responses:
+        "204":
+          description: Password set
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberFirstSignIn"
   /api/v1/auth/member/password/forgot:
     post:
       operationId: IDN-010
-      summary: "Password recovery: registered mobile → the stored security question and a code"
+      summary: "Password recovery: registered mobile → a code to it (client 2026-10-23: no security question)"
       tags:
         - Member auth
       x-ringpe-auth: public
       responses:
         "202":
-          description: Question and code
+          description: Code sent
           content:
             application/json:
               schema:
@@ -183,7 +205,7 @@ paths:
   /api/v1/auth/member/password/forgot/verify:
     post:
       operationId: IDN-011
-      summary: Security answer and code (both required, OI-IDN-09) → single-use reset token
+      summary: "The code (client 2026-10-23: no security answer) → single-use reset token"
       tags:
         - Member auth
       x-ringpe-auth: public
@@ -1653,7 +1675,7 @@ paths:
   /api/v1/console/applications/{applicationId}/admission-fee/orders:
     post:
       operationId: ADM-037
-      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee)"
+      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee); withAdmission takes the admission fee with the application fee in one payment, as the counsellor’s form offers (client 2026-10-23)"
       tags:
         - Admissions
       x-ringpe-auth: admfees.collect
@@ -2795,6 +2817,111 @@ paths:
               - ALL
               - TEACHERS
               - STAFF
+  /api/v1/console/attendance/staff-timings:
+    get:
+      operationId: ATT-033
+      summary: "Staff timings by role (client 2026-10-23): login and logout time, late login, early logout, half-day and absent times, the roles each is for and how many staff follow it (first made first: it applies when a person’s roles are in two); with the roles to choose from"
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.view
+      responses:
+        "200":
+          description: Timings and roles
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+    post:
+      operationId: ATT-034
+      summary: "Add a staff timing: a unique name, one or more roles not in another timing, and the times in the day’s order — login, late login, half day, absent, logout; early logout between login and logout"
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.config
+      responses:
+        "201":
+          description: Timing
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffTimingInput"
+  /api/v1/console/attendance/staff-timings/{timingId}:
+    delete:
+      operationId: ATT-036
+      summary: "Remove a staff timing: its staff keep the school’s rules from then on"
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.config
+      responses:
+        "204":
+          description: Removed
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: timingId
+          in: path
+          required: true
+          schema:
+            type: string
+    put:
+      operationId: ATT-035
+      summary: Change a staff timing (If-Match); the same rules as ATT-034
+      tags:
+        - Attendance
+      x-ringpe-auth: attendance.config
+      responses:
+        "200":
+          description: Timing
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: timingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffTimingInput"
   /api/v1/console/attendance/staff/card-taps:
     post:
       operationId: ATT-030
@@ -11269,7 +11396,7 @@ paths:
   /api/v1/me/contacts:
     get:
       operationId: COM-016
-      summary: "People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address"
+      summary: "People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address. To the school’s staff each parent comes with their children (name, class, relation), and a parent is found by a child’s name or admission number too (client 2026-10-23)"
       tags:
         - Communication
       x-ringpe-auth: member|teaching.view,principal.view
@@ -11312,7 +11439,7 @@ paths:
   /api/v1/me/conversations:
     get:
       operationId: COM-017
-      summary: Conversations, newest message first, active or archived, with unread counts and whether the member may still send
+      summary: Conversations, newest message first, active or archived, with unread counts and whether the member may still send; to the school’s staff a parent comes with their children (client 2026-10-23)
       tags:
         - Communication
       x-ringpe-auth: member|teaching.view,principal.view
@@ -11433,7 +11560,7 @@ paths:
   /api/v1/me/conversations/{conversationId}/messages:
     get:
       operationId: COM-019
-      summary: "Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read"
+      summary: "Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read; to the school’s staff a parent comes with their children (client 2026-10-23)"
       tags:
         - Communication
       x-ringpe-auth: member|teaching.view,principal.view
@@ -22474,6 +22601,18 @@ components:
                 - type: string
                   maxLength: 300
                 - type: "null"
+            mobile:
+              description: The student's own mobile number, if any
+              type:
+                - string
+                - "null"
+            email:
+              description: The student's own e-mail address, if any
+              anyOf:
+                - type: string
+                  maxLength: 254
+                  pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
+                - type: "null"
           additionalProperties: false
         addresses:
           type: object
@@ -22876,6 +23015,9 @@ components:
           enum:
             - APPLICATION
             - ADMISSION
+        withAdmission:
+          description: "With the application fee: the admission fee joins it in one payment, as the family chooses on the form (client 2026-10-23: the counsellor’s form)"
+          type: boolean
       required:
         - feeType
       additionalProperties: false
@@ -27750,6 +27892,18 @@ components:
               anyOf:
                 - type: string
                   maxLength: 300
+                - type: "null"
+            mobile:
+              description: The student's own mobile number, if any
+              type:
+                - string
+                - "null"
+            email:
+              description: The student's own e-mail address, if any
+              anyOf:
+                - type: string
+                  maxLength: 254
+                  pattern: ^[a-z0-9._%+-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?\.[a-z]{2,}$
                 - type: "null"
           additionalProperties: false
         addresses:
@@ -36653,6 +36807,19 @@ components:
                   - ACTIVE
                   - INACTIVE
                   - SUSPENDED
+              office:
+                anyOf:
+                  - type: object
+                    properties:
+                      roles:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - roles
+                    additionalProperties: false
+                  - type: "null"
+                description: "Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements (client 2026-10-23: Accounts, Co-ordinator, Counsellor); the roles by name. Null: none"
             required:
               - id
               - memberNo
@@ -36663,6 +36830,7 @@ components:
               - category
               - grade
               - status
+              - office
             additionalProperties: false
           description: "Institution profiles held by this account (CR-04: a parent and the children under the number)"
         activeProfileId:
@@ -37953,6 +38121,43 @@ components:
         - consent
         - financing
         - wallet
+      additionalProperties: false
+    MemberFirstSignIn:
+      type: object
+      properties:
+        resetToken:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        newPassword:
+          type: string
+          minLength: 1
+          maxLength: 128
+        pan:
+          anyOf:
+            - type: string
+              maxLength: 20
+            - type: "null"
+        aadhaar:
+          anyOf:
+            - type: string
+              maxLength: 20
+            - type: "null"
+        securityQuestion:
+          description: When needs.securityQuestion
+          anyOf:
+            - type: string
+              maxLength: 24
+            - type: "null"
+        securityAnswer:
+          description: When needs.securityQuestion
+          anyOf:
+            - type: string
+              maxLength: 60
+            - type: "null"
+      required:
+        - resetToken
+        - newPassword
       additionalProperties: false
     MemberHistory:
       type: object
@@ -46688,27 +46893,10 @@ components:
           type: string
           format: uuid
           pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        question:
-          anyOf:
-            - type: object
-              properties:
-                code:
-                  type: string
-                labelKey:
-                  type: string
-                text:
-                  type: string
-              required:
-                - code
-                - labelKey
-                - text
-              additionalProperties: false
-            - type: "null"
         challenge:
           $ref: "#/components/schemas/CodeChallenge"
       required:
         - recoveryId
-        - question
         - challenge
       additionalProperties: false
     RecoveryVerify:
@@ -46719,8 +46907,8 @@ components:
           format: uuid
           pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
         securityAnswer:
+          description: "Ignored (client 2026-10-23: the code alone); older apps still send it"
           type: string
-          minLength: 1
           maxLength: 60
         otp:
           type: string
@@ -46728,7 +46916,6 @@ components:
           maxLength: 6
       required:
         - recoveryId
-        - securityAnswer
         - otp
       additionalProperties: false
     RefreshRequest:
@@ -48827,6 +49014,53 @@ components:
       required:
         - email
         - password
+      additionalProperties: false
+    StaffTimingInput:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 60
+        roleIds:
+          maxItems: 50
+          type: array
+          items:
+            type: string
+            maxLength: 40
+          description: The roles it is for (from ATT-033); a role is in one timing only
+        loginTime:
+          type: string
+          maxLength: 5
+          description: '"HH:MM", IST'
+        logoutTime:
+          type: string
+          maxLength: 5
+          description: '"HH:MM", IST'
+        lateLoginTime:
+          type: string
+          maxLength: 5
+          description: A login after it is Late
+        earlyLogoutTime:
+          type: string
+          maxLength: 5
+          description: A logout before it makes the day a Half day
+        halfDayTime:
+          type: string
+          maxLength: 5
+          description: A login after it is a Half day
+        absentTime:
+          type: string
+          maxLength: 5
+          description: A login after it is Absent; no login by then is marked Absent
+      required:
+        - name
+        - roleIds
+        - loginTime
+        - logoutTime
+        - lateLoginTime
+        - earlyLogoutTime
+        - halfDayTime
+        - absentTime
       additionalProperties: false
     StaffUnlock:
       type: object

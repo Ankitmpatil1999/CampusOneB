@@ -3,13 +3,33 @@
  * (CR-02: the teacher portal is built from assignments; the principal and management read). The
  * profile is the session's own, or (`for`) a child's profile on the same account (a guardian).
  */
-import type { Kysely, Transaction } from 'kysely';
-import type { Database, UserTypeCategory } from '../models/ringpe_models';
+import type { Expression, ExpressionBuilder, Kysely, SqlBool, Transaction } from 'kysely';
+import type {
+  Database,
+  MemberProfilesTable,
+  PlatformAccountsTable,
+  UserTypeCategory,
+} from '../models/ringpe_models';
 import { CustomAPIError, NotFoundError } from '../utils/CustomAPIError';
 import { isUuid, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
 
 type Db = Kysely<Database> | Transaction<Database>;
+
+/**
+ * Whether the signed-in account (`a`) may use a member profile (`m`): one on the account — its own,
+ * or a child the family holds (CR-04) — or a student's own login on it (client 2026-10-23). For
+ * `.innerJoin('platform_accounts as a', (j) => j.on(usesProfile))`.
+ */
+export function usesProfile<DB, TB extends keyof DB>(
+  eb: ExpressionBuilder<DB, TB>,
+): Expression<SqlBool> {
+  const e = eb as unknown as ExpressionBuilder<
+    { m: MemberProfilesTable; a: PlatformAccountsTable },
+    'm' | 'a'
+  >;
+  return e.or([e('a.id', '=', e.ref('m.account_id')), e('a.id', '=', e.ref('m.own_account_id'))]);
+}
 
 export interface Member {
   readonly rowId: string;
@@ -24,7 +44,7 @@ export async function memberOf(db: Db, p: Principal, forProfile?: string): Promi
   if (!isUuid(p.subject) || !wanted || !isUuid(wanted)) throw new NotFoundError();
   const m = await db
     .selectFrom('member_profiles as m')
-    .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+    .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
     .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
     .select([
       'm.id',

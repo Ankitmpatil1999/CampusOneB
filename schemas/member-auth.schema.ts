@@ -112,6 +112,18 @@ export const signInSchema = z
   .strictObject({ mobile: req(10), password: req(128), device: deviceSchema })
   .meta({ id: 'MemberSignIn' });
 
+/** IDN-091 (client 2026-10-23): an account the school made — its own password, and what it lacks. */
+export const firstSignInSchema = z
+  .strictObject({
+    resetToken: req(2000),
+    newPassword: req(128),
+    pan: z.string().trim().max(20).nullish(),
+    aadhaar: z.string().trim().max(20).nullish(),
+    securityQuestion: z.string().max(24).nullish().describe('When needs.securityQuestion'),
+    securityAnswer: z.string().max(60).nullish().describe('When needs.securityQuestion'),
+  })
+  .meta({ id: 'MemberFirstSignIn' });
+
 export const deviceChallengeSchema = z
   .object({ deviceChallenge: challengeSchema })
   .meta({ id: 'DeviceChallenge' });
@@ -138,7 +150,6 @@ export const recoveryStartSchema = z
 export const recoveryStartedSchema = z
   .object({
     recoveryId: z.uuid(),
-    question: z.object({ code: z.string(), labelKey: z.string(), text: z.string() }).nullable(),
     challenge: challengeSchema,
   })
   .meta({ id: 'RecoveryStarted' });
@@ -146,7 +157,11 @@ export const recoveryStartedSchema = z
 export const recoveryVerifySchema = z
   .strictObject({
     recoveryId: z.uuid({ message: 'IDN.RECOVERY_SESSION_ENDED' }),
-    securityAnswer: req(60),
+    securityAnswer: z
+      .string()
+      .max(60)
+      .optional()
+      .describe('Ignored (client 2026-10-23: the code alone); older apps still send it'),
     otp: req(6),
   })
   .meta({ id: 'RecoveryVerify' });
@@ -243,6 +258,12 @@ export const meSchema = z
             ),
           grade: z.string().nullable().describe('Grade and section this year (students)'),
           status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']),
+          office: z
+            .object({ roles: z.array(z.string()) })
+            .nullable()
+            .describe(
+              'Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements (client 2026-10-23: Accounts, Co-ordinator, Counsellor); the roles by name. Null: none',
+            ),
         }),
       )
       .describe(

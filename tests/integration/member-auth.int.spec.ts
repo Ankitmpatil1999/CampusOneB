@@ -396,7 +396,7 @@ describe.skipIf(!adminUrl)('member sign-up, sign-in and recovery on real MySQL',
     expect((await attempt(PASSWORD)).body.code).toBe('IDN.SIGNIN_LOCKED');
   });
 
-  it('recovers a forgotten password with the security answer and a code (IDN-010…012)', async () => {
+  it('recovers a forgotten password with a code alone (IDN-010…012; client 2026-10-23)', async () => {
     const { mobile, body, session } = await signUp();
 
     const unknown = await request(app)
@@ -407,24 +407,20 @@ describe.skipIf(!adminUrl)('member sign-up, sign-in and recovery on real MySQL',
 
     const started = await request(app).post('/api/v1/auth/member/password/forgot').send({ mobile });
     expect(started.status).toBe(202);
-    expect(started.body.question).toMatchObject({ code: 'FIRST_SCHOOL' });
+    // No security question: the code to the mobile is enough (client 2026-10-23).
+    expect(started.body.question).toBeUndefined();
     const recoveryId = started.body.recoveryId as string;
     const code = codeOf(lastSms());
 
-    const wrongAnswer = await request(app)
-      .post('/api/v1/auth/member/password/forgot/verify')
-      .send({ recoveryId, securityAnswer: 'Elsewhere', otp: code });
-    expect(wrongAnswer.status).toBe(422);
-    expect(wrongAnswer.body.errors[0].code).toBe('IDN.SECURITY_ANSWER_WRONG');
     const wrongCode = await request(app)
       .post('/api/v1/auth/member/password/forgot/verify')
-      .send({ recoveryId, securityAnswer: 'vidyaniketan', otp: code === '1111' ? '2222' : '1111' });
+      .send({ recoveryId, otp: code === '1111' ? '2222' : '1111' });
     expect(wrongCode.body.code).toBe('AUTH.OTP_INVALID');
-    // The answer is compared without case or surrounding spaces.
+    // An older app still sends an answer: it is not looked at.
     const verified = await request(app)
       .post('/api/v1/auth/member/password/forgot/verify')
-      .send({ recoveryId, securityAnswer: '  VidyaNiketan ', otp: code });
-    expect(verified.status).toBe(200);
+      .send({ recoveryId, securityAnswer: 'Elsewhere', otp: code });
+    expect(verified.status, JSON.stringify(verified.body)).toBe(200);
     const resetToken = verified.body.resetToken as string;
 
     const weak = await request(app)

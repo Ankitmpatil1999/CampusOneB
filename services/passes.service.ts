@@ -26,6 +26,7 @@ import { retryOnLock } from '../utils/retry';
 import { recordAudit } from './audit.service';
 import { tellMembers } from './member-notices';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 const day = (d: Date | string) =>
   typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10);
@@ -337,7 +338,7 @@ export class PassesService {
     if (!wanted || !isUuid(wanted)) throw new NotFoundError();
     const m = await this.deps.db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
       .select(['m.id', 'm.institution_id', 'm.status', 'ut.category'])
       .where('a.public_id', '=', uuidToBin(p.subject))

@@ -68,7 +68,7 @@ import { classOrder } from './admission-links.service';
 import { recordAudit } from './audit.service';
 import { notify } from './notifications.service';
 import { notificationsRepository } from '../repositories/notifications.repository';
-import { admissionFormPdf } from './admission-form-pdf';
+import { admissionFormPdf, feeLines } from './admission-form-pdf';
 import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
 import { familyAccountsByStudent } from './fee-notices.service';
 import type { FeePaymentsService } from './fee-payments.service';
@@ -84,6 +84,13 @@ import {
   sheetDate,
 } from './admission-sheet';
 import { allocateStudent } from './student-transport';
+import {
+  issueCredentials,
+  syncAdmissionAccounts,
+  type AdmissionPerson,
+  type IssuedLogin,
+} from './admission-accounts';
+import type { AdmissionAccountPerson } from '../models/ringpe_models';
 import { academicsRepository } from '../repositories/academics.repository';
 import { userTypesRepository } from '../repositories/institution-setup.repository';
 import { membersRepository } from '../repositories/members.repository';
@@ -196,6 +203,9 @@ interface StoredData {
     bloodGroup?: string | null;
     allergies?: string | null;
     health?: string | null;
+    /** The student's own contact (client 2026-10-23). */
+    mobile?: string | null;
+    email?: string | null;
   };
   addresses?: Addresses;
   previous?: Previous;
@@ -256,6 +266,12 @@ export interface State {
 const TC_DUE_DAYS = 60;
 /** An attachment larger than this is listed by name in the form PDF, not drawn (2026-10-14). */
 const PICTURE_MAX_BYTES = 10 * 1024 * 1024;
+/**
+ * The form PDF e-mailed with the notice is kept under this (client 2026-10-23): mail servers often
+ * refuse a message over 10 MB, and an attachment grows by a third on the way. Above it the pictures
+ * are left out and listed by name, as the form lists any other file.
+ */
+const EMAIL_PDF_MAX_BYTES = 7 * 1024 * 1024;
 
 const ADMISSION_HEADER = 'X-Admission-Token';
 /** Stands in for the mobile in a resume token when nothing matched (never a valid mobile). */
@@ -285,6 +301,29 @@ const maskSentEmail = (e: string) => {
   const [user = '', domain = ''] = e.split('@');
   return `${user.slice(0, 1)}•••@${domain}`;
 };
+/** Who each login is, as the e-mail names them. */
+const WHO: Record<AdmissionAccountPerson, string> = {
+  STUDENT: 'student',
+  FATHER: 'father',
+  MOTHER: 'mother',
+  GUARDIAN: 'guardian',
+  LOCAL_GUARDIAN: 'local guardian',
+};
+
+/** The login details of a family's RingPe accounts (client 2026-10-23). */
+export function loginText(logins: readonly IssuedLogin[]) {
+  const lines = logins.map((l) =>
+    l.password
+      ? `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile}, one-time password ${l.password}`
+      : `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile} already has a RingPe account — sign in with your own password.`,
+  );
+  return [
+    'Your RingPe login details. Sign in to the RingPe app with the mobile number and the one-time password; you will then choose your own password (and give your PAN and Aadhaar number if we don’t have them).',
+    '',
+    ...lines,
+  ].join('\n');
+}
+
 const splitName = (n: string) => {
   const w = n.trim().split(/\s+/);
   return w.length > 1
@@ -298,6 +337,40 @@ const ageOn = (dob: string, ref: string) => {
   if (m2 < m1 || (m2 === m1 && d2 < d1)) y--;
   return y;
 };
+/**
+ * The e-mail that an application was received (client 2026-10-23): the application's details, each
+ * fee paid or still to pay with its receipt and transaction ID, and the form attached.
+ */
+function receivedMail(
+  school: string,
+  child: string,
+  v: Parameters<typeof feeLines>[0] & {
+    applicationNo: string;
+    year: { label: string };
+    class: { name: string } | null;
+    midTerm: boolean;
+    submittedAt: string | null;
+  },
+) {
+  const fees = feeLines(v, '₹');
+  return [
+    `${school} has received the admission application for ${child}.`,
+    [
+      `Application number: ${v.applicationNo}`,
+      `Class: ${[v.class?.name, v.year.label].filter(Boolean).join(', ')}`,
+      `Admission type: ${v.midTerm ? 'Mid-term' : 'Regular'}`,
+      v.submittedAt ? `Submitted on: ${formatDateTime(v.submittedAt)}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    fees.length
+      ? ['Fees and payments', ...fees.map((f) => `${f.label}: ${f.text}`)].join('\n')
+      : null,
+    'A copy of the application form is attached. The school will review the application and let you know. Please quote the application number when you contact the school office.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 export class AdmissionsService {
   constructor(
@@ -661,6 +734,8 @@ export class AdmissionsService {
           bloodGroup: v.bloodGroup ?? null,
           allergies: v.allergies ?? null,
           health: v.health ?? null,
+          mobile: v.mobile ?? null,
+          email: v.email ?? null,
         };
         return;
       }
@@ -758,6 +833,8 @@ export class AdmissionsService {
       bloodGroup: v.bloodGroup ?? null,
       allergies: v.allergies ?? null,
       health: v.health ?? null,
+      mobile: v.mobile ?? null,
+      email: v.email ?? null,
     };
   }
 
@@ -828,6 +905,14 @@ export class AdmissionsService {
   private distinct(s: State, r?: Awaited<ReturnType<AdmissionsService['lockless']>>) {
     const p = s.data.parents;
     if (!p) return;
+    // The student's own mobile is not a parent's (client 2026-10-23).
+    const own = s.data.student?.mobile?.trim();
+    const parent = own ? DISTINCT_PEOPLE.find((h) => p[h]?.mobile?.trim() === own) : undefined;
+    if (parent) {
+      throw new ValidationError([
+        { field: 'student.mobile', code: 'ADM.STUDENT_SAME_MOBILE', params: { person: parent } },
+      ]);
+    }
     const errors = sameNumbers(
       (h) => p[h]?.mobile,
       (h, kind) => {
@@ -1002,7 +1087,7 @@ export class AdmissionsService {
     for (const k of ['addresses', 'previous', 'parents', 'customFields'] as const) {
       if (input[k] !== undefined) await this.apply(db, institutionId, s, k, input[k]);
     }
-    if (input.parents !== undefined) this.distinct(s);
+    if (input.parents !== undefined || input.student !== undefined) this.distinct(s);
     await this.duplicate(db, institutionId, s);
     const pub = newPublicIdPair();
     const at = this.now();
@@ -1067,7 +1152,7 @@ export class AdmissionsService {
     if (expected !== null && r.row_version !== expected) throw new PreconditionFailedError();
     const s = this.stateOf(r);
     await this.apply(this.deps.db, institutionId, s, input.section, input.data);
-    if (input.section === 'parents') this.distinct(s, r);
+    if (input.section === 'parents' || input.section === 'student') this.distinct(s, r);
     if (input.step !== undefined) s.step = Math.max(s.step, input.step);
     // A guardian or local guardian taken off the form: their cards go with their numbers.
     const dropped = (s.dropCards ?? []).flatMap((h) => PERSON_CARDS[h]);
@@ -1193,8 +1278,12 @@ export class AdmissionsService {
     institutionId: string,
     id: string,
     event: 'SUBMITTED' | 'APPROVED' | 'REJECTED',
+    /** With the approval: the login details of the accounts (client 2026-10-23). */
+    logins: readonly IssuedLogin[] = [],
   ) {
     if (event === 'SUBMITTED') {
+      // The people on the form get their RingPe accounts now (client 2026-10-23).
+      await this.syncAccounts(institutionId, id);
       try {
         const row = await this.lockless(institutionId, id);
         await this.tellStaff(this.deps.db, institutionId, String(row.id), 'SUBMITTED');
@@ -1206,7 +1295,7 @@ export class AdmissionsService {
       const r = await this.lockless(institutionId, id);
       const inst = await this.deps.db
         .selectFrom('institutions')
-        .select('name')
+        .select(['name', 'city'])
         .where('id', '=', institutionId)
         .executeTakeFirst();
       const school = inst?.name ?? 'The school';
@@ -1237,12 +1326,195 @@ export class AdmissionsService {
       if (channels.sms && r.primary_mobile && this.deps.sms) {
         sends.push(this.deps.sms.send({ to: r.primary_mobile, purpose, text, log }));
       }
-      if (channels.email && r.primary_email && this.deps.email) {
-        sends.push(this.deps.email.send({ to: r.primary_email, purpose, text, log }));
+      const mail = this.familyEmails(r);
+      if (logins.length && mail.to && this.deps.email) {
+        // The login details go by e-mail only, to the family's addresses (the primary contact's,
+        // the others in copy), whatever the school's notice settings (client 2026-10-23).
+        sends.push(
+          this.deps.email.send({
+            to: mail.to,
+            cc: mail.cc,
+            purpose,
+            text: `${text}\n\n${loginText(logins)}`,
+            log,
+          }),
+        );
+      } else if (channels.email && mail.to && this.deps.email) {
+        // Each of the family's addresses (client 2026-10-23). Received: the form as submitted goes
+        // with it, its fees and payments stated. Without the copy (it could not be made) the short
+        // notice still goes.
+        const copy =
+          event === 'SUBMITTED'
+            ? await this.formCopy(
+                { id: institutionId, name: school, city: inst?.city ?? null },
+                r,
+                EMAIL_PDF_MAX_BYTES,
+              ).catch(() => null)
+            : null;
+        const content = copy
+          ? {
+              text: receivedMail(school, child, copy.view),
+              attachments: [
+                { fileName: copy.fileName, content: copy.pdf, contentType: 'application/pdf' },
+              ],
+            }
+          : { text };
+        for (const to of [mail.to, ...mail.cc]) {
+          sends.push(this.deps.email.send({ to, purpose, log, ...content }));
+        }
       }
       await Promise.allSettled(sends);
     } catch {
       // The notice is best effort: the communication log records any failed send.
+    }
+  }
+
+  /** The family's e-mail addresses: the primary contact's, then the others on the form. */
+  private familyEmails(r: Awaited<ReturnType<AdmissionsService['lockless']>>) {
+    const d = this.dataOf(r);
+    const all = [
+      r.primary_email,
+      d.student?.email,
+      d.parents?.father?.email,
+      d.parents?.mother?.email,
+      d.parents?.guardian?.email,
+    ]
+      .map((e) => e?.trim().toLowerCase())
+      .filter((e): e is string => !!e);
+    const unique = [...new Set(all)];
+    return { to: unique[0] ?? null, cc: unique.slice(1) };
+  }
+
+  /**
+   * The login details of an existing student's family (the existing-students upload, client
+   * 2026-10-23): no "approved" notice, the RingPe accounts only.
+   */
+  private async sendLogins(institutionId: string, id: string, logins: readonly IssuedLogin[]) {
+    if (!logins.length || !this.deps.email) return;
+    try {
+      const r = await this.lockless(institutionId, id);
+      const mail = this.familyEmails(r);
+      if (!mail.to) return;
+      const inst = await this.deps.db
+        .selectFrom('institutions')
+        .select('name')
+        .where('id', '=', institutionId)
+        .executeTakeFirst();
+      const child = fullName(r.first_name, r.last_name) || 'your child';
+      await this.deps.email.send({
+        to: mail.to,
+        cc: mail.cc,
+        purpose: 'admission.logins',
+        text: `${inst?.name ?? 'The school'}: ${child} and the family are now on RingPe, the school's app.\n\n${loginText(logins)}`,
+        log: {
+          institutionId,
+          kind: 'TRANSACTIONAL',
+          subject: 'Your RingPe login details',
+          refType: 'admission_application',
+          refId: id,
+        },
+      });
+    } catch {
+      // Best effort: the communication log records any failed send.
+    }
+  }
+
+  // --- RingPe accounts of the people on an application (client 2026-10-23) ----------------------------
+  /** A person's Aadhaar number or PAN as the application holds it, in full; null when none. */
+  private heldId(
+    r: Awaited<ReturnType<AdmissionsService['lockless']>>,
+    who: 'student' | IdHolder,
+    kind: 'aadhaar' | 'pan',
+  ): string | null {
+    const blob =
+      who === 'student'
+        ? kind === 'aadhaar'
+          ? r.student_aadhaar_enc
+          : r.student_pan_enc
+        : r[ID_COLUMNS[who][kind === 'aadhaar' ? 0 : 2]];
+    if (!blob) return null;
+    const app = binToUuid(r.public_id);
+    for (const ctx of [who, 'primary']) {
+      try {
+        return this.deps.cipher.decrypt(`adm_${kind}`, blob as Buffer, `${app}:${ctx}`);
+      } catch {
+        // Not this context: the next one.
+      }
+    }
+    return null;
+  }
+
+  /** The people on an application with what their RingPe accounts take. */
+  private peopleOf(r: Awaited<ReturnType<AdmissionsService['lockless']>>): AdmissionPerson[] {
+    const d = this.dataOf(r);
+    const people: AdmissionPerson[] = [
+      {
+        person: 'STUDENT',
+        firstName: r.first_name ?? '',
+        middleName: r.middle_name ?? null,
+        lastName: r.last_name ?? null,
+        mobile: d.student?.mobile ?? null,
+        email: d.student?.email ?? null,
+        gender: r.gender === 'MALE' || r.gender === 'FEMALE' ? r.gender : null,
+        dob: dayOrNull(r.dob),
+        aadhaar: this.heldId(r, 'student', 'aadhaar'),
+        pan: this.heldId(r, 'student', 'pan'),
+      },
+    ];
+    const add = (
+      h: IdHolder,
+      person: AdmissionAccountPerson,
+      x: { name?: string | null; mobile?: string | null; email?: string | null } | null | undefined,
+      gender: 'MALE' | 'FEMALE' | null,
+    ) => {
+      if (!x?.name?.trim()) return;
+      const n = splitName(title(x.name));
+      people.push({
+        person,
+        firstName: n.firstName,
+        middleName: null,
+        lastName: n.lastName,
+        mobile: x.mobile ?? null,
+        email: x.email ?? null,
+        gender,
+        dob: null,
+        aadhaar: this.heldId(r, h, 'aadhaar'),
+        pan: this.heldId(r, h, 'pan'),
+      });
+    };
+    add('father', 'FATHER', d.parents?.father, 'MALE');
+    add('mother', 'MOTHER', d.parents?.mother, 'FEMALE');
+    add('guardian', 'GUARDIAN', d.parents?.guardian, null);
+    add('localGuardian', 'LOCAL_GUARDIAN', d.parents?.localGuardian, null);
+    return people;
+  }
+
+  /** The accounts the application's people should have now (best effort; client 2026-10-23). */
+  private async syncAccounts(institutionId: string, id: string) {
+    try {
+      const r = await this.lockless(institutionId, id);
+      await this.deps.db.transaction().execute((trx) =>
+        syncAdmissionAccounts(trx, this.deps.cipher, {
+          institutionId,
+          applicationRowId: String(r.id),
+          people: this.peopleOf(r),
+        }),
+      );
+    } catch {
+      // Never in the way of the form: the next save or the approval tries again.
+    }
+  }
+
+  /** The login details of the application's accounts, once (approval, upload). */
+  private async logins(institutionId: string, id: string): Promise<IssuedLogin[]> {
+    try {
+      const r = await this.lockless(institutionId, id);
+      // The login details go by e-mail only (client 2026-10-23): with no address on the form they
+      // stay unsent rather than being issued to nobody.
+      if (!this.familyEmails(r).to || !this.deps.email) return [];
+      return await this.deps.db.transaction().execute((trx) => issueCredentials(trx, String(r.id)));
+    } catch {
+      return [];
     }
   }
 
@@ -1415,21 +1687,37 @@ export class AdmissionsService {
     const a = await this.access(id, token, 'read');
     if (a.scope !== 'resume') throw new CustomAPIError(404, 'ADM.NOT_FOUND');
     if (a.row.status === 'DRAFT') throw new CustomAPIError(409, 'ADM.FORM_NOT_SUBMITTED');
+    const { fileName, pdf } = await this.formCopy(
+      { id: String(a.inst.id), name: a.inst.name, city: a.inst.city },
+      a.row,
+    );
+    return { fileName, pdf };
+  }
+
+  /**
+   * The application form as a PDF: the family's view of it (identity numbers masked), the attached
+   * pictures and the school's logo. Over `maxBytes` (an e-mail's attachment) the pictures are left
+   * out, listed by name.
+   */
+  private async formCopy(
+    inst: { id: string; name: string; city: string | null },
+    row: Awaited<ReturnType<AdmissionsService['lockless']>>,
+    maxBytes?: number,
+  ) {
     const [v, fields, pictures, logo] = await Promise.all([
-      this.view(a.row, { console: false }),
-      activeFields(this.deps.db, String(a.inst.id), 'ADMISSION_APPLICATION'),
-      this.pictures(a.row.id),
-      this.schoolLogo(String(a.inst.id)),
+      this.view(row, { console: false }),
+      activeFields(this.deps.db, inst.id, 'ADMISSION_APPLICATION'),
+      this.pictures(row.id),
+      this.schoolLogo(inst.id),
     ]);
+    const make = (drawn: ReadonlyMap<string, PdfImage>) =>
+      admissionFormPdf({ name: inst.name, city: inst.city, logo }, v, fields, this.now(), drawn);
+    let pdf = make(pictures);
+    if (maxBytes && pdf.length > maxBytes) pdf = make(new Map());
     return {
+      view: v,
       fileName: `Application-${v.applicationNo.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
-      pdf: admissionFormPdf(
-        { name: a.inst.name, city: a.inst.city, logo },
-        v,
-        fields,
-        this.now(),
-        pictures,
-      ),
+      pdf,
     };
   }
 
@@ -2133,10 +2421,10 @@ export class AdmissionsService {
    * ADM-037, Pay now at the accounts desk (client 2026-10-22): an order for the fee whose checkout
    * opens on the console — no link is created or sent. Otherwise as the family's own payment.
    */
-  async deskOrder(p: Principal, id: string, feeType: AdmissionFeeType) {
+  async deskOrder(p: Principal, id: string, feeType: AdmissionFeeType, withAdmission = false) {
     const inst = await this.consoleInst(p);
     const row = await this.lockless(inst.id, id);
-    return this.openOrder({ inst, row }, feeType, false);
+    return this.openOrder({ inst, row }, feeType, withAdmission);
   }
 
   /** An order with the school's gateway for the fee (and the admission fee with it, when chosen). */
@@ -2710,7 +2998,12 @@ export class AdmissionsService {
   ) {
     const i = await this.consoleInst(p);
     await this.updateSection(i.id, id, expected, input, ['DRAFT', 'SUBMITTED']);
-    return this.detail(p, id);
+    const out = await this.detail(p, id);
+    if (out.status === 'SUBMITTED') {
+      await this.syncAccounts(i.id, id);
+      return this.detail(p, id);
+    }
+    return out;
   }
 
   async consoleSubmit(p: Principal, id: string, input: { payLater?: boolean | undefined }) {
@@ -2970,6 +3263,10 @@ export class AdmissionsService {
     const errors = this.identityChanges(this.stateOf(r), input.section, input.data);
     if (errors.length) throw new ValidationError(errors);
     await this.updateSection(i.id, id, expected, input, ['APPROVED']);
+    // The accounts follow the record (client 2026-10-23); the admission being approved, the login
+    // details of a new one (a student's mobile added now) go out at once.
+    await this.syncAccounts(i.id, id);
+    await this.sendLogins(i.id, id, await this.logins(i.id, id));
     await recordAudit(this.deps.db, {
       institutionId: i.id,
       action: 'ADMISSION_RECORD_UPDATED',
@@ -3073,6 +3370,8 @@ export class AdmissionsService {
       if (!parentType) throw new CustomAPIError(409, 'ADM.PARENT_TYPE_MISSING');
     }
     const joinedOn = input.joiningDate ?? dayOrNull(r.joining_date) ?? day(r.year_starts_on);
+    // Every account the form allows exists before the profiles link to them (client 2026-10-23).
+    await this.syncAccounts(i0.id, id);
     const at = this.now();
     const memberId = await this.deps.db.transaction().execute(async (trx) => {
       const inst = await institutionsRepository.byPublicId(
@@ -3140,7 +3439,10 @@ export class AdmissionsService {
       });
       return pub.id;
     });
-    await this.tellFamily(i0.id, id, 'APPROVED');
+    // The student's own login reaches the new profile; the login details go out now, once
+    // (client 2026-10-23).
+    await this.syncAccounts(i0.id, id);
+    await this.tellFamily(i0.id, id, 'APPROVED', await this.logins(i0.id, id));
     return { memberId, application: await this.detail(p, id) };
   }
 
@@ -3582,7 +3884,9 @@ export class AdmissionsService {
           return app;
         });
         // No approval message to the family: the student is already at the school (client
-        // 2026-10-21).
+        // 2026-10-21). Their RingPe accounts, and the login details (client 2026-10-23).
+        await this.syncAccounts(i.id, done.id);
+        await this.sendLogins(i.id, done.id, await this.logins(i.id, done.id));
         report.push({
           row: k + 2,
           name,
@@ -3673,6 +3977,8 @@ export class AdmissionsService {
         rel,
       );
     }
+    // The local guardian of a hostel student is linked to the student too (client 2026-10-23).
+    add(parents?.localGuardian, 'GUARDIAN');
     return guardians;
   }
 

@@ -37,6 +37,7 @@ import { recordAudit } from './audit.service';
 import { tellMembers } from './member-notices';
 import type { CardsService } from './cards.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 type FieldError = ConstructorParameters<typeof ValidationError>[0][number];
 
@@ -1083,7 +1084,7 @@ export class CouponsService {
     const db = this.deps.db;
     const m = await db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .select(['m.id', 'm.institution_id'])
       .where('a.public_id', '=', uuidToBin(p.subject))
       .where('m.public_id', '=', uuidToBin(wanted))
@@ -1303,7 +1304,7 @@ export class CouponsService {
     const r = await this.deps.db
       .selectFrom('member_profiles as m')
       .innerJoin('institutions as i', 'i.id', 'm.institution_id')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .select(['m.id', 'm.institution_id', 'a.public_id as account_public'])
       .where('m.public_id', '=', uuidToBin(p.profileId))
       .where('i.public_id', '=', uuidToBin(p.institutionId))

@@ -1,6 +1,7 @@
 /**
  * Attendance (SRS 21.5–21.16; migration 0054): daily records with their events, period and location
- * attendance, attendance types, visitors and the auto-absent setting and runs.
+ * attendance, attendance types, visitors and the auto-absent setting and runs; the staff timings by
+ * role with their auto-absent runs (migration 0088, client 2026-10-23).
  */
 import type { ColumnType, Generated } from 'kysely';
 
@@ -125,6 +126,45 @@ export interface AutoAbsentRunsTable {
   ran_at: Timestamp;
 }
 
+/** "09:15:00" */
+type Time = ColumnType<string, string, string>;
+
+/** A school's staff timings for one or more roles (client 2026-10-23). */
+export interface StaffTimingsTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  institution_id: Ref;
+  name: string;
+  login_time: Time;
+  logout_time: Time;
+  late_login_time: Time;
+  early_logout_time: Time;
+  half_day_time: Time;
+  absent_time: Time;
+  created_by: Buffer | null;
+  updated_by: Buffer | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  row_version: Version;
+}
+
+export interface StaffTimingRolesTable {
+  timing_id: Ref;
+  institution_id: Ref;
+  /** roles.id (the RingPe database). */
+  role_id: Ref;
+}
+
+export interface StaffAbsentRunsTable {
+  id: Generated<string>;
+  institution_id: Ref;
+  timing_id: Ref;
+  run_date: Day;
+  marked: ColumnType<number, number | undefined, number>;
+  skipped_holiday: ColumnType<number, number | undefined, number>;
+  ran_at: Timestamp;
+}
+
 export interface AttendanceTables {
   attendance_types: AttendanceTypesTable;
   attendance_days: AttendanceDaysTable;
@@ -134,4 +174,7 @@ export interface AttendanceTables {
   visitors: VisitorsTable;
   auto_absent_settings: AutoAbsentSettingsTable;
   auto_absent_runs: AutoAbsentRunsTable;
+  staff_timings: StaffTimingsTable;
+  staff_timing_roles: StaffTimingRolesTable;
+  staff_absent_runs: StaffAbsentRunsTable;
 }

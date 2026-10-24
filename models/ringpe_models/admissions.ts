@@ -201,6 +201,20 @@ export interface AdmissionImportsTable {
   created_at: Timestamp;
 }
 
+/** Whose RingPe account each person on an application has (0087, client 2026-10-23). */
+export type AdmissionAccountPerson = 'STUDENT' | 'FATHER' | 'MOTHER' | 'GUARDIAN' | 'LOCAL_GUARDIAN';
+export interface AdmissionAccountsTable {
+  id: Generated<string>;
+  application_id: Ref;
+  person: AdmissionAccountPerson;
+  account_id: Ref;
+  /** Made by the admission (else the person's own, whose password stays). */
+  created: Flag;
+  credentials_sent_at: NullableTimestamp;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 /** A school's own payment gateway account (0065, client 2026-10-09); credentials encrypted. */
 export interface InstitutionPaymentGatewaysTable {
   id: Generated<Ref>;
@@ -236,4 +250,5 @@ export interface AdmissionTables {
   admission_documents: AdmissionDocumentsTable;
   admission_payments: AdmissionPaymentsTable;
   admission_imports: AdmissionImportsTable;
+  admission_accounts: AdmissionAccountsTable;
 }

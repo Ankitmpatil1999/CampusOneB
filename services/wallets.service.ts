@@ -96,7 +96,10 @@ export class WalletsService {
         'ut.name as user_type',
         'ut.category',
       ])
-      .where('m.account_id', '=', accountId)
+      .where((eb) =>
+        // The account's profiles, or a student's own login (client 2026-10-23).
+        eb.or([eb('m.account_id', '=', accountId), eb('m.own_account_id', '=', accountId)]),
+      )
       .orderBy('m.id')
       .execute();
     const wanted = forProfile ?? p.profileId;
@@ -215,7 +218,10 @@ export class WalletsService {
         'i.name as institution_name',
       ])
       .where('w.public_id', '=', uuidToBin(walletId))
-      .where('m.account_id', '=', accountId)
+      .where((eb) =>
+        // The account's profiles, or a student's own login (client 2026-10-23).
+        eb.or([eb('m.account_id', '=', accountId), eb('m.own_account_id', '=', accountId)]),
+      )
       .executeTakeFirst();
     if (!w) throw new NotFoundError();
     return w;

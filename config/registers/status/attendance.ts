@@ -41,14 +41,20 @@ export const ATTENDANCE_CHECKIN: StatusDomain<'PRESENT' | 'LATE' | 'ABSENT'> = {
       from: NEW,
       to: 'PRESENT',
       operation:
-        'a student tap, a non-student tap at or before the late cut-off (att.late.cutoffMinutes), or a manual Present',
+        'a student tap, a non-student tap at or before the late cut-off (att.late.cutoffMinutes) or a staff member’s late login time (their staff timing, client 2026-10-23), or a manual Present',
     },
     {
       from: NEW,
       to: 'LATE',
-      operation: 'a non-student tap after the late cut-off, or a manual Late',
+      operation:
+        'a non-student tap after the late cut-off, a staff login after their timing’s late login time (also after its half-day time: the day is then a Half day), or a manual Late',
     },
-    { from: NEW, to: 'ABSENT', operation: 'a manual Absent or the auto-absent job' },
+    {
+      from: NEW,
+      to: 'ABSENT',
+      operation:
+        'a manual Absent, the auto-absent job, or a staff login after their timing’s absent time',
+    },
     { from: 'PRESENT', to: 'ABSENT', operation: 'a manual override (RC-38, old → new kept)' },
     { from: 'LATE', to: 'ABSENT', operation: 'a manual override (RC-38)' },
     { from: 'ABSENT', to: 'PRESENT', operation: 'a manual override (RC-38)' },
@@ -107,8 +113,18 @@ export const ATTENDANCE: StatusDomain<'PRESENT' | 'HALF_DAY' | 'LATE' | 'ABSENT'
       to: 'LATE',
       operation: 'a non-student tap after the cut-off (carried until check-out), or a manual Late',
     },
-    { from: NEW, to: 'ABSENT', operation: 'a manual Absent or the auto-absent job' },
-    { from: NEW, to: 'HALF_DAY', operation: 'a manual Half day (RC-38)' },
+    {
+      from: NEW,
+      to: 'ABSENT',
+      operation:
+        'a manual Absent, the auto-absent job (at the cut-off, or a staff timing’s absent time), or a staff login after their timing’s absent time',
+    },
+    {
+      from: NEW,
+      to: 'HALF_DAY',
+      operation:
+        'a manual Half day (RC-38), or a staff login after their timing’s half-day time (client 2026-10-23)',
+    },
     {
       from: 'PRESENT',
       to: 'PRESENT',
@@ -122,12 +138,24 @@ export const ATTENDANCE: StatusDomain<'PRESENT' | 'HALF_DAY' | 'LATE' | 'ABSENT'
     {
       from: 'PRESENT',
       to: 'HALF_DAY',
-      operation: 'a non-student check-out before att.halfDay.minutes, or a manual override',
+      operation:
+        'a non-student check-out before att.halfDay.minutes or before their staff timing’s early logout time, or a manual override',
     },
     {
       from: 'LATE',
       to: 'HALF_DAY',
-      operation: 'a non-student check-out before att.halfDay.minutes, or a manual override',
+      operation:
+        'a non-student check-out before att.halfDay.minutes or before their staff timing’s early logout time, or a manual override',
+    },
+    {
+      from: 'LATE',
+      to: 'LATE',
+      operation: 'a staff check-out at or after their timing’s early logout time',
+    },
+    {
+      from: 'HALF_DAY',
+      to: 'HALF_DAY',
+      operation: 'a staff check-out after a half-day login (their staff timing)',
     },
     { from: 'PRESENT', to: 'ABSENT', operation: 'a manual override (RC-38)' },
     { from: 'LATE', to: 'ABSENT', operation: 'a manual override (RC-38)' },

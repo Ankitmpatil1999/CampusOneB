@@ -7,6 +7,7 @@ import {
   recoveryVerifySchema,
   resendSchema,
   signInSchema,
+  firstSignInSchema,
   signupCompleteSchema,
   signupStartSchema,
   socialCallbackSchema,
@@ -89,7 +90,23 @@ export function memberAuthController(
         res.status(202).json({ deviceChallenge: challenge(r.challenge) });
         return;
       }
+      if (r.kind === 'firstSignIn') {
+        // An account the school made (client 2026-10-23): its own password first, no session yet.
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+          passwordChangeRequired: true,
+          resetToken: r.resetToken,
+          name: r.name,
+          needs: r.needs,
+          securityQuestions: r.securityQuestions,
+        });
+        return;
+      }
       session(res, r.tokens, r.account);
+    }),
+    firstSignIn: wrap(async (req, res) => {
+      await service.firstSignIn(firstSignInSchema.parse(req.body ?? {}));
+      res.status(204).end();
     }),
     deviceVerify: wrap(async (req, res) => {
       const r = await service.verifyDevice(deviceVerifySchema.parse(req.body), client(req));
@@ -97,11 +114,7 @@ export function memberAuthController(
     }),
     recoveryStart: wrap(async (req, res) => {
       const r = await service.startRecovery(recoveryStartSchema.parse(req.body));
-      res.status(202).json({
-        recoveryId: r.recoveryId,
-        question: r.question,
-        challenge: challenge(r.challenge),
-      });
+      res.status(202).json({ recoveryId: r.recoveryId, challenge: challenge(r.challenge) });
     }),
     recoveryVerify: wrap(async (req, res) => {
       const r = await service.verifyRecovery(recoveryVerifySchema.parse(req.body));

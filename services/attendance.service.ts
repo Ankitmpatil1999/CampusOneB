@@ -23,7 +23,7 @@ import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
 import { KIND_CATEGORIES } from '../repositories/members.repository';
 import type { CardsService } from './cards.service';
-import type { Database, DailyStatus } from '../models/ringpe_models';
+import type { CheckinStatus, Database, DailyStatus } from '../models/ringpe_models';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { formatDate, formatTime, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
@@ -37,6 +37,7 @@ import { memberOf, principalOf, teacherOf } from './member-roles';
 import { notify } from './notifications.service';
 import { payrollMonth, type DayStatus, type LeaveType } from './payroll-attendance';
 import type { SettingsService } from './settings.service';
+import { loginStatus, logoutStatus, timingOf } from './staff-timings';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -201,13 +202,13 @@ export class AttendanceService {
       .selectFrom('member_profiles as m')
       .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
       .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
-      .select(['m.account_id', 'gm.account_id as guardian_account'])
+      .select(['m.account_id', 'm.own_account_id', 'gm.account_id as guardian_account'])
       .where('m.id', '=', studentRowId)
       .execute();
     return [
       ...new Set(
         rows
-          .flatMap((r) => [r.account_id, r.guardian_account])
+          .flatMap((r) => [r.account_id, r.own_account_id, r.guardian_account])
           .filter((a): a is string => a !== null && a !== undefined)
           .map(String),
       ),
@@ -513,9 +514,10 @@ export class AttendanceService {
       .where('att_date', '=', date)
       .executeTakeFirst();
     const member = { name: m.name, classSection: m.classSection };
+    // A staff member's own timing (client 2026-10-23), else the school's rules.
+    const timing = await this.staffTiming(trx, terminal.institutionId, m);
     if (!day) {
-      const cutoff = await this.limit(LIMITS.attendanceLateCutoffMinutes);
-      const status = m.student || istMinutes(at) <= cutoff ? 'PRESENT' : 'LATE';
+      const { status, checkin } = await this.loginOf(timing, m.student, at);
       const ins = await trx
         .insertInto('attendance_days')
         .values({
@@ -524,7 +526,7 @@ export class AttendanceService {
           profile_id: m.rowId,
           section_id: m.sectionId,
           att_date: date,
-          checkin_status: status,
+          checkin_status: checkin,
           status,
           method: 'NFC',
           check_in_at: at,
@@ -549,18 +551,10 @@ export class AttendanceService {
       return { member, result: 'CHECKED_IN', status, at: at.toISOString() };
     }
     // A non-student's second tap checks them out; anything else is complete (27.3).
-    if (
-      m.student ||
-      day.check_out_at ||
-      day.status === 'ABSENT' ||
-      day.status === 'HALF_DAY' ||
-      !day.check_in_at
-    ) {
+    if (m.student || !this.canCheckOut(day, timing)) {
       throw new CustomAPIError(409, 'ATT.ALREADY_COMPLETED');
     }
-    const half = await this.limit(LIMITS.attendanceHalfDayMinutes);
-    const minutes = (at.getTime() - new Date(day.check_in_at).getTime()) / 60_000;
-    const status = minutes >= half ? 'PRESENT' : 'HALF_DAY';
+    const status = await this.logoutOf(timing, day, at);
     await trx
       .updateTable('attendance_days')
       .set({ status, check_out_at: at, updated_at: at, row_version: sql<number>`row_version + 1` })
@@ -1924,10 +1918,63 @@ export class AttendanceService {
     return m;
   }
 
+  /** A staff member's timing (client 2026-10-23): null for anyone else, or staff without one. */
+  private async staffTiming(db: Db, institutionId: string, m: { rowId: string; category: string }) {
+    return STAFF_CATEGORIES.includes(m.category as (typeof STAFF_CATEGORIES)[number])
+      ? timingOf(db, institutionId, m.rowId)
+      : null;
+  }
+
+  /**
+   * A check-in: by the staff member's timing (Present, Late, Half day or Absent; client 2026-10-23),
+   * else Present up to the school's late cut-off and Late after it (a student is Present).
+   */
+  private async loginOf(
+    timing: Awaited<ReturnType<AttendanceService['staffTiming']>>,
+    student: boolean,
+    at: Date,
+  ): Promise<{ status: DailyStatus; checkin: CheckinStatus }> {
+    if (timing) return loginStatus(timing, istMinutes(at));
+    const cutoff = await this.limit(LIMITS.attendanceLateCutoffMinutes);
+    const status = student || istMinutes(at) <= cutoff ? 'PRESENT' : 'LATE';
+    return { status, checkin: status };
+  }
+
+  /**
+   * Whether the day can be checked out: checked in, not out, not Absent. A Half day only with a
+   * timing (a late login; the school's rules make a Half day at the check-out).
+   */
+  private canCheckOut(
+    day: { check_in_at: Date | null; check_out_at: Date | null; status: DailyStatus },
+    timing: Awaited<ReturnType<AttendanceService['staffTiming']>>,
+  ) {
+    return (
+      !!day.check_in_at &&
+      !day.check_out_at &&
+      day.status !== 'ABSENT' &&
+      (day.status !== 'HALF_DAY' || !!timing)
+    );
+  }
+
+  /**
+   * A check-out: by the staff member's timing a Half day before the early logout time (client
+   * 2026-10-23), else Present after the half-day hours and Half day before them.
+   */
+  private async logoutOf(
+    timing: Awaited<ReturnType<AttendanceService['staffTiming']>>,
+    day: { check_in_at: Date | null; status: DailyStatus },
+    at: Date,
+  ): Promise<DailyStatus> {
+    if (timing) return logoutStatus(timing, istMinutes(at), day.status);
+    const half = await this.limit(LIMITS.attendanceHalfDayMinutes);
+    const minutes = (at.getTime() - new Date(day.check_in_at!).getTime()) / 60_000;
+    return minutes >= half ? 'PRESENT' : 'HALF_DAY';
+  }
+
   /**
    * A staff member checked in or out today as at the gate (27.3): the first check-in is Present up to
    * the late cut-off and Late after it; the check-out is Present after the half-day time, Half day
-   * before it. At the front desk a day marked Absent (auto-absent, or by hand) without a check-in can
+   * before it — or as the staff member's timing says (client 2026-10-23). At the front desk a day marked Absent (auto-absent, or by hand) without a check-in can
    * still be checked in — the person is here; old → new is kept. `AUTO` (a card) checks in, else out.
    */
   private async staffCheck(
@@ -1951,17 +1998,14 @@ export class AttendanceService {
       .forUpdate()
       .executeTakeFirst();
     const member = { id: m.publicId, name: m.name };
+    // The staff member's own timing (client 2026-10-23), else the school's rules.
+    const timing = await this.staffTiming(trx, institutionId, m);
     const canCheckIn = !day || !day.check_in_at;
-    const canCheckOut =
-      !!day?.check_in_at &&
-      !day.check_out_at &&
-      day.status !== 'ABSENT' &&
-      day.status !== 'HALF_DAY';
+    const canCheckOut = !!day && this.canCheckOut(day, timing);
     const action = o.action === 'AUTO' ? (canCheckIn ? 'IN' : 'OUT') : o.action;
     if (action === 'IN') {
       if (!canCheckIn) throw new CustomAPIError(409, 'ATT.ALREADY_CHECKED_IN');
-      const cutoff = await this.limit(LIMITS.attendanceLateCutoffMinutes);
-      const status: DailyStatus = istMinutes(at) <= cutoff ? 'PRESENT' : 'LATE';
+      const { status, checkin } = await this.loginOf(timing, false, at);
       let dayId: string;
       if (!day) {
         const ins = await trx
@@ -1972,7 +2016,7 @@ export class AttendanceService {
             profile_id: m.rowId,
             section_id: null,
             att_date: date,
-            checkin_status: status,
+            checkin_status: checkin,
             status,
             method: o.method,
             check_in_at: at,
@@ -1987,7 +2031,7 @@ export class AttendanceService {
           .updateTable('attendance_days')
           .set({
             status,
-            checkin_status: status,
+            checkin_status: checkin,
             method: o.method,
             check_in_at: at,
             updated_by: o.actor,
@@ -2030,9 +2074,7 @@ export class AttendanceService {
         day?.check_in_at ? 'ATT.ALREADY_COMPLETED' : 'ATT.NOT_CHECKED_IN',
       );
     }
-    const half = await this.limit(LIMITS.attendanceHalfDayMinutes);
-    const minutes = (at.getTime() - new Date(day!.check_in_at!).getTime()) / 60_000;
-    const status: DailyStatus = minutes >= half ? 'PRESENT' : 'HALF_DAY';
+    const status = await this.logoutOf(timing, day!, at);
     await trx
       .updateTable('attendance_days')
       .set({

@@ -101,7 +101,12 @@ export interface FormView {
     readonly receiptNo: string | null;
     /** The payment gateway's transaction ID (client 2026-10-16). */
     readonly transactionId?: string | null;
+    /** How and when it was paid (client 2026-10-23). */
+    readonly mode?: string | null;
+    readonly paidAt?: string | null;
   }[];
+  /** The admission fee still to pay when nothing is started for it yet. */
+  readonly admissionFeeDue?: { readonly amount: string } | null;
   readonly declaration: { readonly at: string | null; readonly by: string | null } | null;
   readonly submittedAt: string | null;
 }
@@ -266,6 +271,36 @@ function customValue(f: CfField | undefined, v: unknown): string {
   return opt(v);
 }
 
+/**
+ * The fees as the form's copy states them (client 2026-10-23): each one paid — how, when, its
+ * receipt and the gateway's transaction ID — or still to pay, the admission fee included before
+ * anything is started for it. The PDF writes "Rs." (its fonts have no rupee sign), an e-mail "₹".
+ */
+export function feeLines(v: Pick<FormView, 'fees' | 'admissionFeeDue'>, sign = 'Rs. ') {
+  const money = (amount: string) => rupees(amount).replace('Rs. ', sign);
+  const lines = v.fees.map((f) => ({
+    label: label(f.feeType, FEE),
+    text: join(
+      money(f.amount.amount),
+      f.status === 'PAID'
+        ? [
+            'paid',
+            f.mode === 'CASH' ? 'in cash' : f.mode === 'ONLINE' ? 'online' : '',
+            f.paidAt ? `on ${formatDateTime(f.paidAt)}` : '',
+          ]
+            .filter(Boolean)
+            .join(' ')
+        : 'to pay',
+      f.receiptNo ? `receipt ${f.receiptNo}` : '',
+      f.transactionId ? `transaction ID ${f.transactionId}` : '',
+    ),
+  }));
+  if (v.admissionFeeDue && !v.fees.some((f) => f.feeType === 'ADMISSION')) {
+    lines.push({ label: FEE['ADMISSION']!, text: join(money(v.admissionFeeDue.amount), 'to pay') });
+  }
+  return lines;
+}
+
 export function admissionFormPdf(
   institution: {
     readonly name: string;
@@ -425,19 +460,10 @@ export function admissionFormPdf(
     if (img) w.picture(img);
   }
 
-  if (v.fees.length) {
-    w.section('Fees');
-    for (const f of v.fees) {
-      w.row(
-        label(f.feeType, FEE),
-        join(
-          rupees(f.amount.amount),
-          f.status === 'PAID' ? 'paid' : 'to pay',
-          f.receiptNo ? `receipt ${f.receiptNo}` : '',
-          f.transactionId ? `transaction ID ${f.transactionId}` : '',
-        ),
-      );
-    }
+  const fees = feeLines(v);
+  if (fees.length) {
+    w.section('Fees and payments');
+    for (const f of fees) w.row(f.label, f.text);
   }
 
   w.section('Declaration');

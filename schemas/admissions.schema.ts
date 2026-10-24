@@ -137,6 +137,10 @@ export const studentSectionSchema = z.strictObject({
     .nullish(),
   allergies: optText(300),
   health: optText(300),
+  // The student's own contact (client 2026-10-23), both optional: with a mobile number the student
+  // gets a RingPe account of their own.
+  mobile: mobile.nullish().describe("The student's own mobile number, if any"),
+  email: email.nullish().describe("The student's own e-mail address, if any"),
 });
 export const addressesSectionSchema = z.strictObject({
   residential: addressSchema,
@@ -344,6 +348,12 @@ export const feePaymentVerifySchema = z
 export const deskOrderSchema = z
   .strictObject({
     feeType: z.enum(['APPLICATION', 'ADMISSION'], { message: 'VALIDATION.FORMAT' }),
+    withAdmission: z
+      .boolean()
+      .optional()
+      .describe(
+        'With the application fee: the admission fee joins it in one payment, as the family chooses on the form (client 2026-10-23: the counsellor’s form)',
+      ),
   })
   .meta({ id: 'AdmissionDeskOrder' });
 

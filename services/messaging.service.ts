@@ -9,6 +9,12 @@
  *   one only with a student of a section they teach or a class they coordinate (RNG-COM-108); a student
  *   (or the family holding the child's profile) only with the child's class teacher, subject teachers
  *   and coordinator among teachers (RNG-COM-125/126). The contacts list is built the same way.
+ * - Parents chat only with their children's class teachers this year, both ways (client 2026-10-23):
+ *   a parent starts, replies and sees contacts only for them; a class teacher reaches the parents of
+ *   the class; nobody else — another teacher, staff, the principal — chats with a parent.
+ * - Chat is not for students (client 2026-10-23): a student has no inbox, and nobody writes to one.
+ * - To the school's staff a parent comes with their children — name, class, relation — and is found
+ *   by a child's name too (client 2026-10-23); a student or another parent sees no one's children.
  * - One conversation per pair of members (RNG-COM-096), each participant archiving it for themselves;
  *   sending un-archives it for the sender (RNG-COM-103). Lists are newest first and paged (OI-COM-24/31).
  * - A message is 1 to 4,000 characters (setting), never edited; it is delivered in the app — a
@@ -80,6 +86,14 @@ const msgCursor = {
     return m[1];
   },
 };
+
+/** A parent's child as the school's staff see it beside the parent (client 2026-10-23). */
+interface Child {
+  readonly name: string;
+  readonly classSection: string | null;
+  /** How the parent is related: FATHER, MOTHER, GUARDIAN … */
+  readonly relation: string;
+}
 
 interface Person {
   readonly rowId: string;
@@ -206,10 +220,113 @@ export class MessagingService {
     return out;
   }
 
+  /** The class teachers this year of the sections a parent's children are in. */
+  private classTeachersOfWards(db: Db, institutionId: string, parentRowId: string, yearId: string) {
+    return db
+      .selectFrom('teacher_assignments as ta')
+      .innerJoin('enrolments as en', (j) =>
+        j.onRef('en.section_id', '=', 'ta.section_id').onRef('en.year_id', '=', 'ta.year_id'),
+      )
+      .innerJoin('guardianships as g', 'g.ward_profile_id', 'en.student_profile_id')
+      .select('ta.teacher_profile_id')
+      .where('ta.institution_id', '=', institutionId)
+      .where('ta.year_id', '=', yearId)
+      .where('ta.kind', '=', 'CLASS_TEACHER')
+      .where('ta.ended_at', 'is', null)
+      .where('g.guardian_profile_id', '=', parentRowId);
+  }
+
+  /** The parents of the students in the sections a teacher is class teacher of this year. */
+  private parentsOfClass(db: Db, institutionId: string, teacherRowId: string, yearId: string) {
+    return db
+      .selectFrom('guardianships as g')
+      .innerJoin('enrolments as en', 'en.student_profile_id', 'g.ward_profile_id')
+      .innerJoin('teacher_assignments as ta', (j) =>
+        j.onRef('ta.section_id', '=', 'en.section_id').onRef('ta.year_id', '=', 'en.year_id'),
+      )
+      .select('g.guardian_profile_id')
+      .where('g.institution_id', '=', institutionId)
+      .where('en.year_id', '=', yearId)
+      .where('ta.teacher_profile_id', '=', teacherRowId)
+      .where('ta.kind', '=', 'CLASS_TEACHER')
+      .where('ta.ended_at', 'is', null);
+  }
+
+  /**
+   * The groups a member may address, with parents' conversations kept to class teachers (client
+   * 2026-10-23): a parent addresses teachers only; of the others, only a teacher addresses parents.
+   */
+  private async groupsFor(me: Member): Promise<DmGroup[]> {
+    // Nobody chats with students (client 2026-10-23).
+    const allowed = (await this.allowed(me)).filter((g) => g !== 'STUDENT');
+    if (me.category === 'PARENT') return allowed.filter((g) => g === 'TEACHER');
+    if (me.category !== 'TEACHER') return allowed.filter((g) => g !== 'PARENT');
+    return allowed;
+  }
+
+  /**
+   * The member chatting: never a student — chat is not for students (client 2026-10-23), nor for
+   * the family on a child's profile.
+   */
+  private async chatMember(db: Db, p: Principal, forProfile?: string) {
+    const me = await memberOf(db, p, forProfile);
+    if (me.category === 'STUDENT') throw new CustomAPIError(403, 'COM.DM_STUDENTS');
+    return me;
+  }
+
+  /**
+   * For a list: whether a conversation partner is one the member may still write to as far as
+   * parents go (client 2026-10-23) — one query for the whole list.
+   */
+  private async parentPartners(db: Db, me: Member) {
+    const yearId = await this.currentYearId(db, me.institutionId);
+    if (me.category === 'PARENT') {
+      const teachers = yearId
+        ? await this.classTeachersOfWards(db, me.institutionId, me.rowId, yearId).execute()
+        : [];
+      const ids = new Set(teachers.map((t) => String(t.teacher_profile_id)));
+      return (otherRowId: string, category: UserTypeCategory) =>
+        category !== 'STUDENT' && ids.has(otherRowId);
+    }
+    if (me.category === 'TEACHER') {
+      const parents = yearId
+        ? await this.parentsOfClass(db, me.institutionId, me.rowId, yearId).execute()
+        : [];
+      const ids = new Set(parents.map((g) => String(g.guardian_profile_id)));
+      return (otherRowId: string, category: UserTypeCategory) =>
+        category !== 'STUDENT' && (category !== 'PARENT' || ids.has(otherRowId));
+    }
+    return (_otherRowId: string, category: UserTypeCategory) =>
+      category !== 'PARENT' && category !== 'STUDENT';
+  }
+
+  /**
+   * Whether a parent is in the conversation, and the other side is not one of the parent's
+   * children's class teachers this year (client 2026-10-23).
+   */
+  private async parentRefusal(db: Db, me: Member, other: Person) {
+    // Nobody chats with students (client 2026-10-23).
+    if (other.category === 'STUDENT') return 'COM.DM_STUDENTS' as const;
+    const parent =
+      me.category === 'PARENT' ? me.rowId : other.category === 'PARENT' ? other.rowId : null;
+    if (!parent) return null;
+    const teacher = parent === me.rowId ? other : { rowId: me.rowId, category: me.category };
+    if (teacher.category !== 'TEACHER') return 'COM.DM_PARENT_CLASS_TEACHER' as const;
+    const yearId = await this.currentYearId(db, me.institutionId);
+    const hit =
+      yearId &&
+      (await this.classTeachersOfWards(db, me.institutionId, parent, yearId)
+        .where('ta.teacher_profile_id', '=', teacher.rowId)
+        .executeTakeFirst());
+    return hit ? null : ('COM.DM_PARENT_CLASS_TEACHER' as const);
+  }
+
   /** Whether `me` may start a conversation with `other` (matrix and relationship). */
   private async mayStart(db: Db, me: Member, other: Person) {
     const g = groupOf(other.category);
     if (!g || !(await this.allowed(me)).includes(g)) return 'COM.DM_NOT_PERMITTED' as const;
+    const parents = await this.parentRefusal(db, me, other);
+    if (parents) return parents;
     const yearId = await this.currentYearId(db, me.institutionId);
     if (me.category === 'TEACHER' && g === 'STUDENT') {
       const hit =
@@ -278,15 +395,59 @@ export class MessagingService {
     return out;
   }
 
+  /**
+   * Each parent's children (client 2026-10-23), by the parent's profile row id: the child's name,
+   * class this year and how the parent is related, so the school's staff know whose parent they are
+   * writing to. Children who have left are not listed.
+   */
+  private async childrenOf(db: Db, institutionId: string, parentIds: readonly string[]) {
+    const out = new Map<string, Child[]>();
+    if (!parentIds.length) return out;
+    const rows = await db
+      .selectFrom('guardianships as g')
+      .innerJoin('member_profiles as w', 'w.id', 'g.ward_profile_id')
+      .select(['g.guardian_profile_id', 'g.relation', 'w.id', 'w.first_name', 'w.last_name'])
+      .where('g.institution_id', '=', institutionId)
+      .where('g.guardian_profile_id', 'in', parentIds as string[])
+      .where('w.status', '=', 'ACTIVE')
+      .orderBy('w.first_name')
+      .orderBy('w.last_name')
+      .orderBy('w.id')
+      .execute();
+    const classes = await this.classesOf(
+      db,
+      institutionId,
+      rows.map((r) => String(r.id)),
+    );
+    for (const r of rows) {
+      const k = String(r.guardian_profile_id);
+      out.set(k, [
+        ...(out.get(k) ?? []),
+        {
+          name: nameOf(r.first_name, r.last_name),
+          classSection: classes.get(String(r.id)) ?? null,
+          relation: r.relation,
+        },
+      ]);
+    }
+    return out;
+  }
+
+  /** The school's own people see a parent's children; a student or another parent does not. */
+  private seesFamilies(me: Member) {
+    return me.category !== 'STUDENT' && me.category !== 'PARENT';
+  }
+
   /** COM-016: the people the member may start a conversation with, by group (BR-71). */
   async contacts(p: Principal, q: { q?: string; group?: DmGroup; for?: string }) {
     const db = this.deps.db;
-    const me = await memberOf(db, p, q.for);
-    const allowed = await this.allowed(me);
+    const me = await this.chatMember(db, p, q.for);
+    const allowed = await this.groupsFor(me);
     const yearId = await this.currentYearId(db, me.institutionId);
     const teachersOfMe =
       me.category === 'STUDENT' && yearId ? await this.teachersOf(db, me, yearId) : null;
     const text = q.q?.trim().slice(0, 60);
+    const families = this.seesFamilies(me);
     const groups = [];
     for (const g of allowed) {
       if (q.group && q.group !== g) continue;
@@ -305,12 +466,46 @@ export class MessagingService {
             eb(sql<string>`CONCAT_WS(' ', m.first_name, m.last_name)`, 'like', like),
             eb('m.admission_no', 'like', like),
             eb('m.employee_no', 'like', like),
+            // A parent found by a child's name or admission number (client 2026-10-23).
+            ...(g === 'PARENT' && families
+              ? [
+                  eb.exists(
+                    eb
+                      .selectFrom('guardianships as gw')
+                      .innerJoin('member_profiles as w', 'w.id', 'gw.ward_profile_id')
+                      .select('gw.ward_profile_id')
+                      .whereRef('gw.guardian_profile_id', '=', 'm.id')
+                      .where('w.status', '=', 'ACTIVE')
+                      .where((x) =>
+                        x.or([
+                          x(sql<string>`CONCAT_WS(' ', w.first_name, w.last_name)`, 'like', like),
+                          x('w.admission_no', 'like', like),
+                        ]),
+                      ),
+                  ),
+                ]
+              : []),
           ]),
         );
       }
       if (me.category === 'TEACHER' && g === 'STUDENT') {
         base = yearId
           ? base.where('m.id', 'in', this.taughtBy(db, me, yearId))
+          : base.where(sql<boolean>`FALSE`);
+      }
+      // Parents and class teachers, each to the other only (client 2026-10-23).
+      if (me.category === 'PARENT' && g === 'TEACHER') {
+        base = yearId
+          ? base.where(
+              'm.id',
+              'in',
+              this.classTeachersOfWards(db, me.institutionId, me.rowId, yearId),
+            )
+          : base.where(sql<boolean>`FALSE`);
+      }
+      if (me.category === 'TEACHER' && g === 'PARENT') {
+        base = yearId
+          ? base.where('m.id', 'in', this.parentsOfClass(db, me.institutionId, me.rowId, yearId))
           : base.where(sql<boolean>`FALSE`);
       }
       if (teachersOfMe && g === 'TEACHER') {
@@ -335,6 +530,8 @@ export class MessagingService {
         .execute();
       const ids = rows.map((r) => String(r.id));
       const classes = g === 'STUDENT' ? await this.classesOf(db, me.institutionId, ids) : null;
+      const children =
+        g === 'PARENT' && families ? await this.childrenOf(db, me.institutionId, ids) : null;
       const existing = ids.length
         ? await db
             .selectFrom('conversation_participants as cp')
@@ -358,11 +555,14 @@ export class MessagingService {
             profileId: binToUuid(r.public_id),
             name: nameOf(r.first_name, r.last_name),
             roleLabel: r.type_name,
-            relation: teachersOfMe?.get(id) ?? [],
+            relation:
+              teachersOfMe?.get(id) ??
+              (me.category === 'PARENT' && g === 'TEACHER' ? ['Class teacher'] : []),
             sub:
               g === 'STUDENT'
                 ? [cls, r.admission_no].filter(Boolean).join(' · ') || null
                 : (r.department ?? null),
+            children: children?.get(id) ?? [],
             conversationId: conv.get(id) ?? null,
           };
         }),
@@ -384,8 +584,9 @@ export class MessagingService {
     q: { archived?: boolean; cursor?: string; for?: string; limit?: number },
   ) {
     const db = this.deps.db;
-    const me = await memberOf(db, p, q.for);
+    const me = await this.chatMember(db, p, q.for);
     const allowed = await this.allowed(me);
+    const partner = await this.parentPartners(db, me);
     const after = listCursor.decode(q.cursor);
     const limit = Math.min(Math.max(q.limit ?? PAGE.conversations, 1), 100);
     let rows = db
@@ -443,6 +644,13 @@ export class MessagingService {
       me.institutionId,
       shown.filter((r) => r.category === 'STUDENT').map((r) => String(r.other_id)),
     );
+    const children = this.seesFamilies(me)
+      ? await this.childrenOf(
+          db,
+          me.institutionId,
+          shown.filter((r) => r.category === 'PARENT').map((r) => String(r.other_id)),
+        )
+      : new Map<string, Child[]>();
     const counts = await db
       .selectFrom('conversation_participants as cp')
       .select([
@@ -472,6 +680,7 @@ export class MessagingService {
             roleLabel: r.type_name,
             group: g,
             classSection: classes.get(String(r.other_id)) ?? null,
+            children: children.get(String(r.other_id)) ?? [],
           },
           lastMessage: r.last_body
             ? {
@@ -483,7 +692,11 @@ export class MessagingService {
             : null,
           unread: Number(r.unread ?? 0),
           archived: r.archived_at !== null,
-          canSend: r.other_status === 'ACTIVE' && g !== null && allowed.includes(g),
+          canSend:
+            r.other_status === 'ACTIVE' &&
+            g !== null &&
+            allowed.includes(g) &&
+            partner(String(r.other_id), r.category),
         };
       }),
       nextCursor:
@@ -516,14 +729,14 @@ export class MessagingService {
 
   /** Route guard: another member's or school's conversation answers 404 before the body is read. */
   async lookup(p: Principal, conversationId: string, forProfile?: string) {
-    const me = await memberOf(this.deps.db, p, forProfile);
+    const me = await this.chatMember(this.deps.db, p, forProfile);
     await this.participation(this.deps.db, me, conversationId);
   }
 
   /** COM-018: start (or continue) the conversation with a member (BR-71). */
   async start(p: Principal, b: { recipientProfileId: string; text: string; for?: string }) {
     const db = this.deps.db;
-    const me = await memberOf(db, p, b.for);
+    const me = await this.chatMember(db, p, b.for);
     const other = await this.person(db, me.institutionId, { id: b.recipientProfileId });
     if (other?.rowId === me.rowId) throw new CustomAPIError(422, 'COM.DM_SELF');
     if (!other || other.status !== 'ACTIVE') throw new CustomAPIError(404, 'COM.DM_RECIPIENT');
@@ -537,7 +750,7 @@ export class MessagingService {
       .executeTakeFirst();
     const refusal = existing
       ? (await this.allowed(me)).includes(groupOf(other.category) as DmGroup)
-        ? null
+        ? await this.parentRefusal(db, me, other)
         : ('COM.DM_NOT_PERMITTED' as const)
       : await this.mayStart(db, me, other);
     if (refusal) throw new CustomAPIError(403, refusal);
@@ -547,7 +760,7 @@ export class MessagingService {
   /** COM-020: a message in an existing conversation. */
   async send(p: Principal, conversationId: string, b: { text: string; for?: string }) {
     const db = this.deps.db;
-    const me = await memberOf(db, p, b.for);
+    const me = await this.chatMember(db, p, b.for);
     const c = await this.participation(db, me, conversationId);
     const other = await this.person(db, me.institutionId, { rowId: c.otherRowId });
     if (!other || other.status !== 'ACTIVE') throw new CustomAPIError(404, 'COM.DM_RECIPIENT');
@@ -555,6 +768,8 @@ export class MessagingService {
     if (!g || !(await this.allowed(me)).includes(g)) {
       throw new CustomAPIError(403, 'COM.DM_NOT_PERMITTED');
     }
+    const parents = await this.parentRefusal(db, me, other);
+    if (parents) throw new CustomAPIError(403, parents);
     return this.post(me, other, b.text, uuidToBin(p.subject));
   }
 
@@ -744,7 +959,7 @@ export class MessagingService {
     q: { before?: string; limit?: number; for?: string },
   ) {
     const db = this.deps.db;
-    const me = await memberOf(db, p, q.for);
+    const me = await this.chatMember(db, p, q.for);
     const c = await this.participation(db, me, conversationId);
     const other = await this.person(db, me.institutionId, { rowId: c.otherRowId });
     if (!other) throw new NotFoundError();
@@ -791,11 +1006,16 @@ export class MessagingService {
     const shown = page.slice(0, limit);
     const oldest = shown.at(-1);
     const allowed = await this.allowed(me);
+    const partner = await this.parentPartners(db, me);
     const g = groupOf(other.category);
     const classes =
       other.category === 'STUDENT'
         ? await this.classesOf(db, me.institutionId, [other.rowId])
         : new Map<string, string>();
+    const children =
+      other.category === 'PARENT' && this.seesFamilies(me)
+        ? await this.childrenOf(db, me.institutionId, [other.rowId])
+        : new Map<string, Child[]>();
     return {
       conversation: {
         id: c.id,
@@ -805,9 +1025,14 @@ export class MessagingService {
           roleLabel: other.roleLabel,
           group: g,
           classSection: classes.get(other.rowId) ?? null,
+          children: children.get(other.rowId) ?? [],
         },
         archived: c.archived,
-        canSend: other.status === 'ACTIVE' && g !== null && allowed.includes(g),
+        canSend:
+          other.status === 'ACTIVE' &&
+          g !== null &&
+          allowed.includes(g) &&
+          partner(other.rowId, other.category),
       },
       items: shown.reverse().map((m) => ({
         id: binToUuid(m.public_id),
@@ -825,7 +1050,7 @@ export class MessagingService {
   /** COM-021: archive or restore the conversation for the member only (RNG-COM-103/104). */
   async archive(p: Principal, conversationId: string, b: { archived: boolean; for?: string }) {
     const db = this.deps.db;
-    const me = await memberOf(db, p, b.for);
+    const me = await this.chatMember(db, p, b.for);
     const c = await this.participation(db, me, conversationId);
     await db
       .updateTable('conversation_participants')

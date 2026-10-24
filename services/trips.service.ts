@@ -844,7 +844,7 @@ export class TripsService {
       .innerJoin('member_profiles as m', 'm.id', 'al.profile_id')
       .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
       .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
-      .select(['m.account_id', 'gm.account_id as guardian_account'])
+      .select(['m.account_id', 'm.own_account_id', 'gm.account_id as guardian_account'])
       .where('al.route_id', '=', routeId)
       .where('al.active', '=', 1)
       .where('al.effective_from', '<=', date)
@@ -854,7 +854,7 @@ export class TripsService {
     return [
       ...new Set(
         rows
-          .flatMap((r) => [r.account_id, r.guardian_account])
+          .flatMap((r) => [r.account_id, r.own_account_id, r.guardian_account])
           .filter((a): a is string => a !== null && a !== undefined)
           .map(String),
       ),

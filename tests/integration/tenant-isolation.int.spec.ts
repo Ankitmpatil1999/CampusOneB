@@ -425,6 +425,34 @@ describe.skipIf(!adminUrl)(
         })
         .execute();
       ids['recordId'] = record.id;
+      // A cash receipt on it (FEE-054/056: a collection's receipt).
+      const collection = newPublicIdPair();
+      await t.db
+        .insertInto('fee_collections')
+        .values({
+          public_id: collection.bin,
+          institution_id: String(aMember.institution_id),
+          record_id: String(
+            (
+              await t.db
+                .selectFrom('fee_records')
+                .select('id')
+                .where('public_id', '=', record.bin)
+                .executeTakeFirstOrThrow()
+            ).id,
+          ),
+          payment_attempt_id: null,
+          amount_paise: 1_000,
+          source: 'CONSOLE',
+          mode: 'CASH',
+          receipt_no: 'ISO/FR/0001',
+          paid_by: 'Some One',
+          gateway_payment_id: null,
+          collected_by: null,
+          collected_at: new Date(),
+        })
+        .execute();
+      ids['collectionId'] = collection.id;
       // An admission link, application, reference and paid fee of school A (INS-029, ADM-014…028).
       const adLink = newPublicIdPair();
       await t.db
@@ -668,6 +696,23 @@ describe.skipIf(!adminUrl)(
         })
         .execute();
       ids['visitorId'] = visitor.id;
+      // A staff timing of school A (ATT-035/036; client 2026-10-23).
+      const timing = newPublicIdPair();
+      await t.db
+        .insertInto('staff_timings')
+        .values({
+          public_id: timing.bin,
+          institution_id: String(aMember.institution_id),
+          name: 'Isolation timing',
+          login_time: '08:30:00',
+          logout_time: '16:30:00',
+          late_login_time: '08:45:00',
+          early_logout_time: '16:00:00',
+          half_day_time: '11:00:00',
+          absent_time: '13:00:00',
+        })
+        .execute();
+      ids['timingId'] = timing.id;
       // Transport records of school A (TRN-003…025).
       const instA = String(aMember.institution_id);
       const now = new Date();
@@ -840,6 +885,16 @@ describe.skipIf(!adminUrl)(
             'INS-034': { enabled: false, reason: 'Testing isolation' },
             'ATT-006': { action: 'BLOCK', reason: 'Testing isolation' },
             'ATT-007': { reasonCode: 'LOST' },
+            'ATT-035': {
+              name: 'Taken over',
+              roleIds: [],
+              loginTime: '08:30',
+              logoutTime: '16:30',
+              lateLoginTime: '08:45',
+              earlyLogoutTime: '16:00',
+              halfDayTime: '11:00',
+              absentTime: '13:00',
+            },
             'INS-022': { name: 'Another group' },
             'INS-025': { name: 'Another item' },
             'INS-026': { groupIds: [] },
@@ -874,6 +929,11 @@ describe.skipIf(!adminUrl)(
             'ADM-022': { receivedAt: today, paidBy: 'Some One' },
             'ADM-026': { name: 'Ref Person', mobile: '9845000002' },
             'ADM-030': { declarationAccepted: true, registrationConsent: true },
+            'ADM-037': { feeType: 'APPLICATION' },
+            'ADM-038': { gatewayPaymentId: 'pay_ISOLATION', signature: 'isolation' },
+            'ADM-040': { section: 'student', data: {} },
+            'FEE-047': { receivedAt: today, paidBy: 'Some One' },
+            'FEE-053': { gatewayPaymentId: 'pay_ISOLATION', signature: 'isolation' },
             'ACA-036': { date: today },
             'ACA-043': { decision: 'APPROVED' },
             'TRN-004': { stops: [] },

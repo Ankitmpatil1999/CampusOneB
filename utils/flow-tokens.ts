@@ -20,7 +20,9 @@ export type FlowPurpose =
   | 'admission-pay'
   | 'admission-otp'
   // An instalment's payment link or QR code (client 2026-10-19).
-  | 'fee-pay';
+  | 'fee-pay'
+  // An account the school made: its one-time password changed at the first sign-in (2026-10-23).
+  | 'member-first-signin';
 
 export interface FlowTokens {
   issue(

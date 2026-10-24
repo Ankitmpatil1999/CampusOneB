@@ -37,6 +37,7 @@ import { recordAudit } from './audit.service';
 import { tellMembers } from './member-notices';
 import type { LedgerService } from './ledger.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -1328,7 +1329,7 @@ export class SettlementService {
     if (!isUuid(p.subject) || !p.profileId || !isUuid(p.profileId)) throw new NotFoundError();
     const m = await this.deps.db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
       .select(['m.id', 'm.institution_id', 'ut.category'])
       .where('a.public_id', '=', uuidToBin(p.subject))

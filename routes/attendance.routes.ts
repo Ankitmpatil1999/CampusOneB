@@ -96,6 +96,26 @@ export const autoAbsentSchema = z
     appliesTo: z.array(z.enum(['STUDENTS', 'STAFF'])).max(2),
   })
   .meta({ id: 'AutoAbsentSettings' });
+/** Client 2026-10-23: the staff timings by role on the Auto-absent page. */
+const hhmm = z
+  .string({ message: 'VALIDATION.REQUIRED' })
+  .max(5, { message: 'VALIDATION.FORMAT' })
+  .describe('"HH:MM", IST');
+export const staffTimingSchema = z
+  .strictObject({
+    name: z.string({ message: 'ATT.TIMING_NAME' }).max(60, { message: 'ATT.TIMING_NAME' }),
+    roleIds: z
+      .array(uuid, { message: 'ATT.TIMING_ROLES' })
+      .max(50)
+      .describe('The roles it is for (from ATT-033); a role is in one timing only'),
+    loginTime: hhmm,
+    logoutTime: hhmm,
+    lateLoginTime: hhmm.describe('A login after it is Late'),
+    earlyLogoutTime: hhmm.describe('A logout before it makes the day a Half day'),
+    halfDayTime: hhmm.describe('A login after it is a Half day'),
+    absentTime: hhmm.describe('A login after it is Absent; no login by then is marked Absent'),
+  })
+  .meta({ id: 'StaffTimingInput' });
 export const attendanceTypeSchema = z
   .strictObject({
     name: z.string({ message: 'ATT.TYPE_NAME' }).max(40, { message: 'ATT.TYPE_NAME' }),
@@ -391,6 +411,44 @@ doc({
   responses: { 200: { description: 'Payroll month' } },
 });
 
+doc({
+  id: 'ATT-033',
+  method: 'get',
+  path: '/api/v1/console/attendance/staff-timings',
+  summary:
+    'Staff timings by role (client 2026-10-23): login and logout time, late login, early logout, half-day and absent times, the roles each is for and how many staff follow it (first made first: it applies when a person’s roles are in two); with the roles to choose from',
+  auth: 'attendance.view',
+  responses: { 200: { description: 'Timings and roles' } },
+});
+doc({
+  id: 'ATT-034',
+  method: 'post',
+  path: '/api/v1/console/attendance/staff-timings',
+  summary:
+    'Add a staff timing: a unique name, one or more roles not in another timing, and the times in the day’s order — login, late login, half day, absent, logout; early logout between login and logout',
+  auth: 'attendance.config',
+  request: staffTimingSchema,
+  idempotent: 'required',
+  responses: { 201: { description: 'Timing' } },
+});
+doc({
+  id: 'ATT-035',
+  method: 'put',
+  path: '/api/v1/console/attendance/staff-timings/{timingId}',
+  summary: 'Change a staff timing (If-Match); the same rules as ATT-034',
+  auth: 'attendance.config',
+  request: staffTimingSchema,
+  responses: { 200: { description: 'Timing' } },
+});
+doc({
+  id: 'ATT-036',
+  method: 'delete',
+  path: '/api/v1/console/attendance/staff-timings/{timingId}',
+  summary: 'Remove a staff timing: its staff keep the school’s rules from then on',
+  auth: 'attendance.config',
+  responses: { 204: { description: 'Removed' } },
+});
+
 export function attendanceRoutes(deps: {
   db: Kysely<Database>;
   attendance: AttendanceService;
@@ -509,6 +567,48 @@ export function attendanceRoutes(deps: {
       );
       setEtag(res, out.version);
       res.json(out);
+    }),
+  );
+  // the staff timings by role (client 2026-10-23)
+  router.get(
+    '/console/attendance/staff-timings',
+    ...console,
+    authorize('attendance.view', L),
+    json((req) => deps.admin.staffTimings(principal(req))),
+  );
+  router.post(
+    '/console/attendance/staff-timings',
+    ...console,
+    authorize('attendance.config', L),
+    once,
+    json(
+      (req) =>
+        deps.admin.createStaffTiming(principal(req), staffTimingSchema.parse(req.body ?? {})),
+      201,
+    ),
+  );
+  router.put(
+    '/console/attendance/staff-timings/:timingId',
+    ...console,
+    authorize('attendance.config', L),
+    wrap(async (req, res) => {
+      const out = await deps.admin.updateStaffTiming(
+        principal(req),
+        param(req, 'timingId'),
+        expectedVersion(req),
+        staffTimingSchema.parse(req.body ?? {}),
+      );
+      setEtag(res, out.version);
+      res.json(out);
+    }),
+  );
+  router.delete(
+    '/console/attendance/staff-timings/:timingId',
+    ...console,
+    authorize('attendance.config', L),
+    wrap(async (req, res) => {
+      await deps.admin.deleteStaffTiming(principal(req), param(req, 'timingId'));
+      res.status(204).end();
     }),
   );
   router.get(

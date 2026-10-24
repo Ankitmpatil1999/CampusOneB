@@ -36,6 +36,7 @@ import type { EventsService } from './events.service';
 import type { MerchantsService } from './merchants.service';
 import { forCounter, type PaymentEngine } from './payment-engine.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 const titleCase = (s: string) =>
   s.toLowerCase().replace(/(^|[\s.'-])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
@@ -82,7 +83,7 @@ export class PaymentsService {
     const r = await this.deps.db
       .selectFrom('member_profiles as m')
       .innerJoin('institutions as i', 'i.id', 'm.institution_id')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .select(['m.id', 'm.institution_id', 'a.id as account_id', 'a.public_id as account_public'])
       .where('m.public_id', '=', uuidToBin(p.profileId))
       .where('i.public_id', '=', uuidToBin(p.institutionId))

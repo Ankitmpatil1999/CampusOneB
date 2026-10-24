@@ -39,6 +39,7 @@ import { formatAmount, toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { institutionOf, yearFor } from './academic-year';
 import type { CommReportService } from './comm-report.service';
+import { usesProfile } from './member-roles';
 
 type ColumnType = 'text' | 'number' | 'paise' | 'date' | 'datetime' | 'percent';
 interface Column {
@@ -1222,7 +1223,7 @@ export class ReportsService {
       ? (
           await db
             .selectFrom('member_profiles as m')
-            .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+            .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
             .innerJoin('profile_roles as pr', 'pr.profile_id', 'm.id')
             .innerJoin('roles as r', 'r.id', 'pr.role_id')
             .select('r.code')
