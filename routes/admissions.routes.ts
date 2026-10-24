@@ -566,7 +566,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/applications/{applicationId}/admission-fee/orders',
   summary:
-    'Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee)',
+    'Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee); withAdmission takes the admission fee with the application fee in one payment, as the counsellor’s form offers (client 2026-10-23)',
   auth: 'admfees.collect',
   request: deskOrderSchema,
   idempotent: 'required',
@@ -1217,8 +1217,17 @@ export function admissionsRoutes(deps: {
     authorize('admfees.collect', L),
     once,
     wrap(async (req, res) => {
-      const { feeType } = deskOrderSchema.parse(req.body ?? {});
-      res.status(201).json(await A.deskOrder(principal(req), param(req, 'applicationId'), feeType));
+      const { feeType, withAdmission } = deskOrderSchema.parse(req.body ?? {});
+      res
+        .status(201)
+        .json(
+          await A.deskOrder(
+            principal(req),
+            param(req, 'applicationId'),
+            feeType,
+            withAdmission ?? false,
+          ),
+        );
     }),
   );
   router.post(

@@ -344,6 +344,12 @@ export const feePaymentVerifySchema = z
 export const deskOrderSchema = z
   .strictObject({
     feeType: z.enum(['APPLICATION', 'ADMISSION'], { message: 'VALIDATION.FORMAT' }),
+    withAdmission: z
+      .boolean()
+      .optional()
+      .describe(
+        'With the application fee: the admission fee joins it in one payment, as the family chooses on the form (client 2026-10-23: the counsellor’s form)',
+      ),
   })
   .meta({ id: 'AdmissionDeskOrder' });
 

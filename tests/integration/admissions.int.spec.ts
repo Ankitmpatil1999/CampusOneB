@@ -538,6 +538,41 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(f.h.email.sent.findLast((m) => m.to === 'rakesh@example.in')?.purpose).toBe(
       'admission.submitted',
     );
+    // The e-mail carries the application's details and its payment, with the submitted form as a
+    // PDF (client 2026-10-23); the father is the primary contact, so his address gets one.
+    const mails = f.h.email.sent.filter(
+      (m) => m.purpose === 'admission.submitted' && m.text.includes(app.applicationNo),
+    );
+    expect(mails.map((m) => m.to)).toEqual(['rakesh@example.in']);
+    const mail = mails[0]!;
+    for (const words of [
+      `Application number: ${app.applicationNo}`,
+      'Class: Grade 6',
+      'Fees and payments',
+      `Application fee: ₹500.00, paid online on`,
+      `receipt ${ok.body.receiptNo}`,
+      `transaction ID ${txn}`,
+      'A copy of the application form is attached.',
+    ]) {
+      expect(mail.text, words).toContain(words);
+    }
+    expect(mail.attachments).toHaveLength(1);
+    const form = mail.attachments![0]!;
+    expect(form.fileName).toBe(
+      `Application-${app.applicationNo.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
+    );
+    expect(form.contentType).toBe('application/pdf');
+    const formText = form.content.toString('latin1');
+    expect(formText.startsWith('%PDF')).toBe(true);
+    for (const words of [
+      app.applicationNo,
+      'Fees and payments',
+      'Rs. 500.00, paid online on',
+      `transaction ID ${txn}`,
+      'Rakesh Shetty',
+    ]) {
+      expect(formText, words).toContain(words);
+    }
 
     const status = await post(
       '/api/v1/public/admissions/status',
@@ -2169,6 +2204,66 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(rows[0]!.receipt_no).not.toBe(rows[1]!.receipt_no);
     const detail = await request(f.app).get(`/api/v1/console/applications/${app.id}`).set(con);
     expect(detail.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
+  });
+
+  it('takes both fees in one Pay now at the desk when the counsellor’s form chose it (client 2026-10-23)', async () => {
+    const created = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Ira',
+          lastName: 'Pai',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-03-02`,
+          aadhaar: aadhaar(),
+        },
+      },
+      {},
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const app = created.body.application;
+    const token = created.body.resumeToken as string;
+    await completeDraft(app.id, token, '9876507311');
+    const sub = await pub(
+      'post',
+      `/api/v1/public/admissions/applications/${app.id}/submission`,
+      token,
+      {
+        declarationAccepted: true,
+        registrationConsent: true,
+      },
+    );
+    expect(sub.body, JSON.stringify(sub.body)).toMatchObject({
+      status: 'DRAFT',
+      feeDue: { mandatory: true },
+    });
+    // The admission fee joins the application fee in the desk's one checkout: ₹500 + ₹10,000.
+    const order = await post(`/api/v1/console/applications/${app.id}/admission-fee/orders`, {
+      feeType: 'APPLICATION',
+      withAdmission: true,
+    });
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    expect(order.body).toMatchObject({
+      feeType: 'APPLICATION',
+      includes: ['APPLICATION', 'ADMISSION'],
+      amount: inr('10500.00'),
+    });
+    const t = order.body.gatewayOrder.test as { paymentId: string; signature: string };
+    const paid = await post(
+      `/api/v1/console/applications/${app.id}/admission-fee/orders/${order.body.paymentId}/verify`,
+      { gatewayPaymentId: t.paymentId, signature: t.signature },
+    );
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect(paid.body).toMatchObject({ status: 'PAID', applicationStatus: 'SUBMITTED' });
+    const detail = await request(f.app).get(`/api/v1/console/applications/${app.id}`).set(con);
+    expect(detail.body).toMatchObject({ paymentStatus: 'PAID', admissionFeeDue: null });
+    expect(
+      detail.body.fees.map((x: { feeType: string; mode: string }) => [x.feeType, x.mode]),
+    ).toEqual([
+      ['APPLICATION', 'ONLINE'],
+      ['ADMISSION', 'ONLINE'],
+    ]);
   });
 
   it('keeps each person’s numbers and cards, asks a guardian who is the contact and a hostel student’s local guardian for theirs; the application fee is never left for later by the family, and the desk can still take the fees — Pay now or cash (client 2026-10-13, 2026-10-22)', async () => {

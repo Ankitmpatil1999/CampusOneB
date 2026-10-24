@@ -249,4 +249,36 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
     expect(sent.map((m) => m.token)).toEqual([otherToken]);
     expect(await tokenRow(otherToken)).toBeUndefined();
   });
+
+  it('tells the member app which profiles have office work for the staff app (client 2026-10-23)', async () => {
+    const roles = Object.fromEntries(
+      (await request(f.app).get('/api/v1/console/roles').set(con)).body.items.map(
+        (r: { code: string; id: string }) => [r.code, r.id],
+      ),
+    ) as Record<string, string>;
+    // A teacher signed in to the member app: no office work.
+    const t = await f.payer('Lata', 0);
+    const office = async () =>
+      (
+        (await request(f.app).get('/api/v1/me').set(t.auth)).body.profiles as {
+          id: string;
+          office: { roles: string[] } | null;
+        }[]
+      ).find((x) => x.id === t.id)!.office;
+    expect(await office()).toBeNull();
+    const setRoles = (codes: string[]) =>
+      request(f.app)
+        .put(`/api/v1/console/staff-accounts/${t.id}/roles`)
+        .set(con)
+        .send({ roleIds: codes.map((c) => roles[c]) });
+    expect((await setRoles(['TEACHER'])).status).toBe(200);
+    expect(await office()).toBeNull();
+    // The Counsellor's admissions, and the Co-ordinator's beside their teaching.
+    expect((await setRoles(['COUNSELLOR'])).status).toBe(200);
+    expect(await office()).toEqual({ roles: ['Counsellor'] });
+    expect((await setRoles(['ACADEMIC_COORDINATOR', 'TEACHER'])).status).toBe(200);
+    expect(await office()).toEqual({ roles: ['Academic Coordinator'] });
+    expect((await setRoles(['ACCOUNTANT'])).status).toBe(200);
+    expect(await office()).toEqual({ roles: ['Accountant'] });
+  });
 });

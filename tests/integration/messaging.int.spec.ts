@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { adminUrl } from './db';
-import { schoolFixture, type Auth, type Payer } from './school';
+import { mobile, schoolFixture, type Auth, type Payer } from './school';
 
 describe.skipIf(!adminUrl)('direct messages on real MySQL', () => {
   let f: Awaited<ReturnType<typeof schoolFixture>>;
@@ -198,6 +198,44 @@ describe.skipIf(!adminUrl)('direct messages on real MySQL', () => {
     expect(refused).toHaveLength(4);
     expect(refused[0]!.body.code).toBe('COM.DM_RATE_LIMITED');
     expect(new Set(ok.map((r) => r.body.conversationId)).size).toBe(1);
+  });
+
+  it("shows the school's staff each parent's children, and finds a parent by a child's name (client 2026-10-23)", async () => {
+    // Chitra, in Grade 6 A, onboarded with her father's mobile.
+    await f.ward('Chitra', mobile());
+    const parents = await get('/me/contacts?group=PARENT&q=Chitra', ravi.auth);
+    expect(parents.status, JSON.stringify(parents.body)).toBe(200);
+    const father = parents.body.groups[0].items as {
+      profileId: string;
+      name: string;
+      children: object[];
+    }[];
+    expect(father).toEqual([
+      expect.objectContaining({
+        name: 'Guardian Rao',
+        roleLabel: 'Parent',
+        children: [{ name: 'Chitra Rao', classSection: 'Grade 6 A', relation: 'FATHER' }],
+      }),
+    ]);
+    // Students have no children listed.
+    const students = await get('/me/contacts?group=STUDENT', ravi.auth);
+    expect(students.body.groups[0].items[0].children).toEqual([]);
+    // The conversation with him names his child, in the list and when opened.
+    const started = await post('/me/conversations', ravi.auth, {
+      recipientProfileId: father[0]!.profileId,
+      text: 'Chitra did very well in the quiz today.',
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const child = { name: 'Chitra Rao', classSection: 'Grade 6 A', relation: 'FATHER' };
+    const listed = (await get('/me/conversations', ravi.auth)).body.items.find(
+      (c: { conversationId: string }) => c.conversationId === started.body.conversationId,
+    );
+    expect(listed.with).toMatchObject({ name: 'Guardian Rao', group: 'PARENT', children: [child] });
+    const opened = await get(
+      `/me/conversations/${started.body.conversationId}/messages`,
+      ravi.auth,
+    );
+    expect(opened.body.conversation.with.children).toEqual([child]);
   });
 
   it('follows the matrix setting: a role switched off can no longer send', async () => {

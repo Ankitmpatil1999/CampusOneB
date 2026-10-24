@@ -41,7 +41,7 @@ doc({
   method: 'get',
   path: '/api/v1/me/contacts',
   summary:
-    'People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address',
+    'People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address. To the school’s staff each parent comes with their children (name, class, relation), and a parent is found by a child’s name or admission number too (client 2026-10-23)',
   auth: 'member|teaching.view,principal.view',
   query: contactsQuery,
   responses: { 200: { description: 'Contacts' } },
@@ -51,7 +51,7 @@ doc({
   method: 'get',
   path: '/api/v1/me/conversations',
   summary:
-    'Conversations, newest message first, active or archived, with unread counts and whether the member may still send',
+    'Conversations, newest message first, active or archived, with unread counts and whether the member may still send; to the school’s staff a parent comes with their children (client 2026-10-23)',
   auth: 'member|teaching.view,principal.view',
   query: listQuery,
   responses: { 200: { description: 'Conversations' } },
@@ -73,7 +73,7 @@ doc({
   method: 'get',
   path: '/api/v1/me/conversations/{conversationId}/messages',
   summary:
-    'Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read',
+    'Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read; to the school’s staff a parent comes with their children (client 2026-10-23)',
   auth: 'member|teaching.view,principal.view',
   query: messagesQuery,
   responses: { 200: { description: 'Messages' } },

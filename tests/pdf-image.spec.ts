@@ -1,5 +1,5 @@
 import { inflateSync } from 'node:zlib';
-import { admissionFormPdf, type FormView } from '../services/admission-form-pdf';
+import { admissionFormPdf, feeLines, type FormView } from '../services/admission-form-pdf';
 import { PdfDocument } from '../utils/pdf';
 import { pdfImage, type PdfImage } from '../utils/pdf-image';
 import { pngOf } from './png';
@@ -237,5 +237,44 @@ describe('pictures in generated PDFs (client 2026-10-14)', () => {
     expect(headed).toMatch(
       /BT [\d. ]+ rg \/F2 16 Tf 104 [\d.]+ Td \(Sri Ram Global School\) Tj ET/,
     );
+  });
+
+  it('states each fee paid — how, when, its receipt and transaction ID — or still to pay (client 2026-10-23)', () => {
+    const fees: FormView['fees'] = [
+      {
+        feeType: 'APPLICATION',
+        amount: { amount: '500.00' },
+        status: 'PAID',
+        mode: 'ONLINE',
+        paidAt: '2026-10-23T04:45:00.000Z',
+        receiptNo: 'TVPS/R/2026/000041',
+        transactionId: 'pay_Q1w2E3r4',
+      },
+    ];
+    expect(feeLines({ fees, admissionFeeDue: { amount: '10000.00' } }, '₹')).toEqual([
+      {
+        label: 'Application fee',
+        text: '₹500.00, paid online on 23 Oct 2026 · 10:15 AM, receipt TVPS/R/2026/000041, transaction ID pay_Q1w2E3r4',
+      },
+      { label: 'Admission fee', text: '₹10,000.00, to pay' },
+    ]);
+    // Cash at the desk; once the admission fee is started its own row stands.
+    expect(
+      feeLines({
+        fees: [
+          { ...fees[0]!, mode: 'CASH', transactionId: null },
+          {
+            feeType: 'ADMISSION',
+            amount: { amount: '10000.00' },
+            status: 'PENDING',
+            receiptNo: null,
+          },
+        ],
+        admissionFeeDue: { amount: '10000.00' },
+      }).map((l) => l.text),
+    ).toEqual([
+      'Rs. 500.00, paid in cash on 23 Oct 2026 · 10:15 AM, receipt TVPS/R/2026/000041',
+      'Rs. 10,000.00, to pay',
+    ]);
   });
 });

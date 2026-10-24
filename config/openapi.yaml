@@ -1653,7 +1653,7 @@ paths:
   /api/v1/console/applications/{applicationId}/admission-fee/orders:
     post:
       operationId: ADM-037
-      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee)"
+      summary: "Pay now at the accounts desk (client 2026-10-22): an order with the school’s gateway for the application or admission fee, whose checkout opens on the console — no link is created or sent; the rules of ADM-010 (the admission fee not before the application fee); withAdmission takes the admission fee with the application fee in one payment, as the counsellor’s form offers (client 2026-10-23)"
       tags:
         - Admissions
       x-ringpe-auth: admfees.collect
@@ -11269,7 +11269,7 @@ paths:
   /api/v1/me/contacts:
     get:
       operationId: COM-016
-      summary: "People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address"
+      summary: "People the member may start a conversation with, by group, under the role matrix (BR-71): a teacher’s own students, a student’s own teachers (for: a child on the account); the groups the role may not address. To the school’s staff each parent comes with their children (name, class, relation), and a parent is found by a child’s name or admission number too (client 2026-10-23)"
       tags:
         - Communication
       x-ringpe-auth: member|teaching.view,principal.view
@@ -11312,7 +11312,7 @@ paths:
   /api/v1/me/conversations:
     get:
       operationId: COM-017
-      summary: Conversations, newest message first, active or archived, with unread counts and whether the member may still send
+      summary: Conversations, newest message first, active or archived, with unread counts and whether the member may still send; to the school’s staff a parent comes with their children (client 2026-10-23)
       tags:
         - Communication
       x-ringpe-auth: member|teaching.view,principal.view
@@ -11433,7 +11433,7 @@ paths:
   /api/v1/me/conversations/{conversationId}/messages:
     get:
       operationId: COM-019
-      summary: "Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read"
+      summary: "Messages, oldest first within the newest page (before: older); opening marks the other side’s messages read; to the school’s staff a parent comes with their children (client 2026-10-23)"
       tags:
         - Communication
       x-ringpe-auth: member|teaching.view,principal.view
@@ -22876,6 +22876,9 @@ components:
           enum:
             - APPLICATION
             - ADMISSION
+        withAdmission:
+          description: "With the application fee: the admission fee joins it in one payment, as the family chooses on the form (client 2026-10-23: the counsellor’s form)"
+          type: boolean
       required:
         - feeType
       additionalProperties: false
@@ -36653,6 +36656,19 @@ components:
                   - ACTIVE
                   - INACTIVE
                   - SUSPENDED
+              office:
+                anyOf:
+                  - type: object
+                    properties:
+                      roles:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - roles
+                    additionalProperties: false
+                  - type: "null"
+                description: "Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements (client 2026-10-23: Accounts, Co-ordinator, Counsellor); the roles by name. Null: none"
             required:
               - id
               - memberNo
@@ -36663,6 +36679,7 @@ components:
               - category
               - grade
               - status
+              - office
             additionalProperties: false
           description: "Institution profiles held by this account (CR-04: a parent and the children under the number)"
         activeProfileId:

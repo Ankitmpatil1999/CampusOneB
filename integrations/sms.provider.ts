@@ -16,11 +16,19 @@ export interface OutboundMessage {
   readonly fromName?: string;
   /** E-mail only: where replies go (the school's office address). */
   readonly replyTo?: string | null;
+  /** E-mail only: files sent with it (client 2026-10-23: the submitted application form). */
+  readonly attachments?: readonly MessageAttachment[];
   /**
    * Whom it concerns, for the communication log (CR-16) — never the content. `false`: the caller
    * logs the send itself (announcements).
    */
   readonly log?: OutboundLog | false;
+}
+
+export interface MessageAttachment {
+  readonly fileName: string;
+  readonly content: Buffer;
+  readonly contentType: string;
 }
 
 export interface OutboundLog {
@@ -58,6 +66,7 @@ export function logSender(
       loggers.app.info(`${channel} not sent (log provider)`, {
         to: mask(m.to),
         purpose: m.purpose,
+        ...(m.attachments?.length ? { attachments: m.attachments.length } : {}),
         ...(opts.echo ? { devText: m.text } : {}),
       });
     },
