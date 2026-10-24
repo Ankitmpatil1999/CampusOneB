@@ -8,6 +8,7 @@ import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { Database } from '../models/ringpe_models';
+import { accessRepository } from '../repositories/access.repository';
 import { accountRepository, referenceRepository } from '../repositories/account.repository';
 import { kindOf } from '../repositories/members.repository';
 import { recordAudit } from './audit.service';
@@ -32,6 +33,24 @@ export interface MeServiceDeps {
 }
 
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
+
+/**
+ * What opens a module of the staff app (client 2026-10-19: Accounts, Co-ordinator, Counsellor): the
+ * sub-tasks behind its tabs and links — fees, admissions and their fees, the admission QR, teacher
+ * leave, attendance, announcements and the calendar.
+ */
+const OFFICE_GRANTS = [
+  'fees.view',
+  'admfees.view',
+  'admissions.view',
+  'admqr.view',
+  'leave.decide',
+  'attendance.view',
+  'comms.view',
+  'academics.view',
+];
+/** A person's own console roles, not office work (they have their own homes in the app). */
+const OWN_ROLES = ['TEACHER', 'PRINCIPAL', 'MERCHANT', 'VENDOR_MERCHANT'];
 
 export class MeService {
   constructor(private readonly deps: MeServiceDeps) {}
@@ -117,6 +136,7 @@ export class MeService {
       .leftJoin('sections as s', 's.id', 'e.section_id')
       .leftJoin('classes as c', 'c.id', 's.class_id')
       .select([
+        'm.id',
         'm.public_id',
         'm.member_seq',
         'm.first_name',
@@ -148,6 +168,19 @@ export class MeService {
       const f = await logoFileOf(this.deps.db, { publicId: id });
       logos.set(id, f ? logoPath(f.institutionId, f.fileId) : null);
     }
+    // The office work a profile's console roles open in the staff app (client 2026-10-23): the app
+    // offers it from the member's home, so Accounts, the Co-ordinator and the Counsellor find it.
+    const office = new Map<string, string[]>();
+    for (const r of rows) {
+      if (r.category === 'STUDENT' || r.category === 'PARENT') continue;
+      const grants = await accessRepository.profileGrants(this.deps.db, String(r.id));
+      if (!grants.some((g) => OFFICE_GRANTS.includes(g))) continue;
+      const roles = await accessRepository.profileRoles(this.deps.db, String(r.id));
+      office.set(
+        String(r.id),
+        roles.filter((x) => !OWN_ROLES.includes(x.code ?? '')).map((x) => x.name),
+      );
+    }
     return rows.map((r) => ({
       id: binToUuid(r.public_id),
       memberNo: `${r.short_name}-${String(r.member_seq).padStart(5, '0')}`,
@@ -163,6 +196,7 @@ export class MeService {
       category: r.category,
       grade: r.class_name ? `${r.class_name} ${r.section_name ?? ''}`.trim() : null,
       status: r.status,
+      office: office.has(String(r.id)) ? { roles: office.get(String(r.id))! } : null,
     }));
   }
 

@@ -54,6 +54,30 @@ describe('SMTP sender', () => {
     expect(JSON.stringify(lines)).not.toContain('Aarav');
   });
 
+  it('sends attachments by their names and types (client 2026-10-23: the application form)', async () => {
+    const sent: Record<string, unknown>[] = [];
+    const sender = smtpSender(smtp, capturingLoggers().loggers, {
+      sendMail: async (o: Record<string, unknown>) => {
+        sent.push(o);
+        return {};
+      },
+    } as never);
+    const pdf = Buffer.from('%PDF-1.4\n%%EOF\n');
+    await sender.send({
+      to: 'parent@example.in',
+      purpose: 'admission.submitted',
+      text: 'x',
+      attachments: [
+        { fileName: 'Application-A-1.pdf', content: pdf, contentType: 'application/pdf' },
+      ],
+    });
+    await sender.send({ to: 'parent@example.in', purpose: 'admission.approved', text: 'x' });
+    expect(sent[0]!['attachments']).toEqual([
+      { filename: 'Application-A-1.pdf', content: pdf, contentType: 'application/pdf' },
+    ]);
+    expect(sent[1]).not.toHaveProperty('attachments');
+  });
+
   it("takes the subject from the communication log's, else from the purpose", async () => {
     const sent: Record<string, unknown>[] = [];
     const sender = smtpSender(smtp, capturingLoggers().loggers, {

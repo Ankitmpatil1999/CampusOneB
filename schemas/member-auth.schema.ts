@@ -258,6 +258,12 @@ export const meSchema = z
             ),
           grade: z.string().nullable().describe('Grade and section this year (students)'),
           status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']),
+          office: z
+            .object({ roles: z.array(z.string()) })
+            .nullable()
+            .describe(
+              'Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements (client 2026-10-23: Accounts, Co-ordinator, Counsellor); the roles by name. Null: none',
+            ),
         }),
       )
       .describe(

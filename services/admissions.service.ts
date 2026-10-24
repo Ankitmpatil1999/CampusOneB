@@ -68,7 +68,7 @@ import { classOrder } from './admission-links.service';
 import { recordAudit } from './audit.service';
 import { notify } from './notifications.service';
 import { notificationsRepository } from '../repositories/notifications.repository';
-import { admissionFormPdf } from './admission-form-pdf';
+import { admissionFormPdf, feeLines } from './admission-form-pdf';
 import { chooseGateway, gatewayById, gatewayProblem } from './gateway-payments';
 import { familyAccountsByStudent } from './fee-notices.service';
 import type { FeePaymentsService } from './fee-payments.service';
@@ -266,6 +266,12 @@ export interface State {
 const TC_DUE_DAYS = 60;
 /** An attachment larger than this is listed by name in the form PDF, not drawn (2026-10-14). */
 const PICTURE_MAX_BYTES = 10 * 1024 * 1024;
+/**
+ * The form PDF e-mailed with the notice is kept under this (client 2026-10-23): mail servers often
+ * refuse a message over 10 MB, and an attachment grows by a third on the way. Above it the pictures
+ * are left out and listed by name, as the form lists any other file.
+ */
+const EMAIL_PDF_MAX_BYTES = 7 * 1024 * 1024;
 
 const ADMISSION_HEADER = 'X-Admission-Token';
 /** Stands in for the mobile in a resume token when nothing matched (never a valid mobile). */
@@ -331,6 +337,40 @@ const ageOn = (dob: string, ref: string) => {
   if (m2 < m1 || (m2 === m1 && d2 < d1)) y--;
   return y;
 };
+/**
+ * The e-mail that an application was received (client 2026-10-23): the application's details, each
+ * fee paid or still to pay with its receipt and transaction ID, and the form attached.
+ */
+function receivedMail(
+  school: string,
+  child: string,
+  v: Parameters<typeof feeLines>[0] & {
+    applicationNo: string;
+    year: { label: string };
+    class: { name: string } | null;
+    midTerm: boolean;
+    submittedAt: string | null;
+  },
+) {
+  const fees = feeLines(v, '₹');
+  return [
+    `${school} has received the admission application for ${child}.`,
+    [
+      `Application number: ${v.applicationNo}`,
+      `Class: ${[v.class?.name, v.year.label].filter(Boolean).join(', ')}`,
+      `Admission type: ${v.midTerm ? 'Mid-term' : 'Regular'}`,
+      v.submittedAt ? `Submitted on: ${formatDateTime(v.submittedAt)}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    fees.length
+      ? ['Fees and payments', ...fees.map((f) => `${f.label}: ${f.text}`)].join('\n')
+      : null,
+    'A copy of the application form is attached. The school will review the application and let you know. Please quote the application number when you contact the school office.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 export class AdmissionsService {
   constructor(
@@ -1255,7 +1295,7 @@ export class AdmissionsService {
       const r = await this.lockless(institutionId, id);
       const inst = await this.deps.db
         .selectFrom('institutions')
-        .select('name')
+        .select(['name', 'city'])
         .where('id', '=', institutionId)
         .executeTakeFirst();
       const school = inst?.name ?? 'The school';
@@ -1286,19 +1326,42 @@ export class AdmissionsService {
       if (channels.sms && r.primary_mobile && this.deps.sms) {
         sends.push(this.deps.sms.send({ to: r.primary_mobile, purpose, text, log }));
       }
-      // The login details go by e-mail only, to the family's addresses (the primary contact's,
-      // the others in copy), whatever the school's notice settings (client 2026-10-23).
       const mail = this.familyEmails(r);
-      if ((channels.email || logins.length) && mail.to && this.deps.email) {
+      if (logins.length && mail.to && this.deps.email) {
+        // The login details go by e-mail only, to the family's addresses (the primary contact's,
+        // the others in copy), whatever the school's notice settings (client 2026-10-23).
         sends.push(
           this.deps.email.send({
             to: mail.to,
-            ...(logins.length ? { cc: mail.cc } : {}),
+            cc: mail.cc,
             purpose,
-            text: logins.length ? `${text}\n\n${loginText(logins)}` : text,
+            text: `${text}\n\n${loginText(logins)}`,
             log,
           }),
         );
+      } else if (channels.email && mail.to && this.deps.email) {
+        // Each of the family's addresses (client 2026-10-23). Received: the form as submitted goes
+        // with it, its fees and payments stated. Without the copy (it could not be made) the short
+        // notice still goes.
+        const copy =
+          event === 'SUBMITTED'
+            ? await this.formCopy(
+                { id: institutionId, name: school, city: inst?.city ?? null },
+                r,
+                EMAIL_PDF_MAX_BYTES,
+              ).catch(() => null)
+            : null;
+        const content = copy
+          ? {
+              text: receivedMail(school, child, copy.view),
+              attachments: [
+                { fileName: copy.fileName, content: copy.pdf, contentType: 'application/pdf' },
+              ],
+            }
+          : { text };
+        for (const to of [mail.to, ...mail.cc]) {
+          sends.push(this.deps.email.send({ to, purpose, log, ...content }));
+        }
       }
       await Promise.allSettled(sends);
     } catch {
@@ -1624,21 +1687,37 @@ export class AdmissionsService {
     const a = await this.access(id, token, 'read');
     if (a.scope !== 'resume') throw new CustomAPIError(404, 'ADM.NOT_FOUND');
     if (a.row.status === 'DRAFT') throw new CustomAPIError(409, 'ADM.FORM_NOT_SUBMITTED');
+    const { fileName, pdf } = await this.formCopy(
+      { id: String(a.inst.id), name: a.inst.name, city: a.inst.city },
+      a.row,
+    );
+    return { fileName, pdf };
+  }
+
+  /**
+   * The application form as a PDF: the family's view of it (identity numbers masked), the attached
+   * pictures and the school's logo. Over `maxBytes` (an e-mail's attachment) the pictures are left
+   * out, listed by name.
+   */
+  private async formCopy(
+    inst: { id: string; name: string; city: string | null },
+    row: Awaited<ReturnType<AdmissionsService['lockless']>>,
+    maxBytes?: number,
+  ) {
     const [v, fields, pictures, logo] = await Promise.all([
-      this.view(a.row, { console: false }),
-      activeFields(this.deps.db, String(a.inst.id), 'ADMISSION_APPLICATION'),
-      this.pictures(a.row.id),
-      this.schoolLogo(String(a.inst.id)),
+      this.view(row, { console: false }),
+      activeFields(this.deps.db, inst.id, 'ADMISSION_APPLICATION'),
+      this.pictures(row.id),
+      this.schoolLogo(inst.id),
     ]);
+    const make = (drawn: ReadonlyMap<string, PdfImage>) =>
+      admissionFormPdf({ name: inst.name, city: inst.city, logo }, v, fields, this.now(), drawn);
+    let pdf = make(pictures);
+    if (maxBytes && pdf.length > maxBytes) pdf = make(new Map());
     return {
+      view: v,
       fileName: `Application-${v.applicationNo.replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
-      pdf: admissionFormPdf(
-        { name: a.inst.name, city: a.inst.city, logo },
-        v,
-        fields,
-        this.now(),
-        pictures,
-      ),
+      pdf,
     };
   }
 
@@ -2342,10 +2421,10 @@ export class AdmissionsService {
    * ADM-037, Pay now at the accounts desk (client 2026-10-22): an order for the fee whose checkout
    * opens on the console — no link is created or sent. Otherwise as the family's own payment.
    */
-  async deskOrder(p: Principal, id: string, feeType: AdmissionFeeType) {
+  async deskOrder(p: Principal, id: string, feeType: AdmissionFeeType, withAdmission = false) {
     const inst = await this.consoleInst(p);
     const row = await this.lockless(inst.id, id);
-    return this.openOrder({ inst, row }, feeType, false);
+    return this.openOrder({ inst, row }, feeType, withAdmission);
   }
 
   /** An order with the school's gateway for the fee (and the admission fee with it, when chosen). */

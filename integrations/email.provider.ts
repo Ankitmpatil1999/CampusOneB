@@ -58,6 +58,15 @@ export function smtpSender(
         subject,
         text: m.text,
         html: emailHtml({ subject, text: m.text, sender }),
+        ...(m.attachments?.length
+          ? {
+              attachments: m.attachments.map((a) => ({
+                filename: a.fileName,
+                content: a.content,
+                contentType: a.contentType,
+              })),
+            }
+          : {}),
       });
       // The address and content are never logged (they may hold a code or a child's details).
       loggers.app.info('email sent', {

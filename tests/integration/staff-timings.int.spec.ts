@@ -244,7 +244,7 @@ describe.skipIf(!adminUrl)('staff timings by role on real MySQL', () => {
     // no timing and the school's auto-absent is off: left alone.
     const run = async (hhmm: string) => {
       at(hhmm);
-      const items: { note: string; processed: number }[] = [];
+      const items: { note: string | null; processed: number }[] = [];
       await admin.run({
         item: (i) => items.push(i),
         scope: { institutionId: f.school.rowId },
