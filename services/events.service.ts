@@ -29,6 +29,7 @@ import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenera
 import { toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
+import { usesProfile } from './member-roles';
 
 const day = (d: Date | string) =>
   typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10);
@@ -470,7 +471,7 @@ export class EventsService {
     if (!wanted || !isUuid(wanted)) throw new NotFoundError();
     const m = await this.deps.db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .leftJoin('academic_years as y', (j) =>
         j.onRef('y.institution_id', '=', 'm.institution_id').on('y.is_current', '=', 1),
       )

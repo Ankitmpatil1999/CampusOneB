@@ -155,6 +155,15 @@ export const COMMUNICATION_MESSAGES = [
     'You can start a conversation only with someone in your contacts.',
     ['23.9.5', 'RNG-COM-108', 'RNG-COM-126'],
   ),
+  // Chat is not for students (client 2026-10-23).
+  n('COM.DM_STUDENTS', 403, 'Chat isn’t available to students.', ['23.9', 'client 2026-10-23']),
+  // Parents chat only with their children's class teachers (client 2026-10-23).
+  n(
+    'COM.DM_PARENT_CLASS_TEACHER',
+    403,
+    'Parents can message only their child’s class teacher.',
+    ['23.9.5', 'client 2026-10-23'],
+  ),
   k(
     'COM.CONVERSATION_NOT_FOUND',
     'MSG-COM-130',

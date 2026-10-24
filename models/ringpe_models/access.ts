@@ -75,6 +75,8 @@ export interface MemberProfilesTable {
   public_id: Buffer;
   institution_id: Ref;
   account_id: Ref | null;
+  /** A student's own login (0087, client 2026-10-23); the family holds the profile (account_id). */
+  own_account_id: ColumnType<string | null, string | null | undefined, string | null>;
   user_type_id: Ref;
   /** Number in the institution (trigger, migration 0021); shown as <short name>-00001. */
   member_seq: Generated<number>;

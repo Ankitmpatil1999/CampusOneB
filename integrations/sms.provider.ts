@@ -16,6 +16,8 @@ export interface OutboundMessage {
   readonly fromName?: string;
   /** E-mail only: where replies go (the school's office address). */
   readonly replyTo?: string | null;
+  /** E-mail only: the others in copy (the family's addresses with the login details, 2026-10-23). */
+  readonly cc?: readonly string[];
   /**
    * Whom it concerns, for the communication log (CR-16) — never the content. `false`: the caller
    * logs the send itself (announcements).

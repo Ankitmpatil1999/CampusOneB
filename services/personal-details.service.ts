@@ -486,7 +486,8 @@ export class PersonalDetailsService {
         const profile = await trx
           .selectFrom('member_profiles')
           .select('institution_id')
-          .where('account_id', '=', a.id)
+          // Or the student's own profile on their own login (client 2026-10-23).
+          .where((eb) => eb.or([eb('account_id', '=', a.id), eb('own_account_id', '=', a.id)]))
           .orderBy('id')
           .executeTakeFirst();
         const institutionId = profile ? String(profile.institution_id) : null;

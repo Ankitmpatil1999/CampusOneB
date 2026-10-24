@@ -32,7 +32,7 @@ import {
 } from './academic-year';
 import { recordAudit } from './audit.service';
 import { occurrences } from './calendar.service';
-import { memberOf, teacherOf, type Member } from './member-roles';
+import { memberOf, teacherOf, type Member, usesProfile } from './member-roles';
 import { notify } from './notifications.service';
 import { notificationsRepository } from '../repositories/notifications.repository';
 import type { SettingsService } from './settings.service';
@@ -205,13 +205,13 @@ export class LeaveService {
       .selectFrom('member_profiles as m')
       .leftJoin('guardianships as g', 'g.ward_profile_id', 'm.id')
       .leftJoin('member_profiles as gm', 'gm.id', 'g.guardian_profile_id')
-      .select(['m.account_id', 'gm.account_id as guardian_account'])
+      .select(['m.account_id', 'm.own_account_id', 'gm.account_id as guardian_account'])
       .where('m.id', '=', studentRowId)
       .execute();
     return [
       ...new Set(
         rows
-          .flatMap((r) => [r.account_id, r.guardian_account])
+          .flatMap((r) => [r.account_id, r.own_account_id, r.guardian_account])
           .filter((a): a is string => a !== null && a !== undefined)
           .map(String),
       ),
@@ -1202,7 +1202,7 @@ export class LeaveService {
       const l = await trx
         .selectFrom('staff_leaves as l')
         .innerJoin('member_profiles as m', 'm.id', 'l.profile_id')
-        .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+        .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
         .select([
           'l.id',
           'l.year_id',

@@ -668,6 +668,23 @@ describe.skipIf(!adminUrl)(
         })
         .execute();
       ids['visitorId'] = visitor.id;
+      // A staff timing of school A (ATT-035/036; client 2026-10-23).
+      const timing = newPublicIdPair();
+      await t.db
+        .insertInto('staff_timings')
+        .values({
+          public_id: timing.bin,
+          institution_id: String(aMember.institution_id),
+          name: 'Isolation timing',
+          login_time: '08:30:00',
+          logout_time: '16:30:00',
+          late_login_time: '08:45:00',
+          early_logout_time: '16:00:00',
+          half_day_time: '11:00:00',
+          absent_time: '13:00:00',
+        })
+        .execute();
+      ids['timingId'] = timing.id;
       // Transport records of school A (TRN-003…025).
       const instA = String(aMember.institution_id);
       const now = new Date();
@@ -840,6 +857,16 @@ describe.skipIf(!adminUrl)(
             'INS-034': { enabled: false, reason: 'Testing isolation' },
             'ATT-006': { action: 'BLOCK', reason: 'Testing isolation' },
             'ATT-007': { reasonCode: 'LOST' },
+            'ATT-035': {
+              name: 'Taken over',
+              roleIds: [],
+              loginTime: '08:30',
+              logoutTime: '16:30',
+              lateLoginTime: '08:45',
+              earlyLogoutTime: '16:00',
+              halfDayTime: '11:00',
+              absentTime: '13:00',
+            },
             'INS-022': { name: 'Another group' },
             'INS-025': { name: 'Another item' },
             'INS-026': { groupIds: [] },

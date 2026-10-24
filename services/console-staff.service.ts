@@ -20,6 +20,7 @@ import type { SessionService } from './session.service';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';
+import { usesProfile } from './member-roles';
 
 export const ADMIN = 'INSTITUTION_ADMIN';
 
@@ -113,7 +114,7 @@ export class ConsoleStaffService {
     const rows = await db
       .selectFrom('member_profiles as m')
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .leftJoin('merchants as mer', 'mer.profile_id', 'm.id')
       .select([
         'm.id',
@@ -174,7 +175,7 @@ export class ConsoleStaffService {
     const m = await this.deps.db
       .selectFrom('member_profiles as m')
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .leftJoin('merchants as mer', 'mer.profile_id', 'm.id')
       .select([
         'm.id',

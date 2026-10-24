@@ -37,7 +37,8 @@ export interface SocialIdentity {
 }
 
 export type SocialCallbackResult =
-  | SignInResult
+  // A provider sign-in proves the account, so no one-time password is asked.
+  | Exclude<SignInResult, { kind: 'firstSignIn' }>
   | {
       readonly kind: 'signup';
       readonly signupTicket: string;

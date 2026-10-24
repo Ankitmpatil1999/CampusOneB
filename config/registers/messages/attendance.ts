@@ -105,6 +105,26 @@ export const ATTENDANCE_MESSAGES = [
     '21.8',
   ]),
   n('ATT.CUTOFF', 422, 'Choose a cut-off time between 07:00 and 18:00.', ['OQ-14', 'OI-ATT-20']),
+  // The staff timings by role on the Auto-absent page (client 2026-10-23).
+  n('ATT.TIMING_NAME', 422, 'Enter a name of 2 to 60 characters.', ['client 2026-10-23']),
+  n('ATT.TIMING_ROLES', 422, 'Choose at least one role.', ['client 2026-10-23']),
+  n('ATT.TIMING_TAKEN', 422, '{name} already exists.', ['client 2026-10-23'], ['name']),
+  n(
+    'ATT.TIMING_ROLE_TAKEN',
+    422,
+    '{role} already follows “{timing}”. A role can be in one timing only.',
+    ['client 2026-10-23'],
+    ['role', 'timing'],
+  ),
+  n(
+    'ATT.TIMING_ROLES_CHANGED',
+    422,
+    'One of these roles was just added to another timing. Reload and try again.',
+    ['client 2026-10-23'],
+  ),
+  n('ATT.TIMING_AFTER', 422, 'Must be after the {after}.', ['client 2026-10-23'], ['after']),
+  n('ATT.TIMING_BEFORE', 422, 'Must be before the {before}.', ['client 2026-10-23'], ['before']),
+  n('ATT.TIMING_NOT_FOUND', 404, 'Staff timing not found.', ['client 2026-10-23']),
   n('ATT.RANGE', 422, 'Choose a range of up to {days} days.', ['OI-ATT-12'], ['days']),
   n('ATT.NOT_YOUR_PERIOD', 403, 'This period isn’t yours.', ['21.6', 'CR-02']),
   {

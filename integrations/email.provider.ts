@@ -53,6 +53,7 @@ export function smtpSender(
       const info = await transport.sendMail({
         from: { name: sender, address: from },
         to: m.to,
+        ...(m.cc?.length ? { cc: [...m.cc] } : {}),
         ...(m.replyTo ? { replyTo: m.replyTo } : {}),
         subject,
         text: m.text,

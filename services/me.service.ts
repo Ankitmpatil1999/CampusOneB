@@ -130,7 +130,10 @@ export class MeService {
         'c.name as class_name',
         's.name as section_name',
       ])
-      .where('m.account_id', '=', accountId)
+      .where((eb) =>
+        // The account's profiles, or a student's own login (client 2026-10-23).
+        eb.or([eb('m.account_id', '=', accountId), eb('m.own_account_id', '=', accountId)]),
+      )
       // The account holder's own profile first: a child under the account (a ward of another
       // profile on it, CR-04) never comes before its parent.
       .orderBy(

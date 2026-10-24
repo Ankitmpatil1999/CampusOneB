@@ -137,6 +137,10 @@ export const studentSectionSchema = z.strictObject({
     .nullish(),
   allergies: optText(300),
   health: optText(300),
+  // The student's own contact (client 2026-10-23), both optional: with a mobile number the student
+  // gets a RingPe account of their own.
+  mobile: mobile.nullish().describe("The student's own mobile number, if any"),
+  email: email.nullish().describe("The student's own e-mail address, if any"),
 });
 export const addressesSectionSchema = z.strictObject({
   residential: addressSchema,

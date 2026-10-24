@@ -32,7 +32,7 @@ import type { FlowTokens } from '../utils/flow-tokens';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { ipToBin } from '../utils/ip';
 import { hashSecret, needsRehash, normaliseAnswer, verifySecret } from '../utils/password';
-import { PATTERNS, isRealDate, isValidPassword } from '../utils/validators';
+import { PATTERNS, isAadhaar, isRealDate, isValidPassword } from '../utils/validators';
 import { retryOnLock } from '../utils/retry';
 import type { FieldError } from '../utils/validators';
 
@@ -75,7 +75,20 @@ export interface AccountSummary {
 
 export type SignInResult =
   | { readonly kind: 'session'; readonly tokens: SessionTokens; readonly account: AccountSummary }
-  | { readonly kind: 'device'; readonly challenge: IssuedChallenge };
+  | { readonly kind: 'device'; readonly challenge: IssuedChallenge }
+  | {
+      readonly kind: 'firstSignIn';
+      readonly resetToken: string;
+      readonly name: string;
+      /** What the account doesn't have yet and the first sign-in asks for. */
+      readonly needs: {
+        readonly pan: boolean;
+        readonly aadhaar: boolean;
+        readonly securityQuestion: boolean;
+      };
+      /** The questions to choose from, when the account has no security question yet. */
+      readonly securityQuestions: readonly { code: string; labelKey: string; text: string }[];
+    };
 
 export interface MemberAuthDeps {
   readonly db: Kysely<Database>;
@@ -135,7 +148,10 @@ export class MemberAuthService {
         'i.id as institution_id',
         'i.public_id as institution_public',
       ])
-      .where('m.account_id', '=', accountId)
+      .where((eb) =>
+        // The account's profiles, or a student's own login (client 2026-10-23).
+        eb.or([eb('m.account_id', '=', accountId), eb('m.own_account_id', '=', accountId)]),
+      )
       // The account holder's own profile first: a child under the account (a ward of another
       // profile on it, CR-04) never comes before its parent.
       .orderBy(
@@ -482,7 +498,165 @@ export class MemberAuthService {
         expectedVersion: credential.row_version,
       });
     }
+    // An account the school made at admission (client 2026-10-23): the one-time password is
+    // changed first, with the PAN and Aadhaar number the account doesn't have yet and a security
+    // question (for the payment PIN); no session until.
+    if (credential && Number(credential.must_change)) {
+      const [kyc, answer] = await Promise.all([
+        this.deps.db
+          .selectFrom('platform_accounts')
+          .select(['pan_bidx', 'id_doc_enc'])
+          .where('id', '=', account.id)
+          .executeTakeFirstOrThrow(),
+        accountRepository.credential(this.deps.db, account.id, 'SECURITY_ANSWER'),
+      ]);
+      const questions = answer ? [] : await referenceRepository.securityQuestions(this.deps.db);
+      const { token } = await this.deps.flows.issue(
+        'member-first-signin',
+        { acc: binToUuid(account.public_id), rv: credential.row_version },
+        15 * 60,
+      );
+      this.deps.loggers.security.info('auth.member_first_signin_required', {});
+      return {
+        kind: 'firstSignIn',
+        resetToken: token,
+        name: [account.first_name, account.last_name].filter(Boolean).join(' '),
+        needs: { pan: !kyc.pan_bidx, aadhaar: !kyc.id_doc_enc, securityQuestion: !answer },
+        securityQuestions: questions.map((q) => ({
+          code: q.code,
+          labelKey: q.label_key,
+          text: q.text_en,
+        })),
+      };
+    }
     return this.signInOnDevice(account, input.device, client);
+  }
+
+  /**
+   * IDN-091 (client 2026-10-23): the first sign-in of an account the school made — the person's own
+   * password in place of the one-time one, the PAN and Aadhaar number it doesn't have yet, and a
+   * security question with its answer (asked again for a forgotten payment PIN). They then sign in
+   * with the new password.
+   */
+  async firstSignIn(input: {
+    resetToken: string;
+    newPassword: string;
+    pan?: string | null | undefined;
+    aadhaar?: string | null | undefined;
+    securityQuestion?: string | null | undefined;
+    securityAnswer?: string | null | undefined;
+  }) {
+    const claims = await this.deps.flows.verify(
+      'member-first-signin',
+      String(input.resetToken ?? ''),
+    );
+    const acc = claims?.['acc'];
+    const rv = claims?.['rv'];
+    if (typeof acc !== 'string' || typeof rv !== 'number') {
+      throw new CustomAPIError(401, 'IDN.RESET_LINK_INVALID');
+    }
+    const account = await accountRepository.findByPublicId(this.deps.db, uuidToBin(acc));
+    if (!account) throw new CustomAPIError(401, 'IDN.RESET_LINK_INVALID');
+    const [kyc, hasAnswer] = await Promise.all([
+      this.deps.db
+        .selectFrom('platform_accounts')
+        .select(['pan_bidx', 'id_doc_enc'])
+        .where('id', '=', account.id)
+        .executeTakeFirstOrThrow(),
+      accountRepository.credential(this.deps.db, account.id, 'SECURITY_ANSWER'),
+    ]);
+    const errors: FieldError[] = [];
+    if (!isValidPassword(String(input.newPassword ?? ''), await this.passwordPolicy())) {
+      errors.push({ field: 'newPassword', code: 'IDN.PASSWORD_FORMAT' });
+    }
+    const pan = input.pan?.trim().toUpperCase() || null;
+    if (!kyc.pan_bidx) {
+      if (!pan) errors.push({ field: 'pan', code: 'VALIDATION.REQUIRED' });
+      else if (!PATTERNS.pan.test(pan)) errors.push({ field: 'pan', code: 'IDN.PAN_FORMAT' });
+      else if (
+        await accountRepository.panInUse(this.deps.db, this.deps.cipher.blindIndex('pan', pan))
+      ) {
+        errors.push({ field: 'pan', code: 'IDN.PAN_TAKEN' });
+      }
+    }
+    const aadhaar = input.aadhaar ? normaliseForIndex(input.aadhaar) : null;
+    if (!kyc.id_doc_enc) {
+      if (!aadhaar) errors.push({ field: 'aadhaar', code: 'VALIDATION.REQUIRED' });
+      else if (!isAadhaar(aadhaar))
+        errors.push({ field: 'aadhaar', code: 'IDN.ID_DOC_NUMBER_INVALID' });
+    }
+    // The security question, as at sign-up (client 2026-10-23).
+    const answer = normaliseAnswer(String(input.securityAnswer ?? ''));
+    if (!hasAnswer) {
+      const questions = await referenceRepository.securityQuestions(this.deps.db);
+      if (!questions.some((q) => q.code === input.securityQuestion)) {
+        errors.push({ field: 'securityQuestion', code: 'IDN.SECURITY_QUESTION_INVALID' });
+      }
+      if (!answer) errors.push({ field: 'securityAnswer', code: 'VALIDATION.REQUIRED' });
+      else if (!ANSWER.test(answer)) {
+        errors.push({ field: 'securityAnswer', code: 'IDN.SECURITY_ANSWER_FORMAT' });
+      }
+    }
+    if (errors.length) throw new ValidationError(errors);
+    const before = await accountRepository.credential(this.deps.db, account.id, 'PASSWORD');
+    if (!before || !Number(before.must_change))
+      throw new CustomAPIError(401, 'IDN.RESET_LINK_INVALID');
+    const [hash, answerHash] = await Promise.all([
+      hashSecret(input.newPassword),
+      hasAnswer ? null : hashSecret(answer),
+    ]);
+    const c = this.deps.cipher;
+    await this.deps.db.transaction().execute(async (trx) => {
+      const current = await accountRepository.lockCredential(trx, account.id, 'PASSWORD');
+      if (!current || current.row_version !== rv) {
+        throw new CustomAPIError(401, 'IDN.RESET_LINK_INVALID');
+      }
+      if (answerHash) {
+        await accountRepository.insertCredential(trx, {
+          accountId: account.id,
+          kind: 'SECURITY_ANSWER',
+          hash: answerHash,
+          questionCode: String(input.securityQuestion),
+        });
+      }
+      await accountRepository.replaceCredential(trx, {
+        id: current.id,
+        hash,
+        previousHash: current.hash,
+        expectedVersion: current.row_version,
+      });
+      await trx
+        .updateTable('platform_accounts')
+        .set({
+          ...(!kyc.pan_bidx && pan
+            ? {
+                pan_enc: c.encrypt('pan', pan, `platform_accounts.pan:${acc}`),
+                pan_bidx: c.blindIndex('pan', pan),
+                pan_last4: lastFour(pan),
+              }
+            : {}),
+          ...(!kyc.id_doc_enc && aadhaar
+            ? {
+                id_doc_type: 'AADHAAR',
+                id_doc_enc: c.encrypt('id_doc', aadhaar, `platform_accounts.id_doc:${acc}`),
+                id_doc_bidx: c.blindIndex('id_doc', aadhaar),
+                id_doc_last4: lastFour(aadhaar),
+              }
+            : {}),
+          row_version: sql<number>`row_version + 1`,
+        })
+        .where('id', '=', account.id)
+        .execute();
+      await accountRepository.resetFailures(trx, account.id);
+      await recordAudit(trx, {
+        action: 'PASSWORD_RESET',
+        entityType: 'platform_account',
+        entityRef: acc,
+        after: { firstSignIn: true },
+        actor: { type: 'member', ref: acc },
+      });
+    });
+    this.deps.loggers.security.info('auth.member_first_signin', {});
   }
 
   /**
@@ -502,7 +676,7 @@ export class MemberAuthService {
     },
     deviceInfo: DeviceInfo,
     client: ClientContext = {},
-  ): Promise<SignInResult> {
+  ): Promise<Exclude<SignInResult, { kind: 'firstSignIn' }>> {
     const now = this.now();
     await this.refuseIfLocked(account.locked_until, now);
     if (account.status !== 'ACTIVE') throw new AuthorizationError('IDN.ACCOUNT_DEACTIVATED');
@@ -591,16 +765,16 @@ export class MemberAuthService {
     return { tokens, account: this.summary(account) };
   }
 
-  /** IDN-010: registered mobile → the stored question and a code (both needed, OI-IDN-09). */
+  /**
+   * IDN-010: registered mobile → a code to it. The code alone recovers the password (client
+   * 2026-10-23): no security question.
+   */
   async startRecovery(input: { mobile: string }) {
     if (!PATTERNS.mobile.test(input.mobile)) {
       throw new ValidationError([{ field: 'mobile', code: 'VALIDATION.MOBILE' }]);
     }
     const account = await accountRepository.findByMobile(this.deps.db, input.mobile);
     if (!account) throw new CustomAPIError(404, 'IDN.USER_NOT_REGISTERED');
-    const answer = await accountRepository.credential(this.deps.db, account.id, 'SECURITY_ANSWER');
-    const questions = await referenceRepository.securityQuestions(this.deps.db);
-    const question = questions.find((q) => q.code === answer?.question_code);
     const challenge = await this.deps.otp.issue({
       purpose: 'RECOVERY',
       channel: 'SMS',
@@ -608,17 +782,11 @@ export class MemberAuthService {
       accountId: account.id,
       reuseLive: true,
     });
-    return {
-      recoveryId: challenge.challengeId,
-      question: question
-        ? { code: question.code, labelKey: question.label_key, text: question.text_en }
-        : null,
-      challenge,
-    };
+    return { recoveryId: challenge.challengeId, challenge };
   }
 
-  /** IDN-011: security answer and code → a single-use reset token. */
-  async verifyRecovery(input: { recoveryId: string; securityAnswer: string; otp: string }) {
+  /** IDN-011: the code → a single-use reset token (client 2026-10-23: no security answer). */
+  async verifyRecovery(input: { recoveryId: string; otp: string }) {
     if (!isUuid(input.recoveryId)) throw new CustomAPIError(401, 'IDN.RECOVERY_SESSION_ENDED');
     const now = this.now();
     const challenge = await otpRepository.findByPublicId(this.deps.db, uuidToBin(input.recoveryId));
@@ -631,28 +799,6 @@ export class MemberAuthService {
       throw new CustomAPIError(401, 'IDN.RECOVERY_SESSION_ENDED');
     }
     const accountId = challenge.account_id;
-    const answer = normaliseAnswer(input.securityAnswer);
-    const stored = await accountRepository.credential(this.deps.db, accountId, 'SECURITY_ANSWER');
-    if (stored) {
-      await this.refuseIfLocked(stored.locked_until, now);
-      if (!ANSWER.test(answer)) {
-        throw new ValidationError([
-          { field: 'securityAnswer', code: 'IDN.SECURITY_ANSWER_FORMAT' },
-        ]);
-      }
-      if (!(await verifySecret(stored.hash, answer))) {
-        const max = await this.limit(LIMITS.memberSignInLockAfterFailures);
-        const minutes = await this.limit(LIMITS.memberSignInLockMinutes);
-        const lock = stored.failed_attempts + 1 >= max;
-        await accountRepository.credentialFailure(
-          this.deps.db,
-          stored.id,
-          lock ? new Date(now.getTime() + minutes * 60_000) : null,
-        );
-        if (lock) throw this.lockedError(minutes);
-        throw new ValidationError([{ field: 'securityAnswer', code: 'IDN.SECURITY_ANSWER_WRONG' }]);
-      }
-    }
     await this.deps.otp.verify(input.recoveryId, input.otp, 'RECOVERY');
     const account = await accountRepository.findById(this.deps.db, accountId);
     const password = await accountRepository.credential(this.deps.db, accountId, 'PASSWORD');

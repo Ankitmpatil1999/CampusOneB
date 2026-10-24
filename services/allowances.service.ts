@@ -35,6 +35,7 @@ import { recordAudit } from './audit.service';
 import type { LedgerService } from './ledger.service';
 import { notify } from './notifications.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 type GrantState = 'SCHEDULED' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
 
@@ -643,7 +644,7 @@ export class AllowancesService {
     const db = this.deps.db;
     const m = await db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .select(['m.id', 'm.institution_id', 'm.first_name', 'm.last_name'])
       .where('a.public_id', '=', uuidToBin(p.subject))
       .where('m.public_id', '=', uuidToBin(wanted))

@@ -25,6 +25,7 @@ import type { Principal } from '../utils/principal';
 import { recordAudit } from './audit.service';
 import { outstandingOf } from './payment-engine.service';
 import { defaultValues, type SettingValues } from './settings.service';
+import { usesProfile } from './member-roles';
 
 const day = (d: Date | string) => istBusinessDate(new Date(d));
 const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
@@ -129,7 +130,7 @@ export class FinancingService {
     if (!wanted || !isUuid(wanted)) throw new NotFoundError();
     const m = await this.deps.db
       .selectFrom('member_profiles as m')
-      .innerJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .innerJoin('platform_accounts as a', (j) => j.on(usesProfile))
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
       .select(['m.id', 'm.institution_id', 'ut.category'])
       .where('a.public_id', '=', uuidToBin(p.subject))

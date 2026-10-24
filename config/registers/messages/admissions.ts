@@ -167,6 +167,13 @@ export const ADMISSION_MESSAGES = [
     ['FR-ADM-10', 'client 2026-10-21'],
   ),
   n(
+    'ADM.STUDENT_SAME_MOBILE',
+    422,
+    'This is the {person}’s mobile number. Give the student’s own number, or leave it empty.',
+    ['client 2026-10-23'],
+    ['person'],
+  ),
+  n(
     'ADM.IMPORT_TRANSPORT_NOT_OPTED',
     422,
     'Write Yes in “Opt for school transport” to give the student a transport route, or leave the transport columns empty.',

@@ -173,6 +173,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.SECTION_NOT_IN_CLASS': 'Choose a section of {class}, the class applied for.',
   'ADM.STATUS_NOT_FOUND':
     'No application matches these details. Check the application number on your confirmation SMS or e-mail.',
+  'ADM.STUDENT_SAME_MOBILE':
+    'This is the {person}’s mobile number. Give the student’s own number, or leave it empty.',
   'ADM.TC_DUE_DATE':
     'Choose the date you’ll hand in the transfer certificate: from today, and no later than {latest}.',
   'ADM.TC_NOT_MID_TERM': 'A transfer certificate is recorded only for a mid-term admission.',
@@ -225,6 +227,15 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ATT.PERIOD_COMPLETED': 'Attendance already completed for this period',
   'ATT.RANGE': 'Choose a range of up to {days} days.',
   'ATT.REMARK': 'Keep the remark within 200 characters.',
+  'ATT.TIMING_AFTER': 'Must be after the {after}.',
+  'ATT.TIMING_BEFORE': 'Must be before the {before}.',
+  'ATT.TIMING_NAME': 'Enter a name of 2 to 60 characters.',
+  'ATT.TIMING_NOT_FOUND': 'Staff timing not found.',
+  'ATT.TIMING_ROLES': 'Choose at least one role.',
+  'ATT.TIMING_ROLES_CHANGED':
+    'One of these roles was just added to another timing. Reload and try again.',
+  'ATT.TIMING_ROLE_TAKEN': '{role} already follows “{timing}”. A role can be in one timing only.',
+  'ATT.TIMING_TAKEN': '{name} already exists.',
   'ATT.TYPE_NAME': 'Enter a name of 2 to 40 characters.',
   'ATT.TYPE_NOT_FOUND': 'Attendance type not found',
   'ATT.TYPE_TAKEN': '{name} already exists.',
@@ -283,9 +294,11 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'COM.DM_BODY': 'Write a message of 1 to {max} characters.',
   'COM.DM_NOT_A_CONTACT': 'You can start a conversation only with someone in your contacts.',
   'COM.DM_NOT_PERMITTED': 'Your role is not permitted to message this recipient type',
+  'COM.DM_PARENT_CLASS_TEACHER': 'Parents can message only their child’s class teacher.',
   'COM.DM_RATE_LIMITED': 'Too many direct messages. Please try again shortly.',
   'COM.DM_RECIPIENT': 'Recipient is inactive or not in your organization',
   'COM.DM_SELF': 'You cannot send a direct message to yourself',
+  'COM.DM_STUDENTS': 'Chat isn’t available to students.',
   'COM.EVENT_UNKNOWN': 'There is no notification event {event}.',
   'COM.NOT_FOUND': 'Announcement not found',
   'COM.NOT_SENT': 'This announcement hasn’t been sent yet.',
