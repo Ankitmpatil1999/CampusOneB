@@ -36,6 +36,8 @@
     "tls:generate": "tsx scripts/generate-tls.ts",
     "seed:dev": "tsx --env-file-if-exists=.env scripts/dev-seed.ts",
     "import:cug-staff": "tsx --env-file-if-exists=.env scripts/import-cug-staff.ts",
+    "import:cug-students": "tsx --env-file-if-exists=.env scripts/import-cug-students.ts",
+    "import:cug-sheet": "tsx --env-file-if-exists=.env scripts/import-cug-sheet.ts",
     "test:load": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run tests/load",
     "dr:drill": "tsx --env-file-if-exists=.env scripts/dr-drill.ts",
     "e2e:db": "node scripts/e2e-db.mjs"
