@@ -23,7 +23,7 @@
  *   roles named on the sheet, blood group, year of association, the earlier role and class as fields;
  * - the campus wallet and allowance wallet with their earlier numbers (so the VAN stays code + number);
  * - the NFC card with its earlier token, and the earlier application's card value so the cards already
- *   handed out keep working (migration 0087);
+ *   handed out keep working (migration 0089);
  * - a non-zero balance through the ledger (ADJUSTMENT: bank pool → wallet), never written directly;
  * - the staff attendance history (one day record and its check-in / check-out events each).
  * Missing facts (gender, date of birth, joining date) stay empty, to be filled in the console. Nothing is
@@ -834,7 +834,7 @@ async function main() {
           }
 
           // The card handed out by the earlier application: its token, and the value it holds so a tap
-          // finds it (migration 0087). Only the card in use (the last one) is carried over.
+          // finds it (migration 0089). Only the card in use (the last one) is carried over.
           const card = (cardsOf.get(s.user_id) ?? []).filter((c) => Number(c.status) === 1).at(-1);
           if (card) {
             const value = clean(card.encrypted_token);

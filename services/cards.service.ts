@@ -33,7 +33,7 @@ import { usesProfile } from './member-roles';
  */
 export const LEGACY_CARD_VALUE = /^U2FsdGVkX1[A-Za-z0-9+/]{30,116}={0,2}$/;
 
-/** The SHA-256 a carried-over card is found by (migration 0087), or null for a RingPe token. */
+/** The SHA-256 a carried-over card is found by (migration 0089), or null for a RingPe token. */
 export function legacyCardHash(value: string): Buffer | null {
   const v = value.trim();
   return LEGACY_CARD_VALUE.test(v) ? createHash('sha256').update(v, 'utf8').digest() : null;

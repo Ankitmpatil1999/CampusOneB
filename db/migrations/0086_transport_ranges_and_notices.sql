@@ -1,4 +1,4 @@
--- 0086_transport_ranges_and_notices.sql — forward-only migration (D-16). Client 2026-10-22:
+-- 0085_transport_ranges_and_notices.sql — forward-only migration (D-16). Client 2026-10-22:
 --
 -- * The transport fee by distance range as well as per km: transport_fee_rules.mode (PER_KM, as
 --   0082, or RANGE) and its ranges (JSON [{uptoKm, yearlyPaise}], each from the one before it);

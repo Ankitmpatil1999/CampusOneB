@@ -23,7 +23,7 @@
  * - **the feature switches as the earlier application had them** (transfers and events off there);
  *   features new in RingPe (transport, quizzes) are left as they are.
  * As for the staff: the earlier wallet and allowance numbers, the NFC card with the earlier card
- * value (migration 0087), a balance through the ledger (bank pool → wallet), the attendance history,
+ * value (migration 0089), a balance through the ledger (bank pool → wallet), the attendance history,
  * blood group, year of association and the earlier class as fields. The merchant keeps its wallet
  * number, its merchant id and its balance; it gets no sign-in when its mobile is a back-office
  * operator's (an operator account may hold no school profile).
@@ -630,7 +630,7 @@ async function main() {
           })
           .execute();
       }
-      // The card in use: its token, and the earlier card value a tap sends (migration 0087).
+      // The card in use: its token, and the earlier card value a tap sends (migration 0089).
       const card = (cardsOf.get(s.user_id) ?? []).filter((c) => Number(c.status) === 1).at(-1);
       if (card) {
         const value = clean(card.encrypted_token);
