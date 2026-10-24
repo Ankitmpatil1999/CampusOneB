@@ -425,6 +425,34 @@ describe.skipIf(!adminUrl)(
         })
         .execute();
       ids['recordId'] = record.id;
+      // A cash receipt on it (FEE-054/056: a collection's receipt).
+      const collection = newPublicIdPair();
+      await t.db
+        .insertInto('fee_collections')
+        .values({
+          public_id: collection.bin,
+          institution_id: String(aMember.institution_id),
+          record_id: String(
+            (
+              await t.db
+                .selectFrom('fee_records')
+                .select('id')
+                .where('public_id', '=', record.bin)
+                .executeTakeFirstOrThrow()
+            ).id,
+          ),
+          payment_attempt_id: null,
+          amount_paise: 1_000,
+          source: 'CONSOLE',
+          mode: 'CASH',
+          receipt_no: 'ISO/FR/0001',
+          paid_by: 'Some One',
+          gateway_payment_id: null,
+          collected_by: null,
+          collected_at: new Date(),
+        })
+        .execute();
+      ids['collectionId'] = collection.id;
       // An admission link, application, reference and paid fee of school A (INS-029, ADM-014…028).
       const adLink = newPublicIdPair();
       await t.db
@@ -901,6 +929,11 @@ describe.skipIf(!adminUrl)(
             'ADM-022': { receivedAt: today, paidBy: 'Some One' },
             'ADM-026': { name: 'Ref Person', mobile: '9845000002' },
             'ADM-030': { declarationAccepted: true, registrationConsent: true },
+            'ADM-037': { feeType: 'APPLICATION' },
+            'ADM-038': { gatewayPaymentId: 'pay_ISOLATION', signature: 'isolation' },
+            'ADM-040': { section: 'student', data: {} },
+            'FEE-047': { receivedAt: today, paidBy: 'Some One' },
+            'FEE-053': { gatewayPaymentId: 'pay_ISOLATION', signature: 'isolation' },
             'ACA-036': { date: today },
             'ACA-043': { decision: 'APPROVED' },
             'TRN-004': { stops: [] },
