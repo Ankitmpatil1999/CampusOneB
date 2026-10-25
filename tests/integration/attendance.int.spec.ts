@@ -407,7 +407,10 @@ describe.skipIf(!adminUrl)('attendance on real MySQL', () => {
       status: 'PRESENT',
     });
     const pDay = await get('/principal/attendance', principal);
-    expect(pDay.body.items).toEqual([expect.objectContaining({ students: 2, attended: 2 })]);
+    // Each count of the day besides "attended" (client 2026-10-25): one on time, one late.
+    expect(pDay.body.items).toEqual([
+      expect.objectContaining({ students: 2, attended: 2, present: 1, late: 1, halfDay: 0 }),
+    ]);
     const teachers = await get('/principal/attendance?type=TEACHERS', principal);
     expect(teachers.body.items).toEqual(
       expect.arrayContaining([
@@ -415,14 +418,21 @@ describe.skipIf(!adminUrl)('attendance on real MySQL', () => {
           member: expect.objectContaining({ name: 'Meena' }),
           status: 'HALF_DAY',
         }),
+        // The principal with the teachers, as on the console's overview.
+        expect.objectContaining({ member: expect.objectContaining({ name: 'Lakshmi' }) }),
       ]),
     );
     const overviewP = await get('/principal/overview', principal);
     expect(overviewP.body.attendanceToday.students).toMatchObject({
       total: 2,
       attended: 2,
+      present: 1,
+      late: 1,
+      halfDay: 0,
       absent: 0,
     });
+    expect(overviewP.body.attendanceToday.teachers.halfDay).toBeGreaterThanOrEqual(1);
+    expect(overviewP.body.people.teachers).toBe(overviewP.body.attendanceToday.teachers.total);
     const roster = await get(`/teacher/classes/${section6A}/students`, ravi.auth);
     expect(
       roster.body.items.map((r: { attendanceToday: string }) => r.attendanceToday).sort(),
