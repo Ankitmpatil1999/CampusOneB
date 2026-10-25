@@ -1748,6 +1748,9 @@ export class AttendanceService {
           'c.sort_order',
           sql<number>`COUNT(en.id)`.as('students'),
           sql<number>`SUM(d.status IN ('PRESENT','LATE','HALF_DAY'))`.as('attended'),
+          sql<number>`SUM(d.status = 'PRESENT')`.as('present'),
+          sql<number>`SUM(d.status = 'LATE')`.as('late'),
+          sql<number>`SUM(d.status = 'HALF_DAY')`.as('half_day'),
           sql<number>`SUM(d.status = 'ABSENT')`.as('absent'),
         ])
         .where('s.institution_id', '=', me.institutionId)
@@ -1761,7 +1764,11 @@ export class AttendanceService {
         items: sections.map((s) => ({
           section: { id: binToUuid(s.public_id), label: `${s.class_name} ${s.name}` },
           students: Number(s.students ?? 0),
+          // Attended = on time + late + half day (client 2026-10-25: each count shown too).
           attended: Number(s.attended ?? 0),
+          present: Number(s.present ?? 0),
+          late: Number(s.late ?? 0),
+          halfDay: Number(s.half_day ?? 0),
           absent: Number(s.absent ?? 0),
           percentage: Number(s.students ?? 0)
             ? Math.round((Number(s.attended ?? 0) * 1000) / Number(s.students)) / 10
@@ -1796,7 +1803,8 @@ export class AttendanceService {
       ])
       .where('m.institution_id', '=', me.institutionId)
       .where('m.status', '!=', 'INACTIVE')
-      .where('ut.category', 'in', type === 'TEACHERS' ? ['TEACHER'] : ['STAFF'])
+      // The principal with the teachers, as the console's attendance overview counts them.
+      .where('ut.category', 'in', type === 'TEACHERS' ? ['TEACHER', 'PRINCIPAL'] : ['STAFF'])
       .orderBy('m.first_name')
       .execute();
     return {

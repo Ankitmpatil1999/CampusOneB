@@ -51,7 +51,7 @@ export class PrincipalService {
         .select(['ut.category', sql<number>`COUNT(*)`.as('n')])
         .where('m.institution_id', '=', me.institutionId)
         .where('m.status', '!=', 'INACTIVE')
-        .where('ut.category', 'in', ['STUDENT', 'TEACHER', 'STAFF'])
+        .where('ut.category', 'in', ['STUDENT', 'TEACHER', 'PRINCIPAL', 'STAFF'])
         .groupBy('ut.category')
         .execute(),
       db
@@ -91,20 +91,30 @@ export class PrincipalService {
       .select([
         'ut.category',
         sql<number>`SUM(d.status IN ('PRESENT','LATE','HALF_DAY'))`.as('attended'),
+        sql<number>`SUM(d.status = 'PRESENT')`.as('present'),
+        sql<number>`SUM(d.status = 'LATE')`.as('late'),
+        sql<number>`SUM(d.status = 'HALF_DAY')`.as('half_day'),
         sql<number>`SUM(d.status = 'ABSENT')`.as('absent'),
       ])
       .where('d.institution_id', '=', me.institutionId)
       .where('d.att_date', '=', today)
       .groupBy('ut.category')
       .execute();
-    const count = (c: string) => Number(people.find((x) => x.category === c)?.n ?? 0);
+    const count = (...cats: string[]) =>
+      people.filter((x) => cats.includes(x.category)).reduce((n, x) => n + Number(x.n ?? 0), 0);
     const day = (cats: string[], total: number) => {
       const rows = att.filter((a) => cats.includes(a.category));
-      const attended = rows.reduce((n, r) => n + Number(r.attended ?? 0), 0);
-      const absent = rows.reduce((n, r) => n + Number(r.absent ?? 0), 0);
+      const sum = (k: 'attended' | 'present' | 'late' | 'half_day' | 'absent') =>
+        rows.reduce((n, r) => n + Number(r[k] ?? 0), 0);
+      const attended = sum('attended');
+      const absent = sum('absent');
       return {
         total,
+        // Attended = on time + late + half day (client 2026-10-25: each count shown too).
         attended,
+        present: sum('present'),
+        late: sum('late'),
+        halfDay: sum('half_day'),
         absent,
         notMarked: Math.max(0, total - attended - absent),
         percentage: total ? Math.round((attended * 1000) / total) / 10 : null,
@@ -114,10 +124,15 @@ export class PrincipalService {
       year: yearView(year),
       date: today,
       principal: { name: me.name },
-      people: { students: count('STUDENT'), teachers: count('TEACHER'), staff: count('STAFF') },
+      // The principal is counted with the teachers, as on the console's attendance overview.
+      people: {
+        students: count('STUDENT'),
+        teachers: count('TEACHER', 'PRINCIPAL'),
+        staff: count('STAFF'),
+      },
       attendanceToday: {
         students: day(['STUDENT'], count('STUDENT')),
-        teachers: day(['TEACHER'], count('TEACHER')),
+        teachers: day(['TEACHER', 'PRINCIPAL'], count('TEACHER', 'PRINCIPAL')),
         staff: day(['STAFF'], count('STAFF')),
       },
       staffOnLeaveToday: Number(onLeave?.n ?? 0),
