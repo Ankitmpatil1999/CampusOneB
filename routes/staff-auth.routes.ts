@@ -101,7 +101,7 @@ defineRoute({
   method: 'post',
   path: '/api/v1/auth/staff-app/from-member',
   summary:
-    'The member app’s “Open the staff app” (client 2026-10-27): the staff app’s console session for the account signed in on this phone, without a second sign-in — the member session (bound to this phone) ends. Refused like IDN-031 when the account may not enter the console or must change a temporary password first; the app then signs in as before',
+    'One sign-in for staff (client 2026-10-27): the staff app’s console session for the account signed in on this phone (its member session, bound to this phone), without a second sign-in; the member session goes on beside it, so the app holds both — each reaches only its own routes. Refused like IDN-031 when the account may not enter the console or must change a temporary password first; the app then signs in as before',
   tags,
   auth: 'session (member)',
   responses: {

@@ -307,8 +307,12 @@ export class StaffAuthService {
    * member session already proved the password and, for this phone, the code (it is bound to the
    * device, FR-IDN-09); the console's own checks still apply — an active, unlocked account with a
    * console role at its school. A temporary password still to be changed, or anything else refused,
-   * answers the one 6.4 refusal, and the app falls back to the staff sign-in (IDN-031). The member
-   * session then ends: the phone keeps one session, the staff app's (as after IDN-088).
+   * answers the one 6.4 refusal, and the app falls back to the staff sign-in (IDN-031).
+   *
+   * Client 2026-10-27 ("one login, one unified experience" for staff; a choice of mode for a parent
+   * who is also staff): the member session goes on beside the staff app's, so one sign-in gives
+   * both. Each still reaches only its own surface's routes, checked as before; signing out ends
+   * both (the app signs each out).
    */
   async staffAppFromMember(p: Principal, client: ClientContext = {}): Promise<StaffSignedIn> {
     if (p.surface !== 'member' || !isUuid(p.subject) || !isUuid(p.sessionId)) throw this.refused();
@@ -361,7 +365,6 @@ export class StaffAuthService {
       },
       client,
     );
-    await this.deps.sessions.end(p.sessionId, 'SIGN_OUT');
     this.deps.loggers.security.info('auth.staff_signed_in', {
       surface: 'console',
       client: 'staff-app',

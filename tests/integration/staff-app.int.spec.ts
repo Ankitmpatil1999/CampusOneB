@@ -332,8 +332,92 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
           .send({ refreshToken: r.body.refreshToken })
       ).status,
     ).toBe(200);
-    // The phone keeps one session: the member app's has ended, so it can't be used twice.
-    expect((await request(f.app).get('/api/v1/me').set(acc.auth)).status).toBe(401);
-    expect((await fromMember(acc.auth)).status).toBe(401);
+    // One sign-in, both sessions (client 2026-10-27): the member session goes on beside it, and
+    // each session reaches only its own surface's routes.
+    expect((await request(f.app).get('/api/v1/me').set(acc.auth)).status).toBe(200);
+    expect([401, 403]).toContain(
+      (await request(f.app).get('/api/v1/console/session').set(acc.auth)).status,
+    );
+    expect([401, 403]).toContain(
+      (await request(f.app).get('/api/v1/me').set(bearer(r.body))).status,
+    );
+    // Asked again (the app restarted): a new staff app session replaces the first.
+    const again = await fromMember(acc.auth);
+    expect(again.status).toBe(200);
+    expect(
+      (
+        await request(f.app)
+          .post('/api/v1/auth/staff-app/token/refresh')
+          .send({ refreshToken: r.body.refreshToken })
+      ).status,
+    ).toBe(401);
+    // Signing out of each ends each.
+    expect((await request(f.app).post('/api/v1/auth/signout').set(bearer(again.body))).status).toBe(
+      204,
+    );
+    expect(
+      (await request(f.app).get('/api/v1/console/session').set(bearer(again.body))).status,
+    ).toBe(401);
+    expect((await request(f.app).get('/api/v1/me').set(acc.auth)).status).toBe(200);
+  });
+
+  it('keeps the phone for both sessions of one person, and moves it from another person (migration 0089)', async () => {
+    const roles = Object.fromEntries(
+      (await request(f.app).get('/api/v1/console/roles').set(con)).body.items.map(
+        (r: { code: string; id: string }) => [r.code, r.id],
+      ),
+    ) as Record<string, string>;
+    const desk = await f.payer('Ravi', 0);
+    expect(
+      (
+        await request(f.app)
+          .put(`/api/v1/console/staff-accounts/${desk.id}/roles`)
+          .set(con)
+          .send({ roleIds: [roles.ACCOUNTANT] })
+      ).status,
+    ).toBe(200);
+    const staff = await request(f.app)
+      .post('/api/v1/auth/staff-app/from-member')
+      .set(desk.auth)
+      .send({});
+    expect(staff.status, JSON.stringify(staff.body)).toBe(200);
+    const token = `fcm-${randomUUID()}-${randomUUID()}`;
+    const holders = () =>
+      f.t.db
+        .selectFrom('session_push_tokens as t')
+        .innerJoin('sessions as s', 's.id', 't.session_id')
+        .select(['s.surface', 't.account_id'])
+        .where('t.token_hash', '=', tokenHash(token))
+        .orderBy('s.surface')
+        .execute();
+    expect(
+      (
+        await request(f.app)
+          .put('/api/v1/me/push-token')
+          .set(desk.auth)
+          .send({ token, platform: 'ANDROID' })
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await request(f.app)
+          .put('/api/v1/console/push-token')
+          .set(bearer(staff.body))
+          .send({ token, platform: 'ANDROID' })
+      ).status,
+    ).toBe(204);
+    // Both of the person's sessions keep the phone: member notices and console notices reach it.
+    expect((await holders()).map((h) => h.surface).sort()).toEqual(['CONSOLE', 'MEMBER']);
+    // Someone else signs in on the phone: the token moves to them alone.
+    const other = await f.student('Gita', 0);
+    expect(
+      (
+        await request(f.app)
+          .put('/api/v1/me/push-token')
+          .set(other.auth)
+          .send({ token, platform: 'ANDROID' })
+      ).status,
+    ).toBe(204);
+    expect((await holders()).map((h) => String(h.account_id))).toEqual([String(other.accountId)]);
   });
 });
