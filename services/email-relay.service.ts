@@ -18,6 +18,7 @@ import type { MessageSender } from '../integrations/sms.provider';
 import type { Database } from '../models/ringpe_models';
 import { binToUuid } from '../utils/idGenerator';
 import { logCommSafely, maskEmail, type CommLogRow } from './comm-log.service';
+import { brandFields, schoolBrand, type LogoFiles, type SchoolBrand } from './school-brand';
 import { defaultValues, type SettingValues } from './settings.service';
 
 const BACKOFF_MINUTES = [1, 5, 15, 60];
@@ -34,6 +35,8 @@ export class EmailRelay {
       db: Kysely<Database>;
       email: MessageSender;
       loggers: Loggers;
+      /** The school's logo for its notices (client 2026-10-26). */
+      files?: LogoFiles;
       settings?: { values(): Promise<SettingValues> };
       now?: () => Date;
     },
@@ -83,7 +86,7 @@ export class EmailRelay {
     const rows = await this.claim(limit);
     if (!rows.length) return out;
     const max = await this.maxAttempts();
-    const schools = new Map<string, { name: string; office: string | null }>();
+    const schools = new Map<string, SchoolBrand | null>();
     for (const r of rows) {
       const at = this.now();
       const log = (row: Omit<CommLogRow, 'institutionId' | 'kind' | 'channel'>) =>
@@ -111,14 +114,15 @@ export class EmailRelay {
         out.skipped++;
         continue;
       }
-      const school = r.institution_id === null ? null : await this.school(schools, r.institution_id);
+      const school =
+        r.institution_id === null ? null : await this.school(schools, r.institution_id);
       try {
         await this.deps.email.send({
           to,
           purpose: `notification.${r.event_key.toLowerCase()}`,
           subject: r.subject,
           text: `${r.body}\n\nOpen the RingPe app to see more.`,
-          ...(school ? { fromName: school.name, replyTo: school.office } : {}),
+          ...brandFields(school),
           log: false,
         });
         await this.deps.db.deleteFrom('email_outbox').where('id', '=', r.id).execute();
@@ -160,23 +164,11 @@ export class EmailRelay {
     return out;
   }
 
-  private async school(
-    cache: Map<string, { name: string; office: string | null }>,
-    institutionId: string | number,
-  ) {
+  /** The school's name, office address and logo, once per run. */
+  private async school(cache: Map<string, SchoolBrand | null>, institutionId: string | number) {
     const k = String(institutionId);
-    const hit = cache.get(k);
-    if (hit) return hit;
-    const i = await this.deps.db
-      .selectFrom('institutions')
-      .select(['name', 'office_email'])
-      .where('id', '=', k)
-      .executeTakeFirst();
-    const v = i
-      ? { name: i.name, office: i.office_email && EMAIL.test(i.office_email) ? i.office_email : null }
-      : null;
-    if (v) cache.set(k, v);
-    return v;
+    if (!cache.has(k)) cache.set(k, await schoolBrand(this.deps.db, this.deps.files, k));
+    return cache.get(k) ?? null;
   }
 
   /** Deletes notices that failed long ago (they are in the communication log). */

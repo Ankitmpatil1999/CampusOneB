@@ -1256,6 +1256,19 @@ export const LIMITS = {
     srsValue: 'gate 60 · period 30 · location 60',
     refs: ['OI-ATT-05', 'RNG-ATT-185'],
   }),
+  /**
+   * A card tapped again this soon after the check-in doesn't check out (client 2026-10-26): it says
+   * when it checked in and when it can check out. 0 turns it off (platform settings, PLT-012/013).
+   */
+  checkoutGraceMinutes: def({
+    key: 'att.checkoutGraceMinutes',
+    value: 10,
+    unit: 'min',
+    adjustable: { min: 0, max: 240 },
+    scope: 'I',
+    basis: 'proposed',
+    refs: ['21.5', 'client 2026-10-26'],
+  }),
   commLogSuccessRetentionDays: def({
     key: 'com.log.retention.successDays',
     value: 30,

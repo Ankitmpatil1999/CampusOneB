@@ -94,6 +94,33 @@ describe.skipIf(!adminUrl)('staff attendance at the front desk on real MySQL', (
       .set({ last_tap_at: new Date(Date.now() - 60_000) })
       .where('token', '=', rajuCard)
       .execute();
+    // Client 2026-10-26: within 10 minutes of the check-in a tap is a repeated scan, not a check-out.
+    const soon = await tap(rajuCard);
+    expect(soon.status).toBe(409);
+    expect(soon.body.code).toBe('ATT.CHECKOUT_TOO_SOON');
+    expect(soon.body.detail).toMatch(
+      /^Raju\b.* is already checked in \(at \d{1,2}:\d{2} [AP]M\)\. Tap again after \d{1,2}:\d{2} [AP]M to check out\.$/,
+    );
+    const rajuDay = f.t.db
+      .selectFrom('attendance_days')
+      .select(['id', 'check_out_at'])
+      .where(
+        'profile_id',
+        '=',
+        f.t.db.selectFrom('cards').select('profile_id').where('token', '=', rajuCard),
+      );
+    expect((await rajuDay.executeTakeFirstOrThrow()).check_out_at).toBeNull();
+    // Eleven minutes on (the check-in moved back), the card checks out as before.
+    await f.t.db
+      .updateTable('attendance_days')
+      .set({ check_in_at: new Date(Date.now() - 11 * 60_000) })
+      .where('id', '=', (await rajuDay.executeTakeFirstOrThrow()).id)
+      .execute();
+    await f.t.db
+      .updateTable('cards')
+      .set({ last_tap_at: new Date(Date.now() - 60_000) })
+      .where('token', '=', rajuCard)
+      .execute();
     const out = await tap(rajuCard);
     // Checked out at once: before the half-day time.
     expect(out.body).toMatchObject({ result: 'CHECKED_OUT', status: 'HALF_DAY' });

@@ -509,6 +509,7 @@ export function buildApiServices(args: {
   const admissionLinks = new AdmissionLinksService({
     db,
     email: emailSender,
+    files,
     webUrl: config.publicWebUrl,
     settings,
     ...(now ? { now } : {}),
@@ -531,6 +532,7 @@ export function buildApiServices(args: {
   // Collect Fee: an instalment in cash, or by a payment link or QR code (client 2026-10-19).
   const feePayments = new FeePaymentsService({
     db,
+    files,
     flows,
     gateway,
     gateways: paymentGateways,
@@ -663,6 +665,7 @@ export function buildApiServices(args: {
     emailRelay: new EmailRelay({
       db,
       email: emailSender,
+      files,
       loggers,
       settings,
       ...(now ? { now } : {}),

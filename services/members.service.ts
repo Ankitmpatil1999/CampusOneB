@@ -64,6 +64,7 @@ import {
 } from './custom-values.service';
 import { memberOf } from './member-roles';
 import { assignStudent } from './fee-assignment';
+import { tellClassTeachers } from './member-notices';
 import { studentTransport } from './student-transport';
 import type { SessionService } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
@@ -617,6 +618,12 @@ export class MembersService {
           this.id(input.sectionId, 'sectionId'),
         );
         if (!sec) throw new ValidationError([{ field: 'sectionId', code: 'VALIDATION.FORMAT' }]);
+        const was = await trx
+          .selectFrom('enrolments')
+          .select('section_id')
+          .where('student_profile_id', '=', m.id)
+          .where('year_id', '=', year.id)
+          .executeTakeFirst();
         await academicsRepository.enrol(trx, {
           institutionId: inst.id,
           studentId: m.id,
@@ -630,6 +637,18 @@ export class MembersService {
           { institutionId: String(inst.id), studentId: String(m.id), yearId: String(year.id) },
           { by, at: this.now() },
         );
+        // A new section's class teacher hears of the student (client 2026-10-26).
+        if (String(was?.section_id ?? '') !== String(sec.id)) {
+          await tellClassTeachers(
+            trx,
+            {
+              institutionId: String(inst.id),
+              yearId: String(year.id),
+              placements: [{ studentId: String(m.id), sectionId: String(sec.id) }],
+            },
+            this.now(),
+          );
+        }
         after['section'] = `${sec.class_name} ${sec.name}`;
         changed = true;
       }
@@ -1191,6 +1210,16 @@ export class MembersService {
         trx,
         { institutionId: String(inst.id), studentId: String(id), yearId: String(year.id) },
         { by, at: this.now() },
+      );
+      // The section's class teacher hears of the new student (client 2026-10-26).
+      await tellClassTeachers(
+        trx,
+        {
+          institutionId: String(inst.id),
+          yearId: String(year.id),
+          placements: [{ studentId: String(id), sectionId: String(section.id) }],
+        },
+        this.now(),
       );
     }
     await saveValues(trx, inst.id, pub.bin, cf.parsed);

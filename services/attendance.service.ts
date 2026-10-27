@@ -305,6 +305,23 @@ export class AttendanceService {
     return out;
   }
 
+  /**
+   * A card tapped again within `att.checkoutGraceMinutes` of the check-in doesn't check out (client
+   * 2026-10-26): a repeated scan is no second action. It says when the person checked in and from
+   * when the card checks them out. A check-out chosen on the desk's screen isn't held back.
+   */
+  private async notLeavingYet(day: { check_in_at: Date | string | null }, name: string, at: Date) {
+    if (!day.check_in_at) return;
+    const grace = await this.limit(LIMITS.checkoutGraceMinutes);
+    const checkedIn = new Date(day.check_in_at);
+    const after = new Date(checkedIn.getTime() + grace * 60_000);
+    if (grace > 0 && at.getTime() < after.getTime()) {
+      throw new CustomAPIError(409, 'ATT.CHECKOUT_TOO_SOON', {
+        params: { name, in: formatTime(checkedIn), after: formatTime(after) },
+      });
+    }
+  }
+
   /** A card tapped again within `att.doubleTapSeconds` is refused (27.4). */
   private async notTooSoon(cardId: string, at: Date) {
     const gap = await this.limit(LIMITS.doubleTapSeconds);
@@ -554,6 +571,7 @@ export class AttendanceService {
     if (m.student || !this.canCheckOut(day, timing)) {
       throw new CustomAPIError(409, 'ATT.ALREADY_COMPLETED');
     }
+    await this.notLeavingYet(day, m.name, at);
     const status = await this.logoutOf(timing, day, at);
     await trx
       .updateTable('attendance_days')
@@ -2082,6 +2100,8 @@ export class AttendanceService {
         day?.check_in_at ? 'ATT.ALREADY_COMPLETED' : 'ATT.NOT_CHECKED_IN',
       );
     }
+    // A card tap (AUTO) so soon after the check-in is a repeated scan, not a check-out.
+    if (o.action === 'AUTO') await this.notLeavingYet(day!, m.name, at);
     const status = await this.logoutOf(timing, day!, at);
     await trx
       .updateTable('attendance_days')

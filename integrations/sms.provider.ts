@@ -21,6 +21,13 @@ export interface OutboundMessage {
   /** E-mail only: files sent with it (client 2026-10-23: the submitted application form). */
   readonly attachments?: readonly MessageAttachment[];
   /**
+   * E-mail only: the details the HTML shows highlighted wherever they appear in the text — the
+   * application number, a one-time password, an amount (client 2026-10-26). The text is unchanged.
+   */
+  readonly highlight?: readonly (string | null | undefined)[];
+  /** E-mail only: the school's logo, shown at the head of the e-mail (client 2026-10-26). */
+  readonly logo?: { readonly content: Buffer; readonly contentType: string } | null;
+  /**
    * Whom it concerns, for the communication log (CR-16) — never the content. `false`: the caller
    * logs the send itself (announcements).
    */
