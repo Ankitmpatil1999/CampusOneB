@@ -23,7 +23,9 @@ export type OtpPurpose =
   | 'TPIN_RESET'
   | 'ADMISSION_RESUME'
   | 'PORTAL_SIGNUP'
-  | 'EMAIL_CHANGE';
+  | 'EMAIL_CHANGE'
+  /** Migration 0090: the primary contact's mobile on an admission form (client 2026-10-27). */
+  | 'ADMISSION_CONTACT';
 
 export interface PlatformAccountsTable {
   id: Id;

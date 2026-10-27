@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express';
+import { institutionChoiceSchema } from '../schemas/member-auth.schema';
 import {
   staffAppRefreshSchema,
   staffForgotSchema,
@@ -80,6 +81,8 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
         csrfToken,
         accessTokenExpiresAt: iso(tokens.accessTokenExpiresAt),
         refreshTokenExpiresAt: iso(tokens.refreshTokenExpiresAt),
+        // The console's institutions (client 2026-10-27): the web asks which to open.
+        ...(out.institutions ? { institutions: out.institutions } : {}),
       });
     });
 
@@ -116,7 +119,7 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
       });
       return;
     }
-    res.json({ ...appTokens(out.tokens), name: out.name });
+    res.json({ ...appTokens(out.tokens), name: out.name, institutions: out.institutions ?? [] });
   });
 
   /** IDN-089. */
@@ -160,6 +163,20 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
     res.json(await service.portalSession(req.principal));
   });
 
+  /** IDN-094 / IDN-095 (client 2026-10-27): the console's institutions, and opening another. */
+  const consoleInstitutions = wrap(async (req, res) => {
+    if (!req.principal) throw new AuthenticationError();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await service.consoleInstitutions(req.principal));
+  });
+
+  const setConsoleInstitution = wrap(async (req, res) => {
+    if (!req.principal) throw new AuthenticationError();
+    const body = institutionChoiceSchema.parse(req.body ?? {});
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await service.setConsoleInstitution(req.principal, body));
+  });
+
   return {
     signIn,
     resend,
@@ -171,5 +188,7 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
     consoleSession,
     opsSession,
     portalSession,
+    consoleInstitutions,
+    setConsoleInstitution,
   };
 }

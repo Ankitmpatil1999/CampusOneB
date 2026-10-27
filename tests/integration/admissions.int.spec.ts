@@ -9,16 +9,18 @@
  *   the fee in cash, approval creating the member, wallets, guardian and enrolment once, rejection;
  * - the admission fee by payment link, the receipt, and the existing-students import.
  */
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomInt, randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import request from 'supertest';
 import { adminUrl } from './db';
 import { buildHttpApp, codeOf } from './http-app';
 import type { GatewayPayment, PaymentGateway } from '../../integrations/payment-gateway.provider';
 import type { SchoolGatewayFactory } from '../../services/payment-gateways.service';
-import { aadhaar, inr, schoolFixture, type Auth } from './school';
+import { aadhaar, inr, mobile as randomMobile, schoolFixture, type Auth } from './school';
 import { PERSON_CARDS } from '../../schemas/admissions.schema';
 import { SHEET_COLUMNS } from '../../services/admission-sheet';
+import { vansOf } from '../../services/vans';
+import { membersRepository } from '../../repositories/members.repository';
 import { binToUuid, newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { pngOf } from '../png';
 
@@ -65,8 +67,48 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(v.status, JSON.stringify(v.body)).toBe(200);
     return v.body as { applicationStatus: string };
   };
-  /** `tc`: the transfer certificate, which a regular admission above LKG needs (2026-10-15). */
-  const completeDraft = async (id: string, token: string, mobile: string, tc = true) => {
+  /** The newest code sent to the primary contact's mobile (client 2026-10-27). */
+  const contactCodeTo = (mobile: string) =>
+    codeOf(
+      f.h.sms.sent.findLast((m) => m.purpose === 'otp.admission_contact' && m.to.endsWith(mobile)),
+    );
+  /** The family verifies the primary contact's mobile on the public form. */
+  const verifyContact = async (id: string, token: string, mobile: string) => {
+    const base = `/api/v1/public/admissions/applications/${id}/contact-otp`;
+    const sent = await pub('post', base, token);
+    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    const ok = await pub('post', `${base}/verify`, token, {
+      challengeId: sent.body.challengeId,
+      otp: contactCodeTo(mobile),
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.application.contactVerified).toBe(true);
+    return ok.body.application as { version: number };
+  };
+  /** The office sends the code and enters the one the parent reads out (console, staff app). */
+  const verifyAtDesk = async (id: string, mobile: string) => {
+    const base = `/api/v1/console/applications/${id}/contact-otp`;
+    const sent = await post(base);
+    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    const ok = await post(`${base}/verify`, {
+      challengeId: sent.body.challengeId,
+      otp: contactCodeTo(mobile),
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.application.contactVerified).toBe(true);
+    return ok.body.application as { version: number };
+  };
+  /**
+   * `tc`: the transfer certificate, which a regular admission above LKG needs (2026-10-15);
+   * `verify`: the primary contact's code, which submission needs (2026-10-27).
+   */
+  const completeDraft = async (
+    id: string,
+    token: string,
+    mobile: string,
+    tc = true,
+    verify = true,
+  ) => {
     const base = `/api/v1/public/admissions/applications/${id}`;
     for (const [section, data] of [
       [
@@ -122,6 +164,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       const r = await attach(`${base}/documents`, token, t);
       expect(r.status, JSON.stringify(r.body)).toBe(201);
     }
+    if (verify) await verifyContact(id, token, mobile);
   };
 
   beforeAll(async () => {
@@ -1331,6 +1374,19 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(unconsented.body.errors).toContainEqual(
       expect.objectContaining({ field: 'registrationConsent', code: 'ADM.CONSENT_REQUIRED' }),
     );
+    // Nor at once any more (client 2026-10-27): the primary contact's code comes first, so it is
+    // refused before a draft is written.
+    const before = (await request(f.app).get('/api/v1/console/applications').set(con)).body.counts;
+    const atOnce = await post('/api/v1/console/applications', {
+      class: { yearId: currentYear.id, classId: grade6.id, joiningDate: today },
+      submit: true,
+      registrationConsent: true,
+    });
+    expect(atOnce.status).toBe(409);
+    expect(atOnce.body.code).toBe('ADM.CONTACT_NOT_VERIFIED');
+    expect((await request(f.app).get('/api/v1/console/applications').set(con)).body.counts).toEqual(
+      before,
+    );
     const created = await post('/api/v1/console/applications', {
       class: {
         yearId: currentYear.id,
@@ -1441,6 +1497,15 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         })
       ).status,
     ).toBe(201);
+    // Complete: the father's mobile is verified at the desk, the parent reading out the code (client
+    // 2026-10-27).
+    const unverified = await submit();
+    expect(unverified.status).toBe(409);
+    expect(unverified.body).toMatchObject({
+      code: 'ADM.CONTACT_NOT_VERIFIED',
+      errors: [expect.objectContaining({ field: 'parents.primaryMobile' })],
+    });
+    await verifyAtDesk(id, '9845001122');
     const declared = await submit();
     expect(declared.body).toMatchObject({ status: 'DRAFT', feeDue: { amount: '500.00' } });
     const cashApp = await post(`/api/v1/console/applications/${id}/admission-fee/cash`, {
@@ -1668,6 +1733,30 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       .where('public_id', '=', uuidToBin(ok.body.memberId))
       .executeTakeFirstOrThrow();
     expect(member).toMatchObject({ admission_no: 'ADM/2026/0042' });
+    // Only the verified primary contact, the father, is the student's parent here (client
+    // 2026-10-27); the mother keeps her RingPe account, with no profile at the school.
+    expect(
+      await f.t.db
+        .selectFrom('guardianships as g')
+        .innerJoin('member_profiles as m', 'm.id', 'g.guardian_profile_id')
+        .select(['g.relation', 'm.contact_mobile'])
+        .where('g.ward_profile_id', '=', String(member.id))
+        .execute(),
+    ).toEqual([{ relation: 'FATHER', contact_mobile: '9845001122' }]);
+    const motherAccount = made.find((a) => a.person === 'MOTHER')!;
+    expect(
+      await f.t.db
+        .selectFrom('member_profiles')
+        .select('id')
+        .where('institution_id', '=', f.school.rowId)
+        .where((eb) =>
+          eb.or([
+            eb('contact_mobile', '=', '9845001133'),
+            eb('account_id', '=', String(motherAccount.id)),
+          ]),
+        )
+        .execute(),
+    ).toEqual([]);
     // The approval e-mail carries the login details of every account (client 2026-10-23): to the
     // primary contact, the student in copy; one-time passwords, changed at the first sign-in.
     const approved = f.h.email.sent.findLast((m) => m.purpose === 'admission.approved')!;
@@ -2572,6 +2661,10 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const local2 = (await read()).body;
     expect(local2.identityNumbers.localGuardian.pan).toBe('••••••234K');
     expect(local2.parents.localGuardian).not.toHaveProperty('aadhaar');
+    // The mother is the primary contact now: the father's code no longer counts (client 2026-10-27).
+    expect(local2.contactVerified).toBe(false);
+    expect((await submit({})).body.code).toBe('ADM.CONTACT_NOT_VERIFIED');
+    await verifyContact(app.id, token, '8876504321');
     // "Pay later" isn't honoured for the family any more (client 2026-10-13): the application
     // waits for its fee.
     const sub = await submit({ payLater: true });
@@ -2857,5 +2950,474 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     ).toBe(201);
     const sub = await submit();
     expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+  });
+
+  // --- client 2026-10-27: the primary contact's mobile verified by a code; the approval links that
+  // contact only, whichever school they belong to besides --------------------------------------------
+  it('verifies the primary contact’s mobile by a code before submission; another number un-verifies it (ADM-042/043, client 2026-10-27)', async () => {
+    const created = await post(
+      `/api/v1/public/admissions/${link.token}/applications`,
+      {
+        class: { yearId: nextYear.id, classId: grade6.id },
+        student: {
+          firstName: 'Meghana',
+          lastName: 'Joshi',
+          gender: 'FEMALE',
+          dob: `${Number(nextYear.label.slice(0, 4)) - 11}-03-07`,
+        },
+      },
+      {},
+    );
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    expect(created.body.application.contactVerified).toBe(false);
+    const id = created.body.application.id as string;
+    const token = created.body.resumeToken as string;
+    const base = `/api/v1/public/admissions/applications/${id}`;
+    // No primary contact saved yet: nowhere to send a code. Without the family's token: not found.
+    const nowhere = await pub('post', `${base}/contact-otp`, token);
+    expect(nowhere.status).toBe(409);
+    expect(nowhere.body.code).toBe('ADM.CONTACT_MOBILE_MISSING');
+    expect((await request(f.app).post(`${base}/contact-otp`).send({})).status).toBe(404);
+    await completeDraft(id, token, '9876508101', true, false);
+    const submit = () =>
+      pub('post', `${base}/submission`, token, {
+        declarationAccepted: true,
+        registrationConsent: true,
+      });
+    const refused = await submit();
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({
+      code: 'ADM.CONTACT_NOT_VERIFIED',
+      errors: [expect.objectContaining({ field: 'parents.primaryMobile' })],
+    });
+    const sent = await pub('post', `${base}/contact-otp`, token);
+    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    expect(sent.body).toEqual({
+      challengeId: expect.any(String),
+      sentTo: '+91 ••••• •••01',
+      expiresAt: expect.any(String),
+    });
+    // Pressed again while the code is live: the same code, no second SMS.
+    const codesSent = () =>
+      f.h.sms.sent.filter((m) => m.purpose === 'otp.admission_contact').length;
+    const sms = codesSent();
+    expect((await pub('post', `${base}/contact-otp`, token)).body.challengeId).toBe(
+      sent.body.challengeId,
+    );
+    expect(codesSent()).toBe(sms);
+    const code = contactCodeTo('9876508101');
+    const check = (challengeId: string, otp: string) =>
+      pub('post', `${base}/contact-otp/verify`, token, { challengeId, otp });
+    const wrong = await check(sent.body.challengeId, code === '1234' ? '4321' : '1234');
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.code).toBe('AUTH.OTP_INVALID');
+    const ok = await check(sent.body.challengeId, code);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.application).toMatchObject({
+      id,
+      contactVerified: true,
+      primaryContact: { mobile: '9876508101' },
+    });
+    expect(ok.headers.etag).toBe(`"v${ok.body.application.version}"`);
+    expect((await check(sent.body.challengeId, code)).body.code).toBe('AUTH.OTP_ALREADY_USED');
+    expect(
+      await f.t.db
+        .selectFrom('audit_log')
+        .select('action')
+        .where('action', '=', 'ADMISSION_CONTACT_VERIFIED')
+        .where('entity_ref', '=', uuidToBin(id))
+        .execute(),
+    ).toHaveLength(1);
+    // A code sent, then the father's number changed: the contact is no longer verified, and that
+    // code can't verify the new number.
+    const stale = await pub('post', `${base}/contact-otp`, token);
+    const staleCode = contactCodeTo('9876508101');
+    const moved = await pub('patch', base, token, {
+      section: 'parents',
+      data: {
+        father: { name: 'Rakesh Shetty', mobile: '9876508102', email: 'rakesh@example.in' },
+        mother: { name: 'Pallavi Shetty', mobile: '8876508101' },
+        primary: 'FATHER',
+        children: 'MORE',
+      },
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect(moved.body.contactVerified).toBe(false);
+    expect((await submit()).body.code).toBe('ADM.CONTACT_NOT_VERIFIED');
+    expect((await check(stale.body.challengeId, staleCode)).body.code).toBe('AUTH.OTP_INVALID');
+    // The new number verified: the console's list and application show it, and it is submitted.
+    await verifyContact(id, token, '9876508102');
+    const listed = await request(f.app).get('/api/v1/console/applications?q=9876508102').set(con);
+    expect(listed.body.items).toEqual([expect.objectContaining({ id, contactVerified: true })]);
+    expect(
+      (await request(f.app).get(`/api/v1/console/applications/${id}`).set(con)).body
+        .contactVerified,
+    ).toBe(true);
+    const sub = await submit();
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+    expect(sub.body).toMatchObject({ status: 'DRAFT', feeDue: { mandatory: true } });
+  });
+
+  /** A person on the counsellor's form, with their Aadhaar number and PAN. */
+  const person = (name: string, mob: string, email?: string) => ({
+    name,
+    mobile: mob,
+    ...(email ? { email } : {}),
+    aadhaar: aadhaar(),
+    pan: `ABCPH${String(randomInt(0, 10_000)).padStart(4, '0')}K`,
+  });
+  /**
+   * A counsellor's regular application for next year: complete, its primary contact verified at the
+   * desk, submitted, both fees paid in cash and confirmed — ready for approval.
+   */
+  const readyToApprove = async (
+    firstName: string,
+    form: { father: object; mother: object; primary: 'FATHER' | 'MOTHER'; contact: string },
+  ) => {
+    const { contact, ...parents } = form;
+    const created = await post('/api/v1/console/applications', {
+      class: { yearId: nextYear.id, classId: grade6.id },
+      student: {
+        firstName,
+        lastName: 'Hegde',
+        gender: 'MALE',
+        dob: `${Number(nextYear.label.slice(0, 4)) - 11}-01-15`,
+      },
+      addresses: {
+        residential: {
+          line1: 'Temple Road',
+          line2: 'Car Street',
+          city: 'Udupi',
+          state: 'Karnataka',
+          pin: '576101',
+        },
+        sameAsResidential: true,
+      },
+      parents: { ...parents, children: 'MORE' },
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.id as string;
+    for (const t of [
+      'BIRTH',
+      'ADDRESS',
+      'REPORT',
+      'TC',
+      ...PERSON_CARDS.father,
+      ...PERSON_CARDS.mother,
+    ]) {
+      const r = await attach(`/api/v1/console/applications/${id}/documents`, null, t, con);
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+    }
+    await verifyAtDesk(id, contact);
+    const sub = await post(`/api/v1/console/applications/${id}/submission`, {
+      declarationAccepted: true,
+      registrationConsent: true,
+      payLater: true,
+    });
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+    expect(sub.body.status).toBe('SUBMITTED');
+    for (const feeType of ['APPLICATION', 'ADMISSION'] as const) {
+      const cash = await post(`/api/v1/console/applications/${id}/admission-fee/cash`, {
+        feeType,
+        receivedAt: today,
+        paidBy: 'The family',
+      });
+      expect(cash.status, JSON.stringify(cash.body)).toBe(201);
+      const confirmed = await post(
+        `/api/v1/console/admission-payments/${cash.body.receipt.paymentId}/confirmation`,
+      );
+      expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+    }
+    return id;
+  };
+  const detailOf = async (id: string) =>
+    (await request(f.app).get(`/api/v1/console/applications/${id}`).set(con)).body as {
+      version: number;
+    };
+  const approveNow = async (id: string, version?: number) => {
+    const types = (await request(f.app).get('/api/v1/console/user-types').set(con)).body.items as {
+      id: string;
+      name: string;
+    }[];
+    return request(f.app)
+      .post(`/api/v1/console/applications/${id}/approval`)
+      .set(con)
+      .set('If-Match', `"v${version ?? (await detailOf(id)).version}"`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        userTypeId: types.find((t) => t.name === 'Student')!.id,
+        sectionId: grade6.sectionId,
+        admissionNo: `ADM/27/${randomInt(0, 1e9)}`,
+      });
+  };
+  /** The student's parents at the school: each link with the parent's profile. */
+  const parentsOf = (memberId: string) =>
+    f.t.db
+      .selectFrom('member_profiles as s')
+      .innerJoin('guardianships as g', 'g.ward_profile_id', 's.id')
+      .innerJoin('member_profiles as m', 'm.id', 'g.guardian_profile_id')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select(['g.relation', 'm.id', 'm.contact_mobile', 'm.account_id', 'ut.category'])
+      .where('s.public_id', '=', uuidToBin(memberId))
+      .execute();
+  /** The school's Parent profiles on a mobile. */
+  const parentProfilesOn = (mob: string) =>
+    f.t.db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .select('m.id')
+      .where('m.institution_id', '=', f.school.rowId)
+      .where('ut.category', '=', 'PARENT')
+      .where('m.contact_mobile', '=', mob)
+      .execute();
+  /** The student's campus wallet and its VAN (services/vans.ts). */
+  const vanOf = async (memberId: string) => {
+    const w = await f.t.db
+      .selectFrom('wallets as w')
+      .innerJoin('member_profiles as m', 'm.id', 'w.owner_profile_id')
+      .select(['w.id', 'w.wallet_no'])
+      .where('m.public_id', '=', uuidToBin(memberId))
+      .where('w.kind', '=', 'CAMPUS')
+      .executeTakeFirstOrThrow();
+    return { walletNo: w.wallet_no, van: (await vansOf(f.t.db, [String(w.id)])).get(String(w.id)) };
+  };
+  const approvedMail = () => f.h.email.sent.findLast((m) => m.purpose === 'admission.approved')!;
+  const existingLogin = (name: string, who: string, mob: string) =>
+    `• ${name} (${who}): mobile ${mob} is already registered with RingPe — sign in with your existing login (this mobile number and your password). Please don’t create a new account.`;
+
+  it('approves only the verified primary contact as the student’s parent: the other parents keep their RingPe accounts; a sibling’s parent and a teacher are who they are here (ADM-044/045/018, client 2026-10-27)', async () => {
+    const father = randomMobile();
+    const mother = randomMobile();
+    const id = await readyToApprove('Aarav', {
+      father: person('Ramesh Hegde', father, `ramesh.${father}@example.in`),
+      mother: person('Asha Hegde', mother, `asha.${mother}@example.in`),
+      primary: 'FATHER',
+      contact: father,
+    });
+    // An application submitted before codes were asked: verified at the console before approval.
+    await f.t.db
+      .updateTable('admission_applications')
+      .set({ contact_verified_mobile: null, contact_verified_at: null })
+      .where('public_id', '=', uuidToBin(id))
+      .execute();
+    const before = await detailOf(id);
+    expect(before).toMatchObject({
+      status: 'SUBMITTED',
+      paymentStatus: 'CONFIRMED',
+      contactVerified: false,
+    });
+    const refused = await approveNow(id, before.version);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('ADM.CONTACT_NOT_VERIFIED');
+    const verified = await verifyAtDesk(id, father);
+    const ok = await approveNow(id, verified.version);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    const aarav = ok.body.memberId as string;
+    const linked = await parentsOf(aarav);
+    expect(linked.map((x) => [x.relation, x.contact_mobile, x.category])).toEqual([
+      ['FATHER', father, 'PARENT'],
+    ]);
+    // The mother: her RingPe account and her login details in the approval e-mail, no profile here.
+    const motherAccount = await f.t.db
+      .selectFrom('platform_accounts')
+      .select('id')
+      .where('mobile', '=', mother)
+      .executeTakeFirstOrThrow();
+    const motherHere = () =>
+      f.t.db
+        .selectFrom('member_profiles')
+        .select('id')
+        .where('institution_id', '=', f.school.rowId)
+        .where((eb) =>
+          eb.or([
+            eb('contact_mobile', '=', mother),
+            eb('account_id', '=', String(motherAccount.id)),
+          ]),
+        )
+        .execute();
+    expect(await motherHere()).toEqual([]);
+    const mail = approvedMail();
+    expect(mail.text).toMatch(
+      new RegExp(`Asha Hegde \\(mother\\): mobile ${mother}, one-time password \\S+`),
+    );
+    expect(mail.text).toMatch(
+      new RegExp(`Ramesh Hegde \\(father\\): mobile ${father}, one-time password \\S+`),
+    );
+    // The student's wallet has its VAN: the school's code and the wallet number.
+    const van = await vanOf(aarav);
+    expect(van.van?.van).toBe(`${van.van?.code.code}${van.walletNo}`);
+
+    // A brother, the same father the contact: his profile here is linked again, not made twice; both
+    // parents have accounts now, so the e-mail tells them to sign in with their existing login.
+    const ishaan = await readyToApprove('Ishaan', {
+      father: person('Ramesh Hegde', father, `ramesh.${father}@example.in`),
+      mother: person('Asha Hegde', mother),
+      primary: 'FATHER',
+      contact: father,
+    });
+    const ok2 = await approveNow(ishaan);
+    expect(ok2.status, JSON.stringify(ok2.body)).toBe(200);
+    expect((await parentsOf(ok2.body.memberId)).map((x) => String(x.id))).toEqual([
+      String(linked[0]!.id),
+    ]);
+    expect(await parentProfilesOn(father)).toHaveLength(1);
+    expect(await motherHere()).toEqual([]);
+    const mail2 = approvedMail().text;
+    expect(mail2).toContain(existingLogin('Ramesh Hegde', 'father', father));
+    expect(mail2).toContain(existingLogin('Asha Hegde', 'mother', mother));
+    expect(mail2).toContain('Sign in to the RingPe app with your existing login.');
+    expect(mail2).not.toContain('one-time password');
+
+    // A teacher here who is the mother and the contact: a Parent profile under her own account.
+    const teacher = await f.payer('Shobha', 0);
+    const kabir = await readyToApprove('Kabir', {
+      father: person('Mahesh Rao', randomMobile()),
+      mother: person('Shobha Rao', teacher.mobile, `shobha.${teacher.mobile}@example.in`),
+      primary: 'MOTHER',
+      contact: teacher.mobile,
+    });
+    const ok3 = await approveNow(kabir);
+    expect(ok3.status, JSON.stringify(ok3.body)).toBe(200);
+    const kabirs = await parentsOf(ok3.body.memberId);
+    expect(kabirs.map((x) => [x.relation, x.category, String(x.account_id)])).toEqual([
+      ['MOTHER', 'PARENT', teacher.accountId],
+    ]);
+    expect(String(kabirs[0]!.id)).not.toBe(teacher.rowId);
+    expect(
+      await f.t.db
+        .selectFrom('member_profiles')
+        .select('status')
+        .where('id', '=', teacher.rowId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ status: 'ACTIVE' });
+  });
+
+  it('links the verified contact to the sibling’s parent on that mobile though the form spells the name otherwise (client 2026-10-27: members.service guardians[].verified)', async () => {
+    // A sibling enrolled earlier, the father on file as "Guardian Rao".
+    const mob = randomMobile();
+    await f.ward('Rohan', mob);
+    const [onFile] = await parentProfilesOn(mob);
+    expect(onFile).toBeDefined();
+    const id = await readyToApprove('Dhruv', {
+      father: person('Prakash Rao', mob, `prakash.${mob}@example.in`),
+      mother: person('Sudha Rao', randomMobile()),
+      primary: 'FATHER',
+      contact: mob,
+    });
+    const ok = await approveNow(id);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect((await parentsOf(ok.body.memberId)).map((x) => String(x.id))).toEqual([
+      String(onFile!.id),
+    ]);
+    expect(await parentProfilesOn(mob)).toHaveLength(1);
+  });
+
+  it('admits a child whose primary contact belongs to another school: a Parent profile here under the same account, the student’s wallet with its VAN (BR-01 lifted, client 2026-10-27)', async () => {
+    const plans = (await request(f.app).get('/api/v1/ops/plans').set(f.ops)).body.items as {
+      id: string;
+    }[];
+    const other = await request(f.app)
+      .post('/api/v1/ops/institutions')
+      .set(f.ops)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        name: `Second School ${randomInt(0, 1e9)}`,
+        address: 'Car Street, Mangaluru',
+        city: 'Mangaluru',
+        primaryContact: {
+          name: 'Meera Shetty',
+          email: `office.${randomInt(0, 1e9)}@second.example.in`,
+          mobile: '9845099999',
+        },
+        adminEmail: (await f.account('MEERA')).email,
+        planId: plans[0]!.id,
+      });
+    expect(other.status, JSON.stringify(other.body)).toBe(201);
+    const otherRow = String(
+      (
+        await f.t.db
+          .selectFrom('institutions')
+          .select('id')
+          .where('public_id', '=', uuidToBin(other.body.id as string))
+          .executeTakeFirstOrThrow()
+      ).id,
+    );
+    // The mother: her own RingPe account, and a Parent profile at the other school.
+    const mob = randomMobile();
+    await f.signUp(mob, 'Geetha');
+    const account = String(
+      (
+        await f.t.db
+          .selectFrom('platform_accounts')
+          .select('id')
+          .where('mobile', '=', mob)
+          .executeTakeFirstOrThrow()
+      ).id,
+    );
+    const at = new Date();
+    const type = await f.t.db
+      .insertInto('user_types')
+      .values({
+        public_id: newPublicIdPair().bin,
+        institution_id: otherRow,
+        name: 'Parent',
+        category: 'PARENT',
+        created_by: null,
+        created_at: at,
+        updated_at: at,
+      })
+      .executeTakeFirstOrThrow();
+    const elsewhere = await membersRepository.insert(f.t.db, {
+      publicId: newPublicIdPair().bin,
+      institutionId: otherRow,
+      accountId: account,
+      userTypeId: String(type.insertId),
+      departmentId: null,
+      firstName: 'Geetha',
+      lastName: 'Rao',
+      gender: 'FEMALE',
+      dateOfBirth: null,
+      contactMobile: mob,
+      contactEmail: null,
+      admissionNo: null,
+      employeeNo: null,
+      joinedOn: null,
+      by: null,
+    });
+    const id = await readyToApprove('Kavin', {
+      father: person('Naveen Rao', randomMobile()),
+      mother: person('Geetha Rao', mob, `geetha.${mob}@example.in`),
+      primary: 'MOTHER',
+      contact: mob,
+    });
+    // At submission her own account is the one the admission names — none is kept from her.
+    expect(
+      (
+        await f.t.db
+          .selectFrom('admission_accounts as aa')
+          .innerJoin('admission_applications as a', 'a.id', 'aa.application_id')
+          .select(['aa.account_id', 'aa.created'])
+          .where('a.public_id', '=', uuidToBin(id))
+          .where('aa.person', '=', 'MOTHER')
+          .execute()
+      ).map((l) => [String(l.account_id), Number(l.created)]),
+    ).toEqual([[account, 0]]);
+    const ok = await approveNow(id);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    const linked = await parentsOf(ok.body.memberId);
+    expect(
+      linked.map((x) => [x.relation, x.category, String(x.account_id), x.contact_mobile]),
+    ).toEqual([['MOTHER', 'PARENT', account, mob]]);
+    expect(String(linked[0]!.id)).not.toBe(elsewhere);
+    const kept = await f.t.db
+      .selectFrom('member_profiles')
+      .select(['institution_id', 'status'])
+      .where('id', '=', elsewhere)
+      .executeTakeFirstOrThrow();
+    expect([String(kept.institution_id), kept.status]).toEqual([otherRow, 'ACTIVE']);
+    const van = await vanOf(ok.body.memberId);
+    expect(van.van?.van).toBe(`${van.van?.code.code}${van.walletNo}`);
+    expect(van.van?.institutionId).toBe(f.school.rowId);
+    expect(approvedMail().text).toContain(existingLogin('Geetha Rao', 'mother', mob));
   });
 });

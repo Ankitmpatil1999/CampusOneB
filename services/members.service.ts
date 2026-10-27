@@ -5,10 +5,10 @@
  * - The list is per tab (students, parents, staff & teachers, merchants), filtered by search,
  *   grade and section for the current year, user type, department, status and filterable custom
  *   fields; paged by name.
- * - A person belongs to at most one institution (BR-01): a mobile number registered with another
- *   institution is refused. A profile links to the person's RingPe account when there is one;
- *   otherwise it keeps the contact mobile and links when that number signs up. Students may have
- *   no phone (BR-02).
+ * - A person may belong to several institutions (client 2026-10-27, BR-01 lifted): a mobile used at
+ *   another institution joins here too, and nothing of the other institution is shown. A profile
+ *   links to the person's RingPe account when there is one; otherwise it keeps the contact mobile
+ *   and links when that number signs up. Students may have no phone (BR-02).
  * - Members are never deleted (CR-08): Active, Inactive or Suspended. Deactivating and lifting are
  *   immediate; a suspension and a de-link go to a checker — except an Institution Administrator's
  *   own request, which applies directly (Q9, ADR-0015, setting `mkr.adminSelfApply`). Sessions end
@@ -126,6 +126,13 @@ export interface OnboardInput {
         readonly mobile?: string | undefined;
         readonly email?: string | null | undefined;
         readonly relation: (typeof GUARDIAN_RELATIONS)[number];
+        /**
+         * Internal (admission approval, client 2026-10-27): the admission's primary contact, whose
+         * mobile the family proved with a code. The school's Parent profile on that mobile is
+         * theirs whatever its name, and a staff member here on it gets a Parent profile under the
+         * same account. Not accepted from a request body.
+         */
+        readonly verified?: boolean | undefined;
       }[]
     | undefined;
   /** Parents: their children (student member ids). */
@@ -676,21 +683,17 @@ export class MembersService {
   }
 
   // --- IDN-047 ------------------------------------------------------------------------------------
-  /** Step 1 of onboarding: is this mobile free to join here (BR-01)? */
+  /**
+   * Step 1 of onboarding: who this mobile is here. A mobile used at another institution joins too
+   * (client 2026-10-27: a person may belong to several institutions); `elsewhere` says it is used
+   * at another one, which is never named.
+   */
   async eligibility(p: Principal, input: { mobile: string }) {
     const inst = await this.own(p);
     const profiles = await repo.profilesOfMobile(this.deps.db, input.mobile);
     const elsewhere = profiles.some((x) => String(x.institution_id) !== String(inst.id));
     const here = profiles.filter((x) => String(x.institution_id) === String(inst.id));
     const account = await accountRepository.findByMobile(this.deps.db, input.mobile);
-    if (elsewhere) {
-      return {
-        eligible: false,
-        code: 'IDN.MOBILE_IN_OTHER_INSTITUTION',
-        account: Boolean(account),
-        profiles: [],
-      };
-    }
     return {
       eligible: true,
       code: here.length
@@ -699,6 +702,7 @@ export class MembersService {
           ? 'IDN.ACCOUNT_EXISTS'
           : 'IDN.NEW_PERSON',
       account: Boolean(account),
+      elsewhere,
       profiles: here.map((x) => ({
         id: binToUuid(x.public_id),
         category: x.category,
@@ -716,19 +720,18 @@ export class MembersService {
    * knowingly: the family (its children here, its parents, and the parents and address as the
    * latest admission of one of its children had them), or a staff member working here (a teacher
    * who is also a parent). Staff screens only: it shows a family's details. Aadhaar numbers and PANs
-   * are never given back.
+   * are never given back. Profiles at other institutions play no part (client 2026-10-27: a person
+   * may belong to several institutions; another institution's data is never shown).
    */
   async familyLookup(p: Principal, input: { mobile: string }) {
     const inst = await this.own(p);
     const db = this.deps.db;
     const mobile = input.mobile;
-    const all = await repo.profilesOfMobile(db, mobile);
+    const here = (await repo.profilesOfMobile(db, mobile)).filter(
+      (x) => String(x.institution_id) === String(inst.id),
+    );
     const account = Boolean(await accountRepository.findByMobile(db, mobile));
     const none = { mobile, account, family: null, staff: null };
-    if (all.some((x) => String(x.institution_id) !== String(inst.id))) {
-      return { ...none, status: 'OTHER_INSTITUTION' as const };
-    }
-    const here = all.filter((x) => String(x.institution_id) === String(inst.id));
 
     // A staff member working here on this mobile.
     const staffRow = here.find(
@@ -945,21 +948,52 @@ export class MembersService {
     };
   }
 
-  /** BR-01 inside a transaction: the mobile's account, refused when it belongs elsewhere. */
-  private async mobileFor(
+  /**
+   * The mobile's RingPe account, if any — it may belong to other institutions too (client
+   * 2026-10-27: BR-01 lifted).
+   */
+  private async mobileFor(trx: Kysely<Database>, mobile: string) {
+    const account = await accountRepository.findByMobile(trx, mobile);
+    return account ? String(account.id) : null;
+  }
+
+  /**
+   * The account a guardian's profile goes under: the mobile's — or, for the admission's verified
+   * primary contact (client 2026-10-27), that of a staff member here on the mobile, so a teacher who
+   * is also a parent stays one account.
+   */
+  private async guardianAccount(
     trx: Kysely<Database>,
     institutionId: string,
     mobile: string,
-    field: string,
+    verified: boolean,
   ) {
-    const profiles = await repo.profilesOfMobile(trx, mobile);
-    if (profiles.some((x) => String(x.institution_id) !== String(institutionId))) {
-      throw new CustomAPIError(409, 'IDN.MOBILE_IN_OTHER_INSTITUTION', {
-        errors: [{ field, code: 'IDN.MOBILE_IN_OTHER_INSTITUTION' }],
-      });
+    if (verified) {
+      const staff = (await this.adultsOn(trx, institutionId, mobile)).find(
+        (x) => STAFF_CATEGORIES.includes(x.category) && x.account_id !== null,
+      );
+      if (staff) return String(staff.account_id);
     }
-    const account = await accountRepository.findByMobile(trx, mobile);
-    return account ? String(account.id) : null;
+    return this.mobileFor(trx, mobile);
+  }
+
+  /**
+   * The institution's Parent profile on this mobile, whatever its name (the active one first, then
+   * the oldest): the admission's primary contact proved the mobile with a code (client 2026-10-27).
+   */
+  private async parentOn(trx: Kysely<Database>, institutionId: string, mobile: string) {
+    const r = await trx
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .leftJoin('platform_accounts as a', 'a.id', 'm.account_id')
+      .select('m.id')
+      .where('m.institution_id', '=', institutionId)
+      .where('ut.category', '=', 'PARENT')
+      .where((eb) => eb.or([eb('m.contact_mobile', '=', mobile), eb('a.mobile', '=', mobile)]))
+      .orderBy(sql`m.status = 'ACTIVE'`, 'desc')
+      .orderBy('m.id')
+      .executeTakeFirst();
+    return r ? String(r.id) : null;
   }
 
   /**
@@ -1117,7 +1151,7 @@ export class MembersService {
     } else if (mobile) {
       await this.holderCheck(trx, inst.id, mobile, input.firstName, input.lastName, 'mobile');
     }
-    let accountId = mobile ? await this.mobileFor(trx, inst.id, mobile, 'mobile') : null;
+    let accountId = mobile ? await this.mobileFor(trx, mobile) : null;
     let contactMobile = mobile;
     if (student && !mobile && input.guardians?.[0]) {
       // A child without a phone sits under the primary contact's mobile and account (BR-02, CR-04).
@@ -1128,7 +1162,7 @@ export class MembersService {
         accountId = gp?.account_id ? String(gp.account_id) : null;
       } else if (g.mobile) {
         contactMobile = g.mobile;
-        accountId = await this.mobileFor(trx, inst.id, g.mobile, 'guardians.0.mobile');
+        accountId = await this.guardianAccount(trx, inst.id, g.mobile, Boolean(g.verified));
       }
     }
     const admissionNo = input.admissionNo?.trim() || null;
@@ -1203,7 +1237,10 @@ export class MembersService {
       const linked = new Set<string>();
       for (const [i, g] of (input.guardians ?? []).entries()) {
         let guardianId: string;
-        if (!g.memberId && g.mobile) {
+        // The admission's verified primary contact holds the mobile (client 2026-10-27): no name
+        // has to match the school's records of it.
+        const verified = Boolean(g.verified) && !g.memberId && !!g.mobile;
+        if (!g.memberId && g.mobile && !verified) {
           await this.holderCheck(
             trx,
             inst.id,
@@ -1215,7 +1252,9 @@ export class MembersService {
         }
         const sibling =
           !g.memberId && g.mobile
-            ? await this.parentOf(trx, inst.id, g.mobile, g.firstName, g.lastName)
+            ? verified
+              ? await this.parentOn(trx, inst.id, g.mobile)
+              : await this.parentOf(trx, inst.id, g.mobile, g.firstName, g.lastName)
             : null;
         if (sibling) {
           // A brother's or sister's parent is a member here already (the same mobile): the child is
@@ -1239,7 +1278,7 @@ export class MembersService {
               { field: `guardians.${i}.mobile`, code: 'VALIDATION.REQUIRED' },
             ]);
           }
-          const gAccount = await this.mobileFor(trx, inst.id, g.mobile, `guardians.${i}.mobile`);
+          const gAccount = await this.guardianAccount(trx, inst.id, g.mobile, verified);
           const gPub = newPublicIdPair();
           guardianId = await repo.insert(trx, {
             publicId: gPub.bin,
@@ -1448,7 +1487,7 @@ export class MembersService {
       });
     }
     const email = input.email.trim().toLowerCase();
-    let accountId = await this.mobileFor(trx, inst.id, input.mobile, 'mobile');
+    let accountId = await this.mobileFor(trx, input.mobile);
     if (!accountId) {
       if (await accountRepository.emailInUse(trx, email)) {
         throw new ValidationError([{ field: 'email', code: 'IDN.EMAIL_TAKEN' }]);
@@ -1477,6 +1516,9 @@ export class MembersService {
           must_change: 1,
         })
         .execute();
+      // The profiles kept for this mobile — here or at another institution (client 2026-10-27) —
+      // are this account's now, as when someone signs up.
+      await repo.linkByMobile(trx, accountId, input.mobile);
     }
     const employeeNo = input.employeeNo?.trim() || (await repo.nextEmployeeNo(trx, inst.id));
     if (await repo.employeeTaken(trx, inst.id, employeeNo)) {

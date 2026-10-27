@@ -13,6 +13,7 @@ import {
   socialCallbackSchema,
   socialStartSchema,
 } from '../schemas/member-auth.schema';
+import type { InstitutionItem } from '../services/institution-logo';
 import type { AccountSummary, MemberAuthService } from '../services/member-auth.service';
 import type { IssuedChallenge, OtpService } from '../services/otp.service';
 import type { SessionTokens } from '../services/session.service';
@@ -29,8 +30,21 @@ const challenge = (c: IssuedChallenge) => ({
   ...(c.testCode ? { testCode: c.testCode } : {}),
 });
 
-/** The member app keeps its tokens in Keychain / Keystore; they travel in the body only. */
-const session = (res: Response, t: SessionTokens, account: AccountSummary, status = 200) => {
+/**
+ * The member app keeps its tokens in Keychain / Keystore; they travel in the body only. With them,
+ * the institutions of the account (client 2026-10-27): the app asks which one to open when there
+ * are two or more.
+ */
+const session = (
+  res: Response,
+  r: {
+    tokens: SessionTokens;
+    account: AccountSummary;
+    institutions: readonly InstitutionItem[];
+  },
+  status = 200,
+) => {
+  const t = r.tokens;
   res.setHeader('Cache-Control', 'no-store');
   res.status(status).json({
     sessionId: t.sessionId,
@@ -38,7 +52,8 @@ const session = (res: Response, t: SessionTokens, account: AccountSummary, statu
     accessTokenExpiresAt: iso(t.accessTokenExpiresAt),
     refreshToken: t.refreshToken,
     refreshTokenExpiresAt: iso(t.refreshTokenExpiresAt),
-    account,
+    account: r.account,
+    institutions: r.institutions,
   });
 };
 
@@ -78,7 +93,7 @@ export function memberAuthController(
     }),
     signupComplete: wrap(async (req, res) => {
       const r = await service.completeSignup(signupCompleteSchema.parse(req.body), client(req));
-      session(res, r.tokens, r.account, 201);
+      session(res, r, 201);
     }),
     resend: wrap(async (req, res) => {
       const body = resendSchema.parse(req.body);
@@ -102,7 +117,7 @@ export function memberAuthController(
         });
         return;
       }
-      session(res, r.tokens, r.account);
+      session(res, r);
     }),
     firstSignIn: wrap(async (req, res) => {
       await service.firstSignIn(firstSignInSchema.parse(req.body ?? {}));
@@ -110,7 +125,7 @@ export function memberAuthController(
     }),
     deviceVerify: wrap(async (req, res) => {
       const r = await service.verifyDevice(deviceVerifySchema.parse(req.body), client(req));
-      session(res, r.tokens, r.account);
+      session(res, r);
     }),
     recoveryStart: wrap(async (req, res) => {
       const r = await service.startRecovery(recoveryStartSchema.parse(req.body));
@@ -149,7 +164,7 @@ export function memberAuthController(
         res.json({ signupTicket: r.signupTicket, expiresAt: iso(r.expiresAt), prefill: r.prefill });
         return;
       }
-      session(res, r.tokens, r.account);
+      session(res, r);
     }),
     passwordReset: wrap(async (req, res) => {
       await service.resetPassword(passwordResetSchema.parse(req.body));

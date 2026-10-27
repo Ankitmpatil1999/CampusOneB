@@ -58,9 +58,32 @@ export const accessRepository = {
 
   /**
    * The console context (RNG-IDN-043/044/045): the account's first active, non-student profile in
-   * an active institution that holds at least one active role with a grant.
+   * an active institution that holds at least one active role with a grant — in `institutionId`
+   * (row id) when given (client 2026-10-27: staff may work at several institutions).
    */
-  async consoleContext(db: Db, accountId: string) {
+  async consoleContext(db: Db, accountId: string, institutionId?: string) {
+    let q = this.consoleProfiles(db, accountId);
+    if (institutionId !== undefined) q = q.where('i.id', '=', institutionId);
+    return q.limit(1).executeTakeFirst();
+  },
+
+  /**
+   * Every institution whose console the account may enter (client 2026-10-27), one context each —
+   * its first qualifying profile — in the order of those profiles; the first is consoleContext's.
+   */
+  async consoleContexts(db: Db, accountId: string) {
+    const rows = await this.consoleProfiles(db, accountId).execute();
+    const seen = new Set<string>();
+    return rows.filter((r) => {
+      const key = String(r.institution_id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  },
+
+  /** The account's profiles that open a console (RNG-IDN-043/044/045), oldest first. */
+  consoleProfiles(db: Db, accountId: string) {
     return db
       .selectFrom('member_profiles as p')
       .innerJoin('institutions as i', 'i.id', 'p.institution_id')
@@ -90,18 +113,17 @@ export const accessRepository = {
             .where('r.status', '=', 'ACTIVE'),
         ),
       )
-      .orderBy('p.id')
-      .limit(1)
-      .executeTakeFirst();
+      .orderBy('p.id');
   },
 
   /**
    * The customer portal (SAS-005/006): an active profile holding the Institution Administrator
    * role. The portal stays open while the institution is pending, on trial or suspended, so it can
-   * always go live and pay; only a cancelled institution is closed.
+   * always go live and pay; only a cancelled institution is closed. In `institutionPublicId` when
+   * given: the session's own institution (client 2026-10-27, an administrator of several).
    */
-  async portalContext(db: Db, accountId: string) {
-    return db
+  async portalContext(db: Db, accountId: string, institutionPublicId?: Buffer) {
+    let q = db
       .selectFrom('member_profiles as p')
       .innerJoin('institutions as i', 'i.id', 'p.institution_id')
       .innerJoin('profile_roles as pr', 'pr.profile_id', 'p.id')
@@ -122,10 +144,38 @@ export const accessRepository = {
       .where('p.account_id', '=', accountId)
       .where('p.status', '=', 'ACTIVE')
       .where('r.code', '=', 'INSTITUTION_ADMIN')
-      .where('i.status', '<>', 'CANCELLED')
-      .orderBy('p.id')
-      .limit(1)
-      .executeTakeFirst();
+      .where('i.status', '<>', 'CANCELLED');
+    if (institutionPublicId) q = q.where('i.public_id', '=', institutionPublicId);
+    return q.orderBy('p.id').limit(1).executeTakeFirst();
+  },
+
+  /**
+   * The account's profiles in the member app's order (IDN-013): the account's own and a student's
+   * own login (client 2026-10-23), the account holder's own profile first — a child under the
+   * account (a ward of another profile on it, CR-04) never comes before its parent — then by age.
+   */
+  async memberProfiles(db: Db, accountId: string) {
+    return db
+      .selectFrom('member_profiles as m')
+      .innerJoin('institutions as i', 'i.id', 'm.institution_id')
+      .select([
+        'm.id',
+        'm.public_id',
+        'i.id as institution_id',
+        'i.public_id as institution_public_id',
+        'i.name as institution_name',
+        'i.short_name',
+        'i.city',
+      ])
+      .where((eb) =>
+        eb.or([eb('m.account_id', '=', accountId), eb('m.own_account_id', '=', accountId)]),
+      )
+      .orderBy(
+        sql`EXISTS (SELECT 1 FROM guardianships gw JOIN member_profiles gp ON gp.id = gw.guardian_profile_id
+                    WHERE gw.ward_profile_id = m.id AND gp.account_id = m.account_id)`,
+      )
+      .orderBy('m.id')
+      .execute();
   },
 
   /** RNG-IDN-043: an account with an institution profile does not enter the back office. */

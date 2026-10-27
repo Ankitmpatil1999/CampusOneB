@@ -6,12 +6,16 @@
  * - a brother or sister with the same parent (the same name and mobile) joins that family;
  * - another family's parent on that mobile, or a student given another family's mobile as their
  *   own, is refused (IDN.MOBILE_OTHER_FAMILY) instead of joining the two families on one account;
- * - a teacher who is also a parent is that same person.
+ * - a teacher who is also a parent is that same person;
+ * - what another institution has on a mobile plays no part and is never shown, and an admission's
+ *   verified primary contact is the school's parent on that mobile whatever the name (client
+ *   2026-10-27).
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { adminUrl } from './db';
+import { adminUrl, insertInstitution } from './db';
 import { mobile, schoolFixture, type Payer } from './school';
+import { newPublicIdPair } from '../../utils/idGenerator';
 
 describe.skipIf(!adminUrl)('one family per mobile at a school (client 2026-10-22)', () => {
   let f: Awaited<ReturnType<typeof schoolFixture>>;
@@ -152,5 +156,142 @@ describe.skipIf(!adminUrl)('one family per mobile at a school (client 2026-10-22
     });
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('IDN.MOBILE_OTHER_FAMILY');
+  });
+
+  /** Another institution, where these mobiles are used too (client 2026-10-27). */
+  async function elsewhere(people: { mobile: string; firstName: string; category: string }[]) {
+    const inst = await insertInstitution(f.t.db);
+    for (const p of people) {
+      const type = await f.t.db
+        .insertInto('user_types')
+        .values({
+          public_id: newPublicIdPair().bin,
+          institution_id: inst.id,
+          name: `${p.category} ${randomInt(0, 1e6)}`,
+          category: p.category as never,
+        })
+        .executeTakeFirstOrThrow();
+      await f.t.db
+        .insertInto('member_profiles')
+        .values({
+          public_id: newPublicIdPair().bin,
+          institution_id: inst.id,
+          user_type_id: String(type.insertId),
+          first_name: p.firstName,
+          last_name: 'NAIK',
+          contact_mobile: p.mobile,
+        })
+        .execute();
+    }
+  }
+
+  it('leaves out, and never shows, what another institution has on the mobile (client 2026-10-27)', async () => {
+    const theirs = mobile();
+    await elsewhere([
+      { mobile: theirs, firstName: 'SUNIL', category: 'PARENT' },
+      { mobile: family, firstName: 'KIRAN', category: 'STUDENT' },
+      { mobile: family, firstName: 'MANJULA', category: 'PARENT' },
+    ]);
+    // Known only elsewhere: new here, no OTHER_INSTITUTION any more.
+    const fresh = await lookup(theirs);
+    expect(fresh.status).toBe(200);
+    expect(fresh.body).toEqual({
+      mobile: theirs,
+      status: 'NEW',
+      account: false,
+      family: null,
+      staff: null,
+    });
+    // A family here and there: this school's children and parents only.
+    const known = await lookup(family);
+    expect(known.body.status).toBe('FAMILY');
+    expect(JSON.stringify(known.body)).not.toMatch(/kiran|manjula|naik/i);
+    expect(known.body.family.parents).toHaveLength(1);
+    const eligibility = await request(f.app)
+      .post('/api/v1/console/members/eligibility')
+      .set(f.school.con)
+      .send({ mobile: theirs });
+    expect(eligibility.body).toEqual({
+      eligible: true,
+      code: 'IDN.NEW_PERSON',
+      account: false,
+      elsewhere: true,
+      profiles: [],
+    });
+  });
+
+  it("links an admission's verified primary contact to the school's parent on that mobile, whatever the name (client 2026-10-27)", async () => {
+    const members = f.h.services.members;
+    const inst = await f.t.db
+      .selectFrom('institutions')
+      .select(['id', 'short_name'])
+      .where('id', '=', f.school.rowId)
+      .executeTakeFirstOrThrow();
+    const make = (
+      firstName: string,
+      g: { firstName: string; lastName: string; mobile: string; verified?: boolean },
+    ) =>
+      f.t.db.transaction().execute((trx) =>
+        members.createMember(
+          trx,
+          { id: String(inst.id), short_name: inst.short_name },
+          newPublicIdPair(),
+          {
+            userTypeId: student.typeId,
+            firstName,
+            lastName: 'Rao',
+            gender: 'MALE',
+            dateOfBirth: '2017-03-01',
+            admissionNo: `VER/${randomInt(0, 1e9)}`,
+            sectionId: student.sectionId,
+            guardians: [
+              { ...g, email: `${firstName.toLowerCase()}@example.in`, relation: 'MOTHER' },
+            ],
+          },
+          null,
+        ),
+      );
+    // The family's mobile under another name: refused as typed in the console…
+    await expect(
+      make('Rohan', { firstName: 'Latha', lastName: 'Rao', mobile: family }),
+    ).rejects.toMatchObject({
+      code: 'IDN.MOBILE_OTHER_FAMILY',
+    });
+    // …but the admission's verified contact is that family's parent: no second parent profile.
+    const joined = await make('Rohan', {
+      firstName: 'Latha',
+      lastName: 'Rao',
+      mobile: family,
+      verified: true,
+    });
+    expect(joined.guardians).toEqual([]);
+    const after = await lookup(family);
+    expect(after.body.family.parents).toHaveLength(1);
+    expect(after.body.family.children.map((c: { name: string }) => c.name)).toContain('Rohan Rao');
+
+    // A teacher's mobile without a parent profile: a Parent profile under the teacher's account.
+    const meena = await f.payer('Meena', 0);
+    await expect(
+      make('Tara', { firstName: 'Suma', lastName: 'Bhat', mobile: meena.mobile }),
+    ).rejects.toMatchObject({ code: 'IDN.MOBILE_OTHER_FAMILY' });
+    const accounts = async () =>
+      (
+        await f.t.db
+          .selectFrom('platform_accounts')
+          .select('id')
+          .where('mobile', '=', meena.mobile)
+          .execute()
+      ).length;
+    expect(await accounts()).toBe(1);
+    const parent = await make('Tara', {
+      firstName: 'Suma',
+      lastName: 'Bhat',
+      mobile: meena.mobile,
+      verified: true,
+    });
+    expect(parent.guardians).toHaveLength(1);
+    const row = await f.profileRow(parent.guardians[0]!);
+    expect(String(row.account_id)).toBe(meena.accountId);
+    expect(await accounts()).toBe(1);
   });
 });

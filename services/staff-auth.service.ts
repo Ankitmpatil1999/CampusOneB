@@ -30,7 +30,7 @@ import { PATTERNS, isValidPassword } from '../utils/validators';
 import type { IssuedChallenge, OtpService } from './otp.service';
 import type { ClientContext, SessionService, SessionTokens } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
-import { logoFileOf, logoPath } from './institution-logo';
+import { institutionItems, logoFileOf, logoPath, type InstitutionItem } from './institution-logo';
 
 export type StaffSurface = 'console' | 'ops' | 'portal';
 
@@ -43,7 +43,15 @@ export interface StaffChallenge extends IssuedChallenge {
 }
 
 export type StaffSignedIn =
-  | { readonly tokens: SessionTokens; readonly name: string }
+  | {
+      readonly tokens: SessionTokens;
+      readonly name: string;
+      /**
+       * Console: the institutions whose console the account may enter, the session's first (client
+       * 2026-10-27: staff may work at several; the apps ask which to open when there are two or more).
+       */
+      readonly institutions?: readonly InstitutionItem[];
+    }
   /** A temporary password (onboarded staff, OI-IDN-20): choose one before the first session. */
   | { readonly passwordChange: { readonly resetToken: string }; readonly name: string };
 
@@ -94,16 +102,22 @@ export class StaffAuthService {
     });
   }
 
-  /** May this account enter this surface now? (6.4 checks after the password.) */
+  /**
+   * May this account enter this surface now? (6.4 checks after the password.) The console opens at
+   * the first of the institutions it may enter (client 2026-10-27: there may be several).
+   */
   private async eligible(surface: StaffSurface, accountId: string) {
     if (surface === 'console') {
-      const ctx = await accessRepository.consoleContext(this.deps.db, accountId);
-      return ctx ? ({ surface, ctx } as const) : undefined;
+      const contexts = await accessRepository.consoleContexts(this.deps.db, accountId);
+      const ctx = contexts[0];
+      return ctx ? ({ surface, ctx, contexts } as const) : undefined;
     }
     if (surface === 'portal') {
       const ctx = await accessRepository.portalContext(this.deps.db, accountId);
       return ctx ? ({ surface, ctx } as const) : undefined;
     }
+    // The back office stays apart: an account with an institution profile never enters it, though
+    // a person may now belong to several institutions (client 2026-10-27).
     if (await accessRepository.hasInstitutionProfile(this.deps.db, accountId)) return undefined;
     const op = await accessRepository.operatorContext(this.deps.db, accountId);
     return op ? ({ surface, op } as const) : undefined;
@@ -158,21 +172,22 @@ export class StaffAuthService {
       });
     }
     await accountRepository.resetFailures(this.deps.db, account.id);
-    // An institution the back office registered for this (verified) e-mail before the account
-    // existed: the account becomes its administrator now (client 2026-10-06).
+    // Institutions the back office registered for this (verified) e-mail before the account
+    // existed: the account becomes their administrator now (client 2026-10-06; every one of them,
+    // client 2026-10-27).
     if (
       surface !== 'ops' &&
       account.status === 'ACTIVE' &&
       account.email &&
       account.email_verified_at
     ) {
-      const joined = await institutionsRepository.claimPendingAdministrator(this.deps.db, {
+      const claimed = await institutionsRepository.claimPendingAdministrator(this.deps.db, {
         id: String(account.id),
         email: account.email,
         firstName: account.first_name,
         lastName: account.last_name,
       });
-      if (joined) {
+      for (const joined of claimed) {
         await recordAudit(this.deps.db, {
           institutionId: String(joined.institution_id),
           action: 'ADMINISTRATOR_LINKED',
@@ -297,7 +312,66 @@ export class StaffAuthService {
       surface,
       ...(opts.staffApp ? { client: 'staff-app' } : {}),
     });
-    return { tokens, name: fullName(account) };
+    return {
+      tokens,
+      name: fullName(account),
+      ...(access.surface === 'console'
+        ? { institutions: await institutionItems(this.deps.db, access.contexts) }
+        : {}),
+    };
+  }
+
+  /**
+   * IDN-094 (client 2026-10-27: staff may work at several institutions): the institutions whose
+   * console the account may enter — one each, in sign-in order — and the session's.
+   */
+  async consoleInstitutions(p: Principal) {
+    const account = await accountRepository.findByPublicId(this.deps.db, uuidToBin(p.subject));
+    if (!account) throw this.refused();
+    const contexts = await accessRepository.consoleContexts(this.deps.db, account.id);
+    return {
+      current: p.institutionId ?? null,
+      institutions: await institutionItems(this.deps.db, contexts),
+    };
+  }
+
+  /**
+   * IDN-095: the console opens another of the account's institutions — the session moves to the
+   * account's console profile there; the next token renewal (web cookies, or the staff app's
+   * IDN-089) carries the institution and that profile's sub-tasks.
+   */
+  async setConsoleInstitution(p: Principal, input: { institutionId: string }) {
+    const account = await accountRepository.findByPublicId(this.deps.db, uuidToBin(p.subject));
+    if (!account) throw this.refused();
+    const inst = await institutionsRepository.byPublicId(
+      this.deps.db,
+      uuidToBin(input.institutionId),
+    );
+    const ctx = inst
+      ? await accessRepository.consoleContext(this.deps.db, account.id, String(inst.id))
+      : undefined;
+    if (!ctx) throw new CustomAPIError(404, 'IDN.INSTITUTION_NOT_LINKED');
+    await this.deps.db
+      .updateTable('sessions')
+      .set({ institution_id: String(ctx.institution_id), profile_id: String(ctx.profile_id) })
+      .where('public_id', '=', uuidToBin(p.sessionId))
+      .where('account_id', '=', account.id)
+      .where('surface', '=', 'CONSOLE')
+      .where('ended_at', 'is', null)
+      .execute();
+    const institutionId = binToUuid(ctx.institution_public_id);
+    const profileId = binToUuid(ctx.profile_public_id);
+    await recordAudit(this.deps.db, {
+      institutionId: String(ctx.institution_id),
+      action: 'ACTIVE_INSTITUTION_CHANGED',
+      entityType: 'platform_account',
+      entityRef: binToUuid(account.public_id),
+      before: { institution: p.institutionId ?? null },
+      after: { institution: institutionId, profile: profileId },
+      actor: { type: 'console', ref: p.subject },
+    });
+    this.deps.loggers.security.info('auth.console_institution_changed', {});
+    return { institutionId, profileId };
   }
 
   /** IDN-089: the staff app renews its console session with the refresh token in the body. */
@@ -453,11 +527,14 @@ export class StaffAuthService {
   /** SAS-044: who is signed in to the customer portal — name and the institution. */
   async portalSession(p: Principal) {
     const account = await accountRepository.findByPublicId(this.deps.db, uuidToBin(p.subject));
-    if (!account) throw this.refused();
-    const ctx = await accessRepository.portalContext(this.deps.db, account.id);
-    if (!ctx || !p.institutionId || binToUuid(ctx.institution_public_id) !== p.institutionId) {
-      throw this.refused();
-    }
+    if (!account || !p.institutionId || !isUuid(p.institutionId)) throw this.refused();
+    // The session's institution, not the account's first (client 2026-10-27: several institutions).
+    const ctx = await accessRepository.portalContext(
+      this.deps.db,
+      account.id,
+      uuidToBin(p.institutionId),
+    );
+    if (!ctx) throw this.refused();
     return {
       name: fullName(account),
       email: account.email,

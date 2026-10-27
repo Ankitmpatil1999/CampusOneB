@@ -516,6 +516,18 @@ export const IDENTITY_MESSAGES = [
     batch: 2,
     refs: ['OI-IDN-02', 'prototype au.next'],
   },
+  {
+    key: 'IDN.INSTITUTION_NOT_LINKED',
+    register: null,
+    srsText: null,
+    class: 'N',
+    type: 'error',
+    http: 404,
+    en: "This institution isn't on your account.",
+    approval: 'approved',
+    batch: 2,
+    refs: ['client 2026-10-27 (one person, several institutions)', 'IDN-093', 'IDN-095'],
+  },
 ] as const satisfies readonly MessageDefinition[];
 
 export type IdentityMessageKey = (typeof IDENTITY_MESSAGES)[number]['key'];

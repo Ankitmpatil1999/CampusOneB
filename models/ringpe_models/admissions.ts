@@ -81,6 +81,12 @@ export interface AdmissionApplicationsTable {
   primary_relation: 'FATHER' | 'MOTHER' | 'GUARDIAN' | null;
   primary_mobile: string | null;
   primary_email: string | null;
+  /**
+   * Migration 0090: the mobile the primary contact's code was verified for, and when (client
+   * 2026-10-27). Verified only while it is still primary_mobile.
+   */
+  contact_verified_mobile: string | null;
+  contact_verified_at: NullableTimestamp;
   /** Migration 0069: the primary contact's Aadhaar and PAN — no longer written (0072). */
   primary_aadhaar_enc: Buffer | null;
   primary_aadhaar_last4: string | null;
@@ -202,7 +208,8 @@ export interface AdmissionImportsTable {
 }
 
 /** Whose RingPe account each person on an application has (0087, client 2026-10-23). */
-export type AdmissionAccountPerson = 'STUDENT' | 'FATHER' | 'MOTHER' | 'GUARDIAN' | 'LOCAL_GUARDIAN';
+export type AdmissionAccountPerson =
+  'STUDENT' | 'FATHER' | 'MOTHER' | 'GUARDIAN' | 'LOCAL_GUARDIAN';
 export interface AdmissionAccountsTable {
   id: Generated<string>;
   application_id: Ref;

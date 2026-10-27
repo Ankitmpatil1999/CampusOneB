@@ -123,6 +123,10 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ADM.CLASS_INVALID': 'Please select a valid admission standard',
   'ADM.CONSENT_REQUIRED':
     'Agree that the information collected will be used to register your account in RingPe.',
+  'ADM.CONTACT_MOBILE_MISSING':
+    'Save the primary contact’s mobile number first: the code is sent to it.',
+  'ADM.CONTACT_NOT_VERIFIED':
+    'Verify the primary contact’s mobile number first: send a code to it and enter the code.',
   'ADM.DECLARATION': 'Declaration must be accepted',
   'ADM.DUPLICATE':
     'An application for this child already exists for {year}. Resume it instead of starting a new one.',
@@ -502,6 +506,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'IDN.ID_DOC_NUMBER_INVALID': 'Enter the number as printed on the document.',
   'IDN.ID_DOC_TYPE_INVALID': 'Invalid ID proof name. Allowed values are: {types}',
   'IDN.IFSC_INVALID': 'IFSC Code is Not Valid. Please Enter a Valid IFSC Code.',
+  'IDN.INSTITUTION_NOT_LINKED': "This institution isn't on your account.",
   'IDN.LANGUAGE_INVALID': 'Invalid or inactive language code: {code}',
   'IDN.LAST_ROLE_ADMIN':
     'At least one enabled role must keep “Roles, tasks and accounts”, or nobody could restore access.',
@@ -857,7 +862,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
     'A plan change request is already with RingPe. Withdraw it to send another.',
   'SAS.SAC_FORMAT': 'Enter the 6-digit SAC code, for example 998314',
   'SAS.SIGNUP_ACCOUNT_IN_USE':
-    "This RingPe account is already part of an institution. An account can belong to only one institution, so the administrator needs an account that isn't linked to a school yet.",
+    "This RingPe account is used in RingPe's back office, so it can't administer an institution. Sign up with another account.",
   'SAS.SIGNUP_EXPIRED': 'This sign-up has expired. Verify the mobile number again.',
   'SAS.SIGNUP_NO_ACCOUNT':
     'No RingPe account uses this number. The administrator signs up with their own RingPe account — create one in the RingPe app first; it takes two minutes.',

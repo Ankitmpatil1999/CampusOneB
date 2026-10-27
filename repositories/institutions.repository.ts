@@ -593,6 +593,11 @@ export const institutionsRepository = {
    * back office registered before its administrator had a RingPe account).
    */
   async pendingAdministrator(db: Db, email: string) {
+    return this.pendingAdministrators(db, email).executeTakeFirst();
+  },
+
+  /** Every administrator profile waiting for an account with this e-mail, oldest first. */
+  pendingAdministrators(db: Db, email: string) {
     return db
       .selectFrom('member_profiles as m')
       .innerJoin('profile_roles as pr', 'pr.profile_id', 'm.id')
@@ -603,50 +608,37 @@ export const institutionsRepository = {
       .where('m.contact_email', '=', email.trim().toLowerCase())
       .where('r.code', '=', 'INSTITUTION_ADMIN')
       .where('i.status', '!=', 'CANCELLED')
-      .orderBy('m.id')
-      .executeTakeFirst();
+      .orderBy('m.id');
   },
 
   /**
-   * Gives the waiting administrator profile to an account whose e-mail is verified. The account
-   * must not belong to an institution or the back office already (BR-01); returns the
-   * institution, or null when there is nothing to link.
+   * Gives the administrator profiles waiting for this e-mail — every one of them (client
+   * 2026-10-27: a person may belong to, and administer, several institutions) — to an account whose
+   * e-mail is verified. A back-office account never takes one. Returns the institutions linked
+   * (none: nothing to link).
    */
   async claimPendingAdministrator(
     db: Db,
     account: { id: string; email: string; firstName: string; lastName: string | null },
   ) {
-    const pending = await this.pendingAdministrator(db, account.email);
-    if (!pending) return null;
-    if (
-      (await this.hasInstitutionProfile(db, account.id)) ||
-      (await this.isOperator(db, account.id))
-    ) {
-      return null;
+    if (await this.isOperator(db, account.id)) return [];
+    const claimed = [];
+    for (const pending of await this.pendingAdministrators(db, account.email).execute()) {
+      const r = await db
+        .updateTable('member_profiles')
+        .set({
+          account_id: account.id,
+          first_name: account.firstName,
+          last_name: account.lastName,
+          updated_at: sql<Date>`UTC_TIMESTAMP(3)`,
+          row_version: sql<number>`row_version + 1`,
+        })
+        .where('id', '=', pending.id)
+        .where('account_id', 'is', null)
+        .executeTakeFirst();
+      if (Number(r.numUpdatedRows) === 1) claimed.push(pending);
     }
-    const r = await db
-      .updateTable('member_profiles')
-      .set({
-        account_id: account.id,
-        first_name: account.firstName,
-        last_name: account.lastName,
-        updated_at: sql<Date>`UTC_TIMESTAMP(3)`,
-        row_version: sql<number>`row_version + 1`,
-      })
-      .where('id', '=', pending.id)
-      .where('account_id', 'is', null)
-      .executeTakeFirst();
-    return Number(r.numUpdatedRows) === 1 ? pending : null;
-  },
-
-  async hasInstitutionProfile(db: Db, accountId: string) {
-    const r = await db
-      .selectFrom('member_profiles')
-      .innerJoin('institutions', 'institutions.id', 'member_profiles.institution_id')
-      .select(['institutions.name'])
-      .where('member_profiles.account_id', '=', accountId)
-      .executeTakeFirst();
-    return r?.name ?? null;
+    return claimed;
   },
 
   async isOperator(db: Db, accountId: string) {

@@ -5,8 +5,8 @@
  * asks RingPe to change its name or address.
  *
  * - Sign-up uses the administrator's own RingPe account (the one they use in the app), verified by
- *   a code to its mobile; an account that already belongs to an institution is refused (BR-01).
- *   The page is public, so a refusal never names the other institution.
+ *   a code to its mobile; it may already belong to other institutions (client 2026-10-27), but a
+ *   back-office account is refused. The page is public, so nothing names another institution.
  * - The portal reuses the operator's and the console's rules: registration (INS-001), checklist
  *   steps, lifecycle (INS-005), plan changes (SAS-034/035), invoices and transfer reports.
  * - The fee-account step records the account the institution names (masked); the merchant that
@@ -155,8 +155,9 @@ export class PortalService {
   // --- SAS-002 / SAS-003 / SAS-051…053 ---------------------------------------------------------------
   /**
    * The RingPe account of a mobile number, if any. A number without an account may sign up here
-   * (client 2026-10-06: the account no longer has to come from the app first); an account that
-   * already belongs to an institution or the back office is refused (BR-01).
+   * (client 2026-10-06: the account no longer has to come from the app first), and so may one that
+   * already belongs to an institution (client 2026-10-27: a person may belong to several); a
+   * back-office account is refused.
    */
   private async signupAccount(mobile: string) {
     const account = await this.deps.db
@@ -166,10 +167,9 @@ export class PortalService {
       .executeTakeFirst();
     if (!account) return null;
     if (account.status !== 'ACTIVE') throw new CustomAPIError(404, 'SAS.SIGNUP_NO_ACCOUNT');
-    const busy =
-      (await repo.hasInstitutionProfile(this.deps.db, String(account.id))) ||
-      (await repo.isOperator(this.deps.db, String(account.id)));
-    if (busy) throw new CustomAPIError(409, 'SAS.SIGNUP_ACCOUNT_IN_USE');
+    if (await repo.isOperator(this.deps.db, String(account.id))) {
+      throw new CustomAPIError(409, 'SAS.SIGNUP_ACCOUNT_IN_USE');
+    }
     return account;
   }
 
@@ -245,7 +245,7 @@ export class PortalService {
       .select(['id', 'public_id', 'first_name', 'last_name', 'email', 'mobile'])
       .where('id', '=', v.accountId)
       .executeTakeFirstOrThrow();
-    // The account may have joined an institution in the meantime.
+    // The account may have been closed, or given to the back office, in the meantime.
     await this.signupAccount(account.mobile);
     return this.accountToken(account);
   }
@@ -390,7 +390,7 @@ export class PortalService {
       contextHash: this.emailContext(a.publicId),
     });
     if (v.accountId !== String(a.id)) throw new CustomAPIError(401, 'SAS.SIGNUP_EXPIRED');
-    const joined = await this.deps.db.transaction().execute(async (trx) => {
+    const claimed = await this.deps.db.transaction().execute(async (trx) => {
       await trx
         .updateTable('platform_accounts')
         .set({ email_verified_at: this.now() })
@@ -403,12 +403,14 @@ export class PortalService {
         lastName: a.last_name,
       });
     });
-    if (joined) {
+    // Every institution waiting for the e-mail is linked (client 2026-10-27); the oldest is named.
+    const joined = claimed[0];
+    for (const c of claimed) {
       await recordAudit(this.deps.db, {
-        institutionId: String(joined.institution_id),
+        institutionId: String(c.institution_id),
         action: 'ADMINISTRATOR_LINKED',
         entityType: 'institution',
-        entityRef: binToUuid(joined.public_id),
+        entityRef: binToUuid(c.public_id),
         after: { email: a.email, via: 'customer site' },
         actor: { type: 'portal', ref: a.publicId },
       });

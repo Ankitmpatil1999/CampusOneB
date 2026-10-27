@@ -2,10 +2,10 @@
  * Onboarding from a sheet (SRS 6.18, 6.19; IDN-049…052; OI-IDN-21; RNG-GOV-019; prototype c.onboard
  * "Bulk upload"). The institution downloads the template (CSV — Excel opens and saves it), fills one
  * row per person and uploads it. Every row is checked first — user type, department, grade and
- * section, dates, mobile, one institution per person (BR-01), admission numbers in the sheet and
- * already in use, the institution's own fields — and the report shows each rejected row with its
- * reasons. Nothing is created until the upload is committed: all rows (only when none was rejected)
- * or the accepted rows only, in one transaction.
+ * section, dates, mobile (it may be used at another institution too, client 2026-10-27), admission
+ * numbers in the sheet and already in use, the institution's own fields — and the report shows
+ * each rejected row with its reasons. Nothing is created until the upload is committed: all rows
+ * (only when none was rejected) or the accepted rows only, in one transaction.
  *
  * The students' template is the admission form (client 2026-10-19; admission-sheet.ts): a row is
  * checked as the form is, and a committed row is onboarded with an approved application holding the
@@ -444,15 +444,8 @@ export class MemberUploadsService {
         const guardians = this.deps.admissions.guardiansOf(checked.state.data.parents);
         if (guardians.length && !parentType) err('Primary contact', 'ADM.PARENT_TYPE_MISSING');
         const who = { FATHER: 'Father', MOTHER: 'Mother', GUARDIAN: 'Guardian' } as const;
+        // A parent's mobile may be used at another institution too (client 2026-10-27).
         for (const g of guardians) {
-          if (
-            g.mobile &&
-            (await repo.profilesOfMobile(db, g.mobile)).some(
-              (x) => String(x.institution_id) !== String(institutionId),
-            )
-          ) {
-            err(`${who[g.relation]} mobile`, 'IDN.MOBILE_IN_OTHER_INSTITUTION');
-          }
           if (!g.email && parentEmailRequired)
             err(`${who[g.relation]} e-mail`, 'VALIDATION.REQUIRED');
         }
@@ -585,12 +578,7 @@ export class MemberUploadsService {
       const joinedText = cell('Joining date');
       const joined = joinedText ? toDate(joinedText) : null;
       if (joinedText && !joined) err('Joining date', 'VALIDATION.DATE');
-      if (mobile && MOBILE.test(mobile)) {
-        const profiles = await repo.profilesOfMobile(db, mobile);
-        if (profiles.some((x) => String(x.institution_id) !== String(institutionId))) {
-          err('Mobile', 'IDN.MOBILE_IN_OTHER_INSTITUTION');
-        }
-      }
+      // The mobile may be used at another institution too (client 2026-10-27).
       const customRaw = Object.fromEntries(
         fields.map((f) => [f.id, cell(f.label)]).filter(([, v]) => v !== ''),
       );
