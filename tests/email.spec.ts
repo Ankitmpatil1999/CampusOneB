@@ -78,6 +78,63 @@ describe('SMTP sender', () => {
     expect(sent[1]).not.toHaveProperty('attachments');
   });
 
+  it('highlights the details, never inside a link, and leaves the text alone (client 2026-10-26)', () => {
+    const html = emailHtml({
+      subject: 'Application approved',
+      text: 'Application SRGS/2026/000029 for Asha Rao is approved.\nPay at https://x.example.in/pay/SRGS/2026/000029 now.\nMobile 9886110000, one-time password <A1b2>.',
+      sender: 'Sri Rama Grammar School',
+      highlight: ['SRGS/2026/000029', 'Asha Rao', null, '', '9886110000', '<A1b2>'],
+    });
+    const mark = (w: string) => new RegExp(`<strong style="[^"]*color:#1f5eff[^"]*">${w}</strong>`);
+    expect(html).toMatch(mark('SRGS/2026/000029'));
+    expect(html).toMatch(mark('Asha Rao'));
+    expect(html).toMatch(mark('9886110000'));
+    // Escaped before it is marked: the password is shown, never run as markup.
+    expect(html).toMatch(mark('&lt;A1b2&gt;'));
+    // The link is whole and unmarked.
+    expect(html).toContain(
+      '<a href="https://x.example.in/pay/SRGS/2026/000029" style="color:#1f5eff;word-break:break-all">https://x.example.in/pay/SRGS/2026/000029</a>',
+    );
+    // The school signs it, not RingPe; without a logo there is no picture.
+    expect(html).toContain('Sent by Sri Rama Grammar School. This is an automatic message');
+    expect(html).not.toContain('through RingPe');
+    expect(html).not.toContain('cid:');
+  });
+
+  it("puts the school's logo inside the e-mail as an inline picture (client 2026-10-26)", async () => {
+    const sent: Record<string, unknown>[] = [];
+    const sender = smtpSender(smtp, capturingLoggers().loggers, {
+      sendMail: async (o: Record<string, unknown>) => {
+        sent.push(o);
+        return {};
+      },
+    } as never);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await sender.send({
+      to: 'parent@example.in',
+      purpose: 'admission.approved',
+      text: 'Application A/1 is approved.',
+      fromName: 'Sri Rama Grammar School',
+      logo: { content: png, contentType: 'image/png' },
+      highlight: ['A/1'],
+    });
+    const m = sent[0]!;
+    expect(m['text']).toBe('Application A/1 is approved.');
+    expect(m['attachments']).toEqual([
+      {
+        filename: 'logo.png',
+        content: png,
+        contentType: 'image/png',
+        cid: 'school-logo@ringpe',
+        contentDisposition: 'inline',
+      },
+    ]);
+    const html = String(m['html']);
+    expect(html).toContain('<img src="cid:school-logo@ringpe"');
+    expect(html).toContain('Sri Rama Grammar School');
+    expect(html).toMatch(/<strong style="[^"]*">A\/1<\/strong>/);
+  });
+
   it("takes the subject from the communication log's, else from the purpose", async () => {
     const sent: Record<string, unknown>[] = [];
     const sender = smtpSender(smtp, capturingLoggers().loggers, {

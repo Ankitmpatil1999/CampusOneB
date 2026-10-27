@@ -35,6 +35,7 @@ import {
 import { raiseApproval } from './approvals.service';
 import { recordAudit } from './audit.service';
 import { assignStudent } from './fee-assignment';
+import { tellClassTeachers } from './member-notices';
 import { notify } from './notifications.service';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -342,6 +343,15 @@ export class EnrolmentsService {
         { name: nameOf(st.first_name, st.last_name), section: sec.label, year: year.label },
         at,
       );
+      await tellClassTeachers(
+        trx,
+        {
+          institutionId: inst.id,
+          yearId: year.id,
+          placements: [{ studentId: String(st.id), sectionId: sec.id }],
+        },
+        at,
+      );
       await recordAudit(trx, {
         institutionId: inst.id,
         action: 'STUDENT_ENROLLED',
@@ -482,6 +492,15 @@ export class EnrolmentsService {
         inst.id,
         String(e.student_profile_id),
         { name: nameOf(e.first_name, e.last_name), section: to.label, year: year.label },
+        at,
+      );
+      await tellClassTeachers(
+        trx,
+        {
+          institutionId: inst.id,
+          yearId: String(e.year_id),
+          placements: [{ studentId: String(e.student_profile_id), sectionId: to.id }],
+        },
         at,
       );
       await recordAudit(trx, {
@@ -924,6 +943,7 @@ export class EnrolmentsService {
         .where('i.rollover_id', '=', r.id)
         .execute();
       const by = this.by(p);
+      const placed: { studentId: string; sectionId: string }[] = [];
       for (const i of items) {
         if (i.outcome === 'LEFT') {
           await this.change(trx, {
@@ -993,7 +1013,17 @@ export class EnrolmentsService {
           },
           at,
         );
+        placed.push({
+          studentId: String(i.student_profile_id),
+          sectionId: String(i.to_section_id),
+        });
       }
+      // One notice per section for its class teacher, however many students rolled into it.
+      await tellClassTeachers(
+        trx,
+        { institutionId: inst.id, yearId: to.id, placements: placed },
+        at,
+      );
       await trx
         .updateTable('rollovers')
         .set({

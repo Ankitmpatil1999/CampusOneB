@@ -1680,6 +1680,16 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(otpOf('mother')?.[1]).toBe('9845001133');
     const studentOtp = otpOf('student')!;
     expect(studentOtp[1]).toBe('9845001144');
+    // Client 2026-10-26: from the school, not RingPe, with the details a parent looks for marked.
+    const school = await f.t.db
+      .selectFrom('institutions')
+      .select('name')
+      .where('id', '=', String(f.school.rowId))
+      .executeTakeFirstOrThrow();
+    expect(approved.fromName).toBe(school.name);
+    expect(approved.highlight).toEqual(
+      expect.arrayContaining(['ADM/2026/0042', '9845001144', studentOtp[2]]),
+    );
     expect((await accountsOf()).every((a) => a.credentials_sent_at !== null)).toBe(true);
     const mustChange = await f.t.db
       .selectFrom('account_credentials')

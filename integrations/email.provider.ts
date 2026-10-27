@@ -7,7 +7,7 @@
  */
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { Loggers } from '../controllers/logger';
-import { emailHtml, subjectFor } from '../utils/email-layout';
+import { emailHtml, LOGO_CID, subjectFor } from '../utils/email-layout';
 import { logSender, type MessageSender } from './sms.provider';
 
 export interface SmtpSettings {
@@ -50,6 +50,25 @@ export function smtpSender(
     async send(m) {
       const subject = subjectFor(m.purpose, m.subject ?? (m.log ? m.log.subject : null));
       const sender = displayName(m.fromName ?? smtp.fromName);
+      const attachments = [
+        ...(m.attachments ?? []).map((a) => ({
+          filename: a.fileName,
+          content: a.content,
+          contentType: a.contentType,
+        })),
+        // The school's logo travels inside the e-mail (client 2026-10-26).
+        ...(m.logo
+          ? [
+              {
+                filename: `logo.${m.logo.contentType === 'image/png' ? 'png' : 'jpg'}`,
+                content: m.logo.content,
+                contentType: m.logo.contentType,
+                cid: LOGO_CID,
+                contentDisposition: 'inline' as const,
+              },
+            ]
+          : []),
+      ];
       const info = await transport.sendMail({
         from: { name: sender, address: from },
         to: m.to,
@@ -57,16 +76,14 @@ export function smtpSender(
         ...(m.replyTo ? { replyTo: m.replyTo } : {}),
         subject,
         text: m.text,
-        html: emailHtml({ subject, text: m.text, sender }),
-        ...(m.attachments?.length
-          ? {
-              attachments: m.attachments.map((a) => ({
-                filename: a.fileName,
-                content: a.content,
-                contentType: a.contentType,
-              })),
-            }
-          : {}),
+        html: emailHtml({
+          subject,
+          text: m.text,
+          sender,
+          highlight: m.highlight ?? [],
+          withLogo: !!m.logo,
+        }),
+        ...(attachments.length ? { attachments } : {}),
       });
       // The address and content are never logged (they may hold a code or a child's details).
       loggers.app.info('email sent', {

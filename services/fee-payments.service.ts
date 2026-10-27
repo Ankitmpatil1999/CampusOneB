@@ -31,6 +31,7 @@ import { fromMoneyDto, toMoneyDto, type MoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { qrSvg } from '../utils/qr';
 import { recordAudit } from './audit.service';
+import { brandFields, schoolBrand, type LogoFiles } from './school-brand';
 import { tellMembers } from './member-notices';
 import { notificationsRepository } from '../repositories/notifications.repository';
 import { familyAccountsByStudent } from './fee-notices.service';
@@ -107,6 +108,8 @@ export class FeePaymentsService {
       readonly webUrl: string;
       readonly sms?: MessageSender;
       readonly email?: MessageSender;
+      /** The school's logo for its e-mails (client 2026-10-26). */
+      readonly files?: LogoFiles;
       readonly settings?: { values(): Promise<SettingValues> };
       readonly now?: () => Date;
     },
@@ -858,10 +861,19 @@ export class FeePaymentsService {
         refType: 'fee_record',
         refId: binToUuid(r.public_id),
       };
+      // The school's name and logo, the fee, child and amount highlighted (client 2026-10-26).
+      const mail = email.length
+        ? {
+            highlight: [r.label, child, formatInr(amount)],
+            ...brandFields(await schoolBrand(db, this.deps.files, inst)),
+          }
+        : {};
       // Best effort: the communication log records a failed send; the link is shown either way.
       await Promise.allSettled([
         ...sms.map((to) => this.deps.sms!.send({ to, purpose: 'fee.payLink', text, log })),
-        ...email.map((to) => this.deps.email!.send({ to, purpose: 'fee.payLink', text, log })),
+        ...email.map((to) =>
+          this.deps.email!.send({ to, purpose: 'fee.payLink', text, log, ...mail }),
+        ),
       ]);
       if (family.accounts.length) {
         try {

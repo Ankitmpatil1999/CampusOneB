@@ -132,6 +132,8 @@ export function fcmSender(
                   default_sound: true,
                   default_vibrate_timings: true,
                   visibility: 'PRIVATE',
+                  // Android 7 has no channels: the push itself asks to pop up (client 2026-10-27).
+                  notification_priority: 'PRIORITY_HIGH',
                 },
               },
             },

@@ -95,6 +95,7 @@ import { academicsRepository } from '../repositories/academics.repository';
 import { userTypesRepository } from '../repositories/institution-setup.repository';
 import { membersRepository } from '../repositories/members.repository';
 import { logoFileOf } from './institution-logo';
+import { brandFields, schoolBrand } from './school-brand';
 import type { FileService } from './file.service';
 import type { MembersService, OnboardInput } from './members.service';
 import type { OtpService } from './otp.service';
@@ -324,6 +325,10 @@ export function loginText(logins: readonly IssuedLogin[]) {
   ].join('\n');
 }
 
+/** What the login e-mail highlights: each mobile and one-time password (client 2026-10-26). */
+const loginDetails = (logins: readonly IssuedLogin[]) =>
+  logins.flatMap((l) => [l.mobile, l.password]);
+
 const splitName = (n: string) => {
   const w = n.trim().split(/\s+/);
   return w.length > 1
@@ -341,6 +346,10 @@ const ageOn = (dob: string, ref: string) => {
  * The e-mail that an application was received (client 2026-10-23): the application's details, each
  * fee paid or still to pay with its receipt and transaction ID, and the form attached.
  */
+/** The class and year as the received e-mail states them. */
+const classLine = (v: { year: { label: string }; class: { name: string } | null }) =>
+  [v.class?.name, v.year.label].filter(Boolean).join(', ');
+
 function receivedMail(
   school: string,
   child: string,
@@ -357,7 +366,7 @@ function receivedMail(
     `${school} has received the admission application for ${child}.`,
     [
       `Application number: ${v.applicationNo}`,
-      `Class: ${[v.class?.name, v.year.label].filter(Boolean).join(', ')}`,
+      `Class: ${classLine(v)}`,
       `Admission type: ${v.midTerm ? 'Mid-term' : 'Regular'}`,
       v.submittedAt ? `Submitted on: ${formatDateTime(v.submittedAt)}` : null,
     ]
@@ -1327,6 +1336,11 @@ export class AdmissionsService {
         sends.push(this.deps.sms.send({ to: r.primary_mobile, purpose, text, log }));
       }
       const mail = this.familyEmails(r);
+      // The school's name and logo, and the details a parent looks for highlighted (2026-10-26).
+      const brand = mail.to
+        ? brandFields(await schoolBrand(this.deps.db, this.deps.files, institutionId))
+        : {};
+      const highlight = [no, child, r.class_name, r.admission_no, ...loginDetails(logins)];
       if (logins.length && mail.to && this.deps.email) {
         // The login details go by e-mail only, to the family's addresses (the primary contact's,
         // the others in copy), whatever the school's notice settings (client 2026-10-23).
@@ -1336,6 +1350,8 @@ export class AdmissionsService {
             cc: mail.cc,
             purpose,
             text: `${text}\n\n${loginText(logins)}`,
+            highlight,
+            ...brand,
             log,
           }),
         );
@@ -1354,13 +1370,14 @@ export class AdmissionsService {
         const content = copy
           ? {
               text: receivedMail(school, child, copy.view),
+              highlight: [...highlight, classLine(copy.view)],
               attachments: [
                 { fileName: copy.fileName, content: copy.pdf, contentType: 'application/pdf' },
               ],
             }
-          : { text };
+          : { text, highlight };
         for (const to of [mail.to, ...mail.cc]) {
-          sends.push(this.deps.email.send({ to, purpose, log, ...content }));
+          sends.push(this.deps.email.send({ to, purpose, log, ...brand, ...content }));
         }
       }
       await Promise.allSettled(sends);
@@ -1406,6 +1423,8 @@ export class AdmissionsService {
         cc: mail.cc,
         purpose: 'admission.logins',
         text: `${inst?.name ?? 'The school'}: ${child} and the family are now on RingPe, the school's app.\n\n${loginText(logins)}`,
+        highlight: [child, ...loginDetails(logins)],
+        ...brandFields(await schoolBrand(this.deps.db, this.deps.files, institutionId)),
         log: {
           institutionId,
           kind: 'TRANSACTIONAL',
@@ -4532,9 +4551,17 @@ export class AdmissionsService {
       refType: 'admission_application',
       refId: id.toLowerCase(),
     };
+    const mail = email.length
+      ? {
+          highlight: [amount, child, r.application_no],
+          ...brandFields(await schoolBrand(db, this.deps.files, inst.id)),
+        }
+      : {};
     await Promise.allSettled([
       ...sms.map((to) => this.deps.sms!.send({ to, purpose: 'admission.payLink', text, log })),
-      ...email.map((to) => this.deps.email!.send({ to, purpose: 'admission.payLink', text, log })),
+      ...email.map((to) =>
+        this.deps.email!.send({ to, purpose: 'admission.payLink', text, log, ...mail }),
+      ),
     ]);
     let inApp = 0;
     if (accounts.size) {
