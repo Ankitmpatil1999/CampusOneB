@@ -931,6 +931,7 @@ describe.skipIf(!adminUrl)(
             'ADM-030': { declarationAccepted: true, registrationConsent: true },
             'ADM-037': { feeType: 'APPLICATION' },
             'ADM-038': { gatewayPaymentId: 'pay_ISOLATION', signature: 'isolation' },
+            'ADM-045': { challengeId: randomUUID(), otp: '1234' },
             'ADM-040': { section: 'student', data: {} },
             'FEE-047': { receivedAt: today, paidBy: 'Some One' },
             'FEE-053': { gatewayPaymentId: 'pay_ISOLATION', signature: 'isolation' },

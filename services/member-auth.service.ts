@@ -14,10 +14,12 @@ import { sql } from 'kysely';
 import { GENDERS, LIMITS, idNumberPattern } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { Database } from '../models/ringpe_models';
+import { accessRepository } from '../repositories/access.repository';
 import { accountRepository, referenceRepository } from '../repositories/account.repository';
 import { membersRepository } from '../repositories/members.repository';
 import { otpRepository } from '../repositories/otp.repository';
 import { recordAudit } from './audit.service';
+import { institutionItems, type InstitutionItem } from './institution-logo';
 import type { IssuedChallenge, OtpService } from './otp.service';
 import type { ClientContext, SessionService, SessionTokens } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
@@ -74,7 +76,13 @@ export interface AccountSummary {
 }
 
 export type SignInResult =
-  | { readonly kind: 'session'; readonly tokens: SessionTokens; readonly account: AccountSummary }
+  | {
+      readonly kind: 'session';
+      readonly tokens: SessionTokens;
+      readonly account: AccountSummary;
+      /** The institutions of the account's profiles (client 2026-10-27; see defaultProfile). */
+      readonly institutions: readonly InstitutionItem[];
+    }
   | { readonly kind: 'device'; readonly challenge: IssuedChallenge }
   | {
       readonly kind: 'firstSignIn';
@@ -136,37 +144,26 @@ export class MemberAuthService {
 
   /**
    * The profile a new member session works for: the first linked one, as IDN-013 shows it. The token
-   * then carries it, so paying works right after sign-in; IDN-014 switches it (CR-04).
+   * then carries it, so paying works right after sign-in; IDN-014 switches it (CR-04). With it, the
+   * institutions of the account's profiles in that order (client 2026-10-27: a person may belong to
+   * several institutions; the app asks which one to open when there are two or more, and IDN-094
+   * moves the session there).
    */
   private async defaultProfile(accountId: string) {
-    const r = await this.deps.db
-      .selectFrom('member_profiles as m')
-      .innerJoin('institutions as i', 'i.id', 'm.institution_id')
-      .select([
-        'm.id',
-        'm.public_id',
-        'i.id as institution_id',
-        'i.public_id as institution_public',
-      ])
-      .where((eb) =>
-        // The account's profiles, or a student's own login (client 2026-10-23).
-        eb.or([eb('m.account_id', '=', accountId), eb('m.own_account_id', '=', accountId)]),
-      )
-      // The account holder's own profile first: a child under the account (a ward of another
-      // profile on it, CR-04) never comes before its parent.
-      .orderBy(
-        sql`EXISTS (SELECT 1 FROM guardianships gw JOIN member_profiles gp ON gp.id = gw.guardian_profile_id
-                    WHERE gw.ward_profile_id = m.id AND gp.account_id = m.account_id)`,
-      )
-      .orderBy('m.id')
-      .limit(1)
-      .executeTakeFirst();
-    return r
-      ? {
-          profile: { id: String(r.id), publicId: binToUuid(r.public_id) },
-          institution: { id: String(r.institution_id), publicId: binToUuid(r.institution_public) },
-        }
-      : {};
+    const rows = await accessRepository.memberProfiles(this.deps.db, accountId);
+    const r = rows[0];
+    return {
+      subject: r
+        ? {
+            profile: { id: String(r.id), publicId: binToUuid(r.public_id) },
+            institution: {
+              id: String(r.institution_id),
+              publicId: binToUuid(r.institution_public_id),
+            },
+          }
+        : {},
+      institutions: await institutionItems(this.deps.db, rows),
+    };
   }
 
   private installHash(installId: string): Buffer {
@@ -436,13 +433,14 @@ export class MemberAuthService {
         throw new ConflictError('IDN.ACCOUNT_EXISTS');
       throw e;
     }
+    const start = await this.defaultProfile(created.accountId);
     const tokens = await this.deps.sessions.start(
       {
         accountId: created.accountId,
         accountPublicId: account.id,
         surface: 'member',
         deviceId: created.deviceId,
-        ...(await this.defaultProfile(created.accountId)),
+        ...start.subject,
       },
       client,
     );
@@ -454,6 +452,7 @@ export class MemberAuthService {
         lastName: names.lastName?.toUpperCase() ?? null,
         preferredLang: lang,
       },
+      institutions: start.institutions,
     };
   }
 
@@ -698,17 +697,23 @@ export class MemberAuthService {
       return { kind: 'device', challenge };
     }
     await accountRepository.signinSuccess(this.deps.db, account.id, now);
+    const start = await this.defaultProfile(account.id);
     const tokens = await this.deps.sessions.start(
       {
         accountId: account.id,
         accountPublicId: binToUuid(account.public_id),
         surface: 'member',
         deviceId: String(device.id),
-        ...(await this.defaultProfile(account.id)),
+        ...start.subject,
       },
       client,
     );
-    return { kind: 'session', tokens, account: this.summary(account) };
+    return {
+      kind: 'session',
+      tokens,
+      account: this.summary(account),
+      institutions: start.institutions,
+    };
   }
 
   /** IDN-007: the code sent to the account mobile binds this device; the session starts. */
@@ -752,17 +757,18 @@ export class MemberAuthService {
         return id;
       }),
     );
+    const start = await this.defaultProfile(account.id);
     const tokens = await this.deps.sessions.start(
       {
         accountId: account.id,
         accountPublicId: binToUuid(account.public_id),
         surface: 'member',
         deviceId,
-        ...(await this.defaultProfile(account.id)),
+        ...start.subject,
       },
       client,
     );
-    return { tokens, account: this.summary(account) };
+    return { tokens, account: this.summary(account), institutions: start.institutions };
   }
 
   /**

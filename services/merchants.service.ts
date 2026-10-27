@@ -475,13 +475,7 @@ export class MerchantsService {
         errors.push({ field: 'subType', code: 'VALIDATION.FORMAT' });
       }
       if (errors.length) throw new ValidationError(errors);
-      // One institution per person (BR-01): the mobile can't belong to another institution.
-      const others = await membersRepository.profilesOfMobile(trx, input.mobile);
-      if (others.some((x) => String(x.institution_id) !== inst.id)) {
-        throw new CustomAPIError(409, 'IDN.MOBILE_IN_OTHER_INSTITUTION', {
-          errors: [{ field: 'mobile', code: 'IDN.MOBILE_IN_OTHER_INSTITUTION' }],
-        });
-      }
+      // The mobile may be used at another institution too (client 2026-10-27: BR-01 lifted).
       const account = await accountRepository.findByMobile(trx, input.mobile);
       const profileId = await membersRepository.insert(trx, {
         publicId: pub.bin,

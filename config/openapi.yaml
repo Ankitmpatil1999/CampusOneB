@@ -66,7 +66,7 @@ paths:
             application/json:
               schema:
                 anyOf:
-                  - $ref: "#/components/schemas/StaffSignedIn"
+                  - $ref: "#/components/schemas/ConsoleSignedIn"
                   - $ref: "#/components/schemas/StaffPasswordChangeRequired"
         default:
           description: Error (RFC 9457 problem details)
@@ -586,6 +586,11 @@ paths:
                         type: string
                       name:
                         type: string
+                      institutions:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/InstitutionItem"
+                        description: "The institutions whose console the account may enter (one each), the session’s first (client 2026-10-27): with two or more, the app asks which to open (PUT /api/v1/console/me/institution)"
                     required:
                       - sessionId
                       - accessToken
@@ -593,6 +598,7 @@ paths:
                       - refreshToken
                       - refreshTokenExpiresAt
                       - name
+                      - institutions
                     additionalProperties: false
                   - $ref: "#/components/schemas/StaffPasswordChangeRequired"
         default:
@@ -1554,7 +1560,7 @@ paths:
             type: string
     post:
       operationId: ADM-015
-      summary: "A counsellor’s application (same model and checks as the public form; submit: true to submit)"
+      summary: "A counsellor’s application (same model and checks as the public form). submit: true is refused with 409 ADM.CONTACT_NOT_VERIFIED before anything is written: the draft’s primary contact is verified first (ADM-044/045), then submitted (ADM-030; client 2026-10-27)"
       tags:
         - Admissions
       x-ringpe-auth: admissions.edit
@@ -1794,7 +1800,7 @@ paths:
   /api/v1/console/applications/{applicationId}/approval:
     post:
       operationId: ADM-018
-      summary: "Approve (If-Match): user type and department, a section of the class applied for, the admission number → the student member, wallets, guardian links and enrolment, in one transaction"
+      summary: "Approve (If-Match): user type and department, a section of the class applied for, the admission number → the student member, wallets, guardian link and enrolment, in one transaction. The primary contact’s mobile is verified first (ADM-044/045, else 409 ADM.CONTACT_NOT_VERIFIED) and only that contact becomes the student’s Parent member — their existing profile here when they have one, whatever other school they belong to; the other parents keep their RingPe accounts, with their login details in the approval e-mail, and no profile here (client 2026-10-27)"
       tags:
         - Admissions
       x-ringpe-auth: admissions.approve
@@ -1832,6 +1838,70 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AdmissionApproval"
+  /api/v1/console/applications/{applicationId}/contact-otp:
+    post:
+      operationId: ADM-044
+      summary: A one-time code by SMS to the application’s saved primary mobile (client 2026-10-27; the office at the console or in the staff app presses Send code and the parent reads the code out); a live code is answered again without a new SMS. 409 ADM.CONTACT_MOBILE_MISSING without a primary mobile, 409 ADM.NOT_EDITABLE once approved or rejected
+      tags:
+        - Admissions
+      x-ringpe-auth: admissions.edit,admissions.approve
+      responses:
+        "200":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdmissionContactCodeSent"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+  /api/v1/console/applications/{applicationId}/contact-otp/verify:
+    post:
+      operationId: ADM-045
+      summary: "Check the code: the application keeps the number it verified, and contactVerified is true while that number stays the primary mobile — changing the contact or the number un-verifies it. Answers the application as ADM-014 shows it (a new version: ETag); a wrong code is AUTH.OTP_INVALID (AUTH.OTP_EXPIRED, AUTH.OTP_ATTEMPTS_EXCEEDED, AUTH.OTP_ALREADY_USED)"
+      tags:
+        - Admissions
+      x-ringpe-auth: admissions.edit,admissions.approve
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdmissionContactVerified"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionContactOtpVerify"
   /api/v1/console/applications/{applicationId}/documents:
     post:
       operationId: ADM-028
@@ -2172,7 +2242,7 @@ paths:
   /api/v1/console/applications/{applicationId}/submission:
     post:
       operationId: ADM-030
-      summary: Submit a counsellor’s draft (the same checks as the public form)
+      summary: "Submit a counsellor’s draft (the same checks as the public form, the primary contact’s mobile verified included: ADM-044/045, else 409 ADM.CONTACT_NOT_VERIFIED)"
       tags:
         - Admissions
       x-ringpe-auth: admissions.edit
@@ -6312,6 +6382,58 @@ paths:
             enum:
               - due
               - all
+  /api/v1/console/me/institution:
+    put:
+      operationId: IDN-096
+      summary: "Open another of the account's institutions in the console (web or staff app): the session moves to the account's console profile there; renew the tokens next (cookie refresh, or IDN-089), which carry the institution and its sub-tasks. 404 IDN.INSTITUTION_NOT_LINKED otherwise"
+      tags:
+        - Staff auth
+      x-ringpe-auth: session (console)
+      responses:
+        "200":
+          description: Institution opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleInstitutionSet"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstitutionChosen"
+  /api/v1/console/me/institutions:
+    get:
+      operationId: IDN-095
+      summary: "The institutions whose console the account may enter, one each, and the session’s (client 2026-10-27: staff may work at several)"
+      tags:
+        - Staff auth
+      x-ringpe-auth: session (console)
+      responses:
+        "200":
+          description: Institutions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstitutionChoice"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
   /api/v1/console/members:
     get:
       operationId: IDN-044
@@ -6734,7 +6856,7 @@ paths:
   /api/v1/console/members/eligibility:
     post:
       operationId: IDN-047
-      summary: "Onboarding step 1: may this mobile join here? (BR-01: one institution per person)"
+      summary: "Onboarding step 1: who this mobile is here; one used at another institution may join too (elsewhere, never named; client 2026-10-27)"
       tags:
         - Members
       x-ringpe-auth: members.onboard
@@ -12289,6 +12411,58 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/IncomeInput"
+  /api/v1/me/institution:
+    put:
+      operationId: IDN-094
+      summary: "Open another of the account's institutions: the session works for the account's best profile there (its own first, else a child's or a student's own); the next token refresh carries it. 404 IDN.INSTITUTION_NOT_LINKED otherwise"
+      tags:
+        - Member account
+      x-ringpe-auth: member
+      responses:
+        "200":
+          description: Institution opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberInstitutionSet"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstitutionChosen"
+  /api/v1/me/institutions:
+    get:
+      operationId: IDN-093
+      summary: "The institutions of the account's profiles, in the order of IDN-013's profiles, and the session's (client 2026-10-27: a person may belong to several)"
+      tags:
+        - Member account
+      x-ringpe-auth: member
+      responses:
+        "200":
+          description: Institutions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstitutionChoice"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
   /api/v1/me/language:
     put:
       operationId: IDN-030
@@ -18870,7 +19044,7 @@ paths:
   /api/v1/portal/signup/otp:
     post:
       operationId: SAS-002
-      summary: "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a RingPe account may sign up here (newAccount; client 2026-10-06); refused when the account already belongs to an institution (BR-01), without naming it"
+      summary: "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a RingPe account may sign up here (newAccount; client 2026-10-06), and so may an account that already belongs to an institution (client 2026-10-27); a back-office account is refused"
       tags:
         - Customer portal
       x-ringpe-auth: public
@@ -19626,6 +19800,70 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AdmissionSectionUpdate"
+  /api/v1/public/admissions/applications/{applicationId}/contact-otp:
+    post:
+      operationId: ADM-042
+      summary: "A one-time code by SMS to the application’s saved primary mobile (client 2026-10-27; the family on the public form, X-Admission-Token: the resume token (or an admission-fee payment link token)); a live code is answered again without a new SMS. 409 ADM.CONTACT_MOBILE_MISSING without a primary mobile, 409 ADM.NOT_EDITABLE once approved or rejected"
+      tags:
+        - Admissions
+      x-ringpe-auth: public (admission token)
+      responses:
+        "200":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdmissionContactCodeSent"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+  /api/v1/public/admissions/applications/{applicationId}/contact-otp/verify:
+    post:
+      operationId: ADM-043
+      summary: "Check the code: the application keeps the number it verified, and contactVerified is true while that number stays the primary mobile — changing the contact or the number un-verifies it. Answers the application as ADM-025 shows it; a wrong code is AUTH.OTP_INVALID (AUTH.OTP_EXPIRED, AUTH.OTP_ATTEMPTS_EXCEEDED, AUTH.OTP_ALREADY_USED)"
+      tags:
+        - Admissions
+      x-ringpe-auth: public (admission token)
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdmissionContactVerified"
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionContactOtpVerify"
   /api/v1/public/admissions/applications/{applicationId}/documents:
     post:
       operationId: ADM-006
@@ -19949,7 +20187,7 @@ paths:
   /api/v1/public/admissions/applications/{applicationId}/submission:
     post:
       operationId: ADM-009
-      summary: "Submit with the declaration: everything is checked (student, address, contact, documents, age band; mid-term: TC or undertaking and a reference). Submitted at once, or after the application fee when it is mandatory"
+      summary: "Submit with the declaration: everything is checked (student, address, contact, documents, age band; mid-term: TC or undertaking and a reference), then the primary contact’s mobile verified by a code (ADM-042/043; else 409 ADM.CONTACT_NOT_VERIFIED, client 2026-10-27). Submitted at once, or after the application fee when it is mandatory"
       tags:
         - Admissions
       x-ringpe-auth: public (admission token)
@@ -22427,6 +22665,9 @@ components:
           required:
             - firstName
           additionalProperties: {}
+        contactVerified:
+          type: boolean
+          description: The primary contact’s mobile verified by a one-time code, and still the primary mobile (client 2026-10-27)
         references:
           type: array
           items:
@@ -22539,6 +22780,7 @@ components:
         - midTerm
         - joiningDate
         - student
+        - contactVerified
         - references
         - documents
         - fees
@@ -23052,6 +23294,47 @@ components:
       required:
         - receivedAt
         - paidBy
+      additionalProperties: false
+    AdmissionContactCodeSent:
+      type: object
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        sentTo:
+          type: string
+          description: The primary mobile, masked
+        expiresAt:
+          type: string
+        testCode:
+          description: Test mode only (OTP_TEST_SHOW_CODE)
+          type: string
+      required:
+        - challengeId
+        - sentTo
+        - expiresAt
+      additionalProperties: false
+    AdmissionContactOtpVerify:
+      type: object
+      properties:
+        challengeId:
+          type: string
+          maxLength: 40
+        otp:
+          type: string
+          pattern: ^\d{4,8}$
+      required:
+        - challengeId
+        - otp
+      additionalProperties: false
+    AdmissionContactVerified:
+      type: object
+      properties:
+        application:
+          $ref: "#/components/schemas/AdmissionApplication"
+      required:
+        - application
       additionalProperties: false
     AdmissionDeskOrder:
       type: object
@@ -27048,6 +27331,21 @@ components:
         - channels
         - version
       additionalProperties: false
+    ConsoleInstitutionSet:
+      type: object
+      properties:
+        institutionId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        profileId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      required:
+        - institutionId
+        - profileId
+      additionalProperties: false
     ConsoleInstitutionUpdate:
       type: object
       properties:
@@ -27321,6 +27619,39 @@ components:
         - roles
         - subTasks
         - preferredLang
+      additionalProperties: false
+    ConsoleSignedIn:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        name:
+          type: string
+        csrfToken:
+          type: string
+          description: Echo in X-CSRF-Token on every state-changing request
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+        refreshTokenExpiresAt:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+        institutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstitutionItem"
+          description: "The institutions whose console the account may enter (one each), the session’s first (client 2026-10-27): with two or more, the app asks which to open (PUT /api/v1/console/me/institution)"
+      required:
+        - sessionId
+        - name
+        - csrfToken
+        - accessTokenExpiresAt
+        - refreshTokenExpiresAt
+        - institutions
       additionalProperties: false
     ConsoleSubscription:
       type: object
@@ -30466,8 +30797,7 @@ components:
             - NEW
             - FAMILY
             - STAFF
-            - OTHER_INSTITUTION
-          description: "NEW: no one here; FAMILY: a parent or a child of a family studying here; STAFF: a staff member working here (and no family); OTHER_INSTITUTION: used at another institution"
+          description: "NEW: no one here; FAMILY: a parent or a child of a family studying here; STAFF: a staff member working here (and no family). Profiles at other institutions play no part (client 2026-10-27)"
         account:
           type: boolean
           description: A RingPe account holds this mobile
@@ -35088,6 +35418,34 @@ components:
         - logoUrl
         - colors
       additionalProperties: false
+    InstitutionChoice:
+      type: object
+      properties:
+        current:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+          description: The session's institution
+        institutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstitutionItem"
+      required:
+        - current
+        - institutions
+      additionalProperties: false
+    InstitutionChosen:
+      type: object
+      properties:
+        institutionId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      required:
+        - institutionId
+      additionalProperties: false
     InstitutionDetail:
       type: object
       properties:
@@ -35499,6 +35857,30 @@ components:
           pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
       required:
         - merchantId
+      additionalProperties: false
+    InstitutionItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        name:
+          type: string
+        shortName:
+          type: string
+        city:
+          type: string
+        logoUrl:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - name
+        - shortName
+        - city
+        - logoUrl
       additionalProperties: false
     InstitutionJobRun:
       type: object
@@ -36815,10 +37197,15 @@ components:
                     type: string
                   shortName:
                     type: string
+                  logoUrl:
+                    type:
+                      - string
+                      - "null"
                 required:
                   - id
                   - name
                   - shortName
+                  - logoUrl
                 additionalProperties: false
               userType:
                 type: string
@@ -37468,11 +37855,15 @@ components:
       properties:
         eligible:
           type: boolean
+          description: "Always true now (client 2026-10-27: a person may belong to several institutions)"
         code:
           type: string
-          description: "Why: other institution, profile here, account exists, new person"
+          description: IDN.PROFILE_EXISTS_HERE, IDN.ACCOUNT_EXISTS (a RingPe account) or IDN.NEW_PERSON
         account:
           type: boolean
+        elsewhere:
+          type: boolean
+          description: The mobile is used at another institution too (never named; client 2026-10-27)
         profiles:
           type: array
           items:
@@ -37505,6 +37896,7 @@ components:
         - eligible
         - code
         - account
+        - elsewhere
         - profiles
       additionalProperties: false
     MemberEligibilityCheck:
@@ -38328,6 +38720,21 @@ components:
         - recent
         - unreadNotifications
       additionalProperties: false
+    MemberInstitutionSet:
+      type: object
+      properties:
+        activeProfileId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        institutionId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      required:
+        - activeProfileId
+        - institutionId
+      additionalProperties: false
     MemberList:
       type: object
       properties:
@@ -38802,6 +39209,11 @@ components:
           pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
         account:
           $ref: "#/components/schemas/AccountSummary"
+        institutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstitutionItem"
+          description: "The institutions of the account's profiles, the session's first (client 2026-10-27): with two or more, the app asks which to open (PUT /api/v1/me/institution)"
       required:
         - sessionId
         - accessToken
@@ -38809,6 +39221,7 @@ components:
         - refreshToken
         - refreshTokenExpiresAt
         - account
+        - institutions
       additionalProperties: false
     MemberSessionEnd:
       type: object

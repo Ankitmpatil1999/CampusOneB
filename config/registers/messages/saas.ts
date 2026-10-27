@@ -121,8 +121,8 @@ export const SAAS_MESSAGES = [
   n(
     'SAS.SIGNUP_ACCOUNT_IN_USE',
     409,
-    "This RingPe account is already part of an institution. An account can belong to only one institution, so the administrator needs an account that isn't linked to a school yet.",
-    ['BR-01', 'FR-SAS-06'],
+    "This RingPe account is used in RingPe's back office, so it can't administer an institution. Sign up with another account.",
+    ['FR-SAS-06', 'client 2026-10-27 (an institution account may sign up another institution)'],
   ),
   n('SAS.SIGNUP_EXPIRED', 401, 'This sign-up has expired. Verify the mobile number again.', [
     'FR-SAS-06',

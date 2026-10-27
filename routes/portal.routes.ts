@@ -61,7 +61,7 @@ doc({
   method: 'post',
   path: `${p}/signup/otp`,
   summary:
-    "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a RingPe account may sign up here (newAccount; client 2026-10-06); refused when the account already belongs to an institution (BR-01), without naming it",
+    "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a RingPe account may sign up here (newAccount; client 2026-10-06), and so may an account that already belongs to an institution (client 2026-10-27); a back-office account is refused",
   auth: 'public',
   request: signupOtpSchema,
   responses: { 202: { description: 'Code sent', schema: challengeSchema } },

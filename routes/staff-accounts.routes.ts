@@ -2,10 +2,12 @@ import { Router, type Request, type RequestHandler } from 'express';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import { institutionChoiceSchema, institutionsSchema } from '../schemas/member-auth.schema';
 import {
   activeProfileResultSchema,
   activeProfileSchema,
   consoleRolesSchema,
+  memberInstitutionSetSchema,
   opsHomeSchema,
   opsSearchSchema,
   setRolesSchema,
@@ -70,6 +72,27 @@ doc({
   auth: 'member',
   request: activeProfileSchema,
   responses: { 200: { description: 'Active profile', schema: activeProfileResultSchema } },
+});
+doc({
+  id: 'IDN-093',
+  method: 'get',
+  path: '/api/v1/me/institutions',
+  summary:
+    "The institutions of the account's profiles, in the order of IDN-013's profiles, and the session's (client 2026-10-27: a person may belong to several)",
+  tags: ['Member account'],
+  auth: 'member',
+  responses: { 200: { description: 'Institutions', schema: institutionsSchema } },
+});
+doc({
+  id: 'IDN-094',
+  method: 'put',
+  path: '/api/v1/me/institution',
+  summary:
+    "Open another of the account's institutions: the session works for the account's best profile there (its own first, else a child's or a student's own); the next token refresh carries it. 404 IDN.INSTITUTION_NOT_LINKED otherwise",
+  tags: ['Member account'],
+  auth: 'member',
+  request: institutionChoiceSchema,
+  responses: { 200: { description: 'Institution opened', schema: memberInstitutionSetSchema } },
 });
 doc({
   id: 'RPT-007',
@@ -159,6 +182,17 @@ export function staffAccountsRoutes(deps: {
     '/me/active-profile',
     requireSurface(L, 'member'),
     json((r) => deps.me.setActiveProfile(principal(r), activeProfileSchema.parse(r.body ?? {}))),
+  );
+  // One person, several institutions (client 2026-10-27).
+  router.get(
+    '/me/institutions',
+    requireSurface(L, 'member'),
+    json((r) => deps.me.institutions(principal(r))),
+  );
+  router.put(
+    '/me/institution',
+    requireSurface(L, 'member'),
+    json((r) => deps.me.setInstitution(principal(r), institutionChoiceSchema.parse(r.body ?? {}))),
   );
   router.get(
     '/ops/home',

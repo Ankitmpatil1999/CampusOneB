@@ -18,7 +18,7 @@
  *
  * Not yet here, by phase: the transaction-PIN gate of RNG-IDN-112 arrives with the PIN (Phase 3).
  */
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import {
   BANK_CHANGE_REASONS,
   GENDERS,
@@ -481,15 +481,18 @@ export class PersonalDetailsService {
     const summary = `${FIELD_LABELS[field]} for ${name}: ${current} → ${proposedShown} (member request)`;
     try {
       await this.deps.db.transaction().execute(async (trx) => {
-        // The member's school decides (prototype m.kyc: "the school approves it"); an account
-        // without an institution profile goes to RingPe's back office.
-        const profile = await trx
-          .selectFrom('member_profiles')
-          .select('institution_id')
+        // The member's school decides (prototype m.kyc: "the school approves it") — the session's
+        // own when the account belongs to several (client 2026-10-27); an account without an
+        // institution profile goes to RingPe's back office.
+        const session = p.institutionId && isUuid(p.institutionId) ? p.institutionId : null;
+        let q = trx
+          .selectFrom('member_profiles as m')
+          .innerJoin('institutions as i', 'i.id', 'm.institution_id')
+          .select('m.institution_id')
           // Or the student's own profile on their own login (client 2026-10-23).
-          .where((eb) => eb.or([eb('account_id', '=', a.id), eb('own_account_id', '=', a.id)]))
-          .orderBy('id')
-          .executeTakeFirst();
+          .where((eb) => eb.or([eb('m.account_id', '=', a.id), eb('m.own_account_id', '=', a.id)]));
+        if (session) q = q.orderBy(sql`i.public_id = ${uuidToBin(session)}`, 'desc');
+        const profile = await q.orderBy('m.id').executeTakeFirst();
         const institutionId = profile ? String(profile.institution_id) : null;
         if (institutionId) {
           await trx

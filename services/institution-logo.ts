@@ -40,3 +40,39 @@ export async function logoUrlOf(db: Db, institutionRowId: string): Promise<strin
   const f = await logoFileOf(db, { rowId: institutionRowId });
   return f ? logoPath(f.institutionId, f.fileId) : null;
 }
+
+/** An institution a person may open, as the apps offer it to choose from (client 2026-10-27). */
+export interface InstitutionItem {
+  readonly id: string;
+  readonly name: string;
+  readonly shortName: string;
+  readonly city: string;
+  readonly logoUrl: string | null;
+}
+
+/** The institutions of these rows (each once, in their order), with their logos. */
+export async function institutionItems(
+  db: Db,
+  rows: readonly {
+    readonly institution_id: string;
+    readonly institution_public_id: Buffer;
+    readonly institution_name: string;
+    readonly short_name: string;
+    readonly city: string;
+  }[],
+): Promise<InstitutionItem[]> {
+  const items: InstitutionItem[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (seen.has(String(r.institution_id))) continue;
+    seen.add(String(r.institution_id));
+    items.push({
+      id: binToUuid(r.institution_public_id),
+      name: r.institution_name,
+      shortName: r.short_name,
+      city: r.city,
+      logoUrl: await logoUrlOf(db, String(r.institution_id)),
+    });
+  }
+  return items;
+}

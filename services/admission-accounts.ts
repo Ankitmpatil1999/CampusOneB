@@ -4,7 +4,7 @@
  * number — when it is submitted, or a submitted one changes — so nobody signs up themselves:
  *
  * - A mobile that already has an account is that person's: it is linked, and their own password
- *   stays. A mobile whose profiles are at another school gets no account here (one school per person).
+ *   stays — also when their profiles are at another school (BR-01 lifted, client 2026-10-27).
  * - A new account takes the person's name, the e-mail, the Aadhaar number and the PAN the form has
  *   when no other account uses them; what is missing is asked at the first sign-in.
  * - A mobile changed or removed before the login details went out moves the account, or removes the
@@ -12,8 +12,9 @@
  * - The login details go out once, when the admission is approved (or the student is uploaded as an
  *   existing student): a one-time password, changed on the first sign-in (issueCredentials).
  *
- * The profiles at the school are made at approval; a profile kept for a mobile (contact_mobile) is
- * linked to its account as when someone signs up (BR-01).
+ * The profiles at the school are made at approval — the verified primary contact's only (client
+ * 2026-10-27); a profile kept for a mobile (contact_mobile) is linked to its account as when someone
+ * signs up.
  */
 import { randomBytes } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
@@ -220,14 +221,8 @@ export async function syncAdmissionAccounts(
         }
         await drop(link);
       }
+      // A mobile at another school too is that person's account (BR-01 lifted, client 2026-10-27).
       const existing = await accountRepository.findByMobile(db, mobile);
-      if (existing) {
-        // One school per person: a mobile at another school gets no account here.
-        const elsewhere = (await membersRepository.profilesOfMobile(db, mobile)).some(
-          (x) => String(x.institution_id) !== String(a.institutionId),
-        );
-        if (elsewhere) continue;
-      }
       const accountId = existing ? String(existing.id) : await create(db, cipher, p, mobile);
       await db
         .insertInto('admission_accounts')

@@ -15,7 +15,7 @@ import { recordAudit } from './audit.service';
 import type { IssuedChallenge, OtpService } from './otp.service';
 import type { SessionService } from './session.service';
 import { defaultValues, type SettingValues } from './settings.service';
-import { logoFileOf, logoPath } from './institution-logo';
+import { institutionItems, logoFileOf, logoPath } from './institution-logo';
 import { AuthenticationError, CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { maskIdNumber, maskPan } from '../utils/fieldEncryption';
 import { binToUuid, uuidToBin } from '../utils/idGenerator';
@@ -119,6 +119,50 @@ export class MeService {
       actor: { type: 'member', ref: p.subject },
     });
     return { activeProfileId: chosen.id };
+  }
+
+  /**
+   * IDN-093 (client 2026-10-27: a person may belong to several institutions): the institutions of
+   * the account's profiles, in the order of IDN-013's profiles, and the session's.
+   */
+  async institutions(p: Principal) {
+    const a = await this.account(p);
+    const rows = await accessRepository.memberProfiles(this.deps.db, a.id);
+    return {
+      current: p.institutionId ?? null,
+      institutions: await institutionItems(this.deps.db, rows),
+    };
+  }
+
+  /**
+   * IDN-094: the app opens another of the account's institutions — the session works for the
+   * account's best profile there (the account holder's own first, else a child under the account
+   * or a student's own login, as IDN-013 orders them). The next token refresh carries it.
+   */
+  async setInstitution(p: Principal, input: { institutionId: string }) {
+    const a = await this.account(p);
+    const wanted = input.institutionId.toLowerCase();
+    const chosen = (await accessRepository.memberProfiles(this.deps.db, a.id)).find(
+      (r) => binToUuid(r.institution_public_id) === wanted,
+    );
+    if (!chosen) throw new CustomAPIError(404, 'IDN.INSTITUTION_NOT_LINKED');
+    await this.deps.db
+      .updateTable('sessions')
+      .set({ profile_id: String(chosen.id), institution_id: String(chosen.institution_id) })
+      .where('public_id', '=', uuidToBin(p.sessionId))
+      .where('account_id', '=', a.id)
+      .execute();
+    const activeProfileId = binToUuid(chosen.public_id);
+    await recordAudit(this.deps.db, {
+      institutionId: String(chosen.institution_id),
+      action: 'ACTIVE_INSTITUTION_CHANGED',
+      entityType: 'platform_account',
+      entityRef: binToUuid(a.public_id),
+      before: { institution: p.institutionId ?? null },
+      after: { institution: wanted, profile: activeProfileId },
+      actor: { type: 'member', ref: p.subject },
+    });
+    return { activeProfileId, institutionId: wanted };
   }
 
   /** Institution profiles on this account (a parent and the children under the number, CR-04). */

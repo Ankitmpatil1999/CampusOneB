@@ -222,6 +222,19 @@ export const ADMISSION_MESSAGES = [
     '19.3',
     '19.4',
   ]),
+  // The primary contact's mobile, verified with a one-time code (client 2026-10-27).
+  n(
+    'ADM.CONTACT_NOT_VERIFIED',
+    409,
+    'Verify the primary contact’s mobile number first: send a code to it and enter the code.',
+    ['19.2', '19.4', 'client 2026-10-27'],
+  ),
+  n(
+    'ADM.CONTACT_MOBILE_MISSING',
+    409,
+    'Save the primary contact’s mobile number first: the code is sent to it.',
+    ['19.2', 'client 2026-10-27'],
+  ),
   k('ADM.DECLARATION', 'MSG-ADM-171', 'Declaration must be accepted', 422, ['19.2', 'FR-ADM-06']),
   n(
     'ADM.REFERENCES_REQUIRED',
