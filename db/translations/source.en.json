@@ -2756,7 +2756,7 @@
   "ui.ofc.doc.TC": "Transfer certificate",
   "ui.ofc.entry.anyRole": "Your role",
   "ui.ofc.entry.open": "Open the staff app",
-  "ui.ofc.entry.text": "{roles} at {school}: fees, admissions, leave and the rest are in the staff app. Sign in there with your work e-mail and RingPe password, then a code.",
+  "ui.ofc.entry.text": "{roles} at {school}: fees, admissions, leave and the rest are in the staff app.",
   "ui.ofc.entry.title": "Your office work",
   "ui.ofc.family.elsewhere": "This mobile is registered at another institution. Use another mobile.",
   "ui.ofc.family.found": "This family is already at the school.",

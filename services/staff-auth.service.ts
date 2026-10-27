@@ -300,6 +300,76 @@ export class StaffAuthService {
     return { tokens, name: fullName(account) };
   }
 
+  /**
+   * IDN-092 (client 2026-10-27: "after click on this i should login again with the phone number and
+   * Password and OTP this is not required"): the member app's "Open the staff app" opens the staff
+   * app's console session for the account signed in on this phone, without a second sign-in. The
+   * member session already proved the password and, for this phone, the code (it is bound to the
+   * device, FR-IDN-09); the console's own checks still apply — an active, unlocked account with a
+   * console role at its school. A temporary password still to be changed, or anything else refused,
+   * answers the one 6.4 refusal, and the app falls back to the staff sign-in (IDN-031). The member
+   * session then ends: the phone keeps one session, the staff app's (as after IDN-088).
+   */
+  async staffAppFromMember(p: Principal, client: ClientContext = {}): Promise<StaffSignedIn> {
+    if (p.surface !== 'member' || !isUuid(p.subject) || !isUuid(p.sessionId)) throw this.refused();
+    const now = this.now();
+    const member = await this.deps.db
+      .selectFrom('sessions as s')
+      .innerJoin('platform_accounts as a', 'a.id', 's.account_id')
+      .select(['s.device_id', 'a.id as account_id', 'a.public_id'])
+      .where('s.public_id', '=', uuidToBin(p.sessionId))
+      .where('s.surface', '=', 'MEMBER')
+      .where('s.ended_at', 'is', null)
+      .where('s.absolute_expires_at', '>', now)
+      .executeTakeFirst();
+    if (
+      !member ||
+      member.device_id === null ||
+      binToUuid(member.public_id).toLowerCase() !== p.subject.toLowerCase()
+    ) {
+      throw this.refused();
+    }
+    const account = await accountRepository.findById(this.deps.db, String(member.account_id));
+    if (!account || account.status !== 'ACTIVE') throw this.refused();
+    if (account.signin_lock === 'LOCKED') throw this.locked();
+    const access = await this.eligible('console', account.id);
+    if (!access || access.surface !== 'console') {
+      this.deps.loggers.security.warn('auth.staff_app_from_member_refused', {
+        reason: 'no_access',
+      });
+      throw this.refused();
+    }
+    const credential = await accountRepository.credential(this.deps.db, account.id, 'PASSWORD');
+    if (credential && Boolean(Number(credential.must_change))) {
+      // OI-IDN-20: the temporary password is changed through the staff sign-in first.
+      throw this.refused();
+    }
+    const tokens = await this.deps.sessions.start(
+      {
+        accountId: account.id,
+        accountPublicId: binToUuid(account.public_id),
+        surface: 'console',
+        staffApp: true,
+        institution: {
+          id: access.ctx.institution_id,
+          publicId: binToUuid(access.ctx.institution_public_id),
+        },
+        profile: {
+          id: access.ctx.profile_id,
+          publicId: binToUuid(access.ctx.profile_public_id),
+        },
+      },
+      client,
+    );
+    await this.deps.sessions.end(p.sessionId, 'SIGN_OUT');
+    this.deps.loggers.security.info('auth.staff_signed_in', {
+      surface: 'console',
+      client: 'staff-app',
+      via: 'member-app',
+    });
+    return { tokens, name: fullName(account) };
+  }
+
   /** IDN-089: the staff app renews its console session with the refresh token in the body. */
   refreshStaffApp(refreshToken: string, client: ClientContext = {}) {
     return this.deps.sessions.refresh(refreshToken, client, 'console', true);

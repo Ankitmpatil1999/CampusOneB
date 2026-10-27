@@ -130,6 +130,18 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
     res.json(appTokens(t));
   });
 
+  /** IDN-092: the member app opens the staff app for the account signed in on it. */
+  const appFromMember = wrap(async (req, res) => {
+    if (!req.principal) throw new AuthenticationError();
+    const out = await service.staffAppFromMember(req.principal, {
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    if ('passwordChange' in out) throw new AuthenticationError();
+    res.json({ ...appTokens(out.tokens), name: out.name });
+  });
+
   /** Same answer whether or not the account exists (enumeration-safe). */
   const forgot = (surface: StaffSurface) =>
     wrap(async (req, res) => {
@@ -166,6 +178,7 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
     verify,
     appVerify,
     appRefresh,
+    appFromMember,
     forgot,
     passwordReset,
     consoleSession,

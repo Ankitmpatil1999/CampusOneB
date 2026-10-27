@@ -434,6 +434,7 @@ describe('OpenAPI 3.1 document', () => {
       'IDN-089',
       'IDN-090',
       'IDN-091',
+      'IDN-092',
       'INS-001',
       'INS-002',
       'INS-003',

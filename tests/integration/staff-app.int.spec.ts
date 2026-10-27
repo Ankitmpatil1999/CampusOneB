@@ -281,4 +281,59 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
     expect((await setRoles(['ACCOUNTANT'])).status).toBe(200);
     expect(await office()).toEqual({ roles: ['Accountant'] });
   });
+
+  it('opens the staff app from the member app without a second sign-in (IDN-092, client 2026-10-27)', async () => {
+    const fromMember = (auth: Auth) =>
+      request(f.app).post('/api/v1/auth/staff-app/from-member').set(auth).send({});
+    // A member with no console role at the school: refused as the staff sign-in refuses it.
+    const student: Payer = await f.student('Mira', 0);
+    const none = await fromMember(student.auth);
+    expect(none.status).toBe(401);
+    expect(none.body.code).toBe('IDN.CONSOLE_SIGNIN_REFUSED');
+    expect((await request(f.app).get('/api/v1/me').set(student.auth)).status).toBe(200);
+
+    // The web console's session is not a member session.
+    expect((await fromMember(con)).status).toBe(401);
+
+    // A member with office work (the Accountant, set in the test above): the staff app's session.
+    const roles = Object.fromEntries(
+      (await request(f.app).get('/api/v1/console/roles').set(con)).body.items.map(
+        (r: { code: string; id: string }) => [r.code, r.id],
+      ),
+    ) as Record<string, string>;
+    const acc = await f.payer('Usha', 0);
+    expect(
+      (
+        await request(f.app)
+          .put(`/api/v1/console/staff-accounts/${acc.id}/roles`)
+          .set(con)
+          .send({ roleIds: [roles.ACCOUNTANT] })
+      ).status,
+    ).toBe(200);
+    const smsBefore = f.h.sms.sent.length;
+    const r = await fromMember(acc.auth);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body).toMatchObject({ name: expect.any(String), accessToken: expect.any(String) });
+    expect(f.h.sms.sent.length).toBe(smsBefore); // no code sent: no second sign-in
+    const session = await request(f.app).get('/api/v1/console/session').set(bearer(r.body));
+    expect(session.status, JSON.stringify(session.body)).toBe(200);
+    expect(session.body.subTasks).toEqual(expect.arrayContaining(['fees.collect']));
+    const row = await f.t.db
+      .selectFrom('sessions')
+      .select(['surface', 'staff_app'])
+      .where('public_id', '=', uuidToBin(r.body.sessionId))
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ surface: 'CONSOLE', staff_app: 1 });
+    // Renewed like a staff app session (IDN-089).
+    expect(
+      (
+        await request(f.app)
+          .post('/api/v1/auth/staff-app/token/refresh')
+          .send({ refreshToken: r.body.refreshToken })
+      ).status,
+    ).toBe(200);
+    // The phone keeps one session: the member app's has ended, so it can't be used twice.
+    expect((await request(f.app).get('/api/v1/me').set(acc.auth)).status).toBe(401);
+    expect((await fromMember(acc.auth)).status).toBe(401);
+  });
 });
