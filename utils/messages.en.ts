@@ -215,6 +215,8 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'ATT.CARD_NOT_ACTIVE': 'Invalid NFC card',
   'ATT.CARD_WRITE_REQUIRED':
     'A re-issue for this member is not authorised. Re-issue the card in the console first.',
+  'ATT.CHECKOUT_TOO_SOON':
+    '{name} is already checked in (at {in}). Tap again after {after} to check out.',
   'ATT.CUTOFF': 'Choose a cut-off time between 07:00 and 18:00.',
   'ATT.DOUBLE_TAP': 'Please wait before tapping again',
   'ATT.FUTURE_DATE': 'Attendance can’t be marked for a future date.',
@@ -688,6 +690,7 @@ export const MESSAGES_EN: Readonly<Record<string, string>> = {
   'NTF.CHECKED_IN': '{name} checked in at {time}',
   'NTF.CHECKED_OUT': '{name} checked out at {time}',
   'NTF.CLASS_PLACED': '{name} is placed in {section} for {year}',
+  'NTF.CLASS_STUDENT_ADDED': '{name} joined your class {section}',
   'NTF.CORRECTION_APPROVED': 'Your correction was approved',
   'NTF.CORRECTION_REJECTED': 'Your correction was rejected',
   'NTF.COUPONS_CANCELLED': 'Coupons from {from} to {to} are cancelled',

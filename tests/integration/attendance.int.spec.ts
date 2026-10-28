@@ -128,6 +128,19 @@ describe.skipIf(!adminUrl)('attendance on real MySQL', () => {
       status: istMinutes() <= 615 ? 'PRESENT' : 'LATE',
     });
     await wait(meena.rowId);
+    // Client 2026-10-26: within 10 minutes of the check-in a second tap doesn't check out.
+    const soon = await tap(gate, meenaCard);
+    expect(soon.status).toBe(409);
+    expect(soon.body).toMatchObject({ code: 'ATT.CHECKOUT_TOO_SOON' });
+    expect(soon.body.detail).toMatch(/^Meena\b.* is already checked in \(at .+\)\. Tap again/);
+    // Eleven minutes on (the check-in moved back), it checks out as before.
+    await f.t.db
+      .updateTable('attendance_days')
+      .set({ check_in_at: new Date(Date.now() - 11 * 60_000) })
+      .where('profile_id', '=', meena.rowId)
+      .where('att_date', '=', today())
+      .execute();
+    await wait(meena.rowId);
     const out = await tap(gate, meenaCard);
     expect(out.body).toMatchObject({ result: 'CHECKED_OUT', status: 'HALF_DAY' });
     await wait(meena.rowId);

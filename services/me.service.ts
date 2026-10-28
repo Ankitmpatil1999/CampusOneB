@@ -122,7 +122,7 @@ export class MeService {
   }
 
   /**
-   * IDN-092 (client 2026-10-27: a person may belong to several institutions): the institutions of
+   * IDN-093 (client 2026-10-27: a person may belong to several institutions): the institutions of
    * the account's profiles, in the order of IDN-013's profiles, and the session's.
    */
   async institutions(p: Principal) {
@@ -135,7 +135,7 @@ export class MeService {
   }
 
   /**
-   * IDN-093: the app opens another of the account's institutions — the session works for the
+   * IDN-094: the app opens another of the account's institutions — the session works for the
    * account's best profile there (the account holder's own first, else a child under the account
    * or a student's own login, as IDN-013 orders them). The next token refresh carries it.
    */

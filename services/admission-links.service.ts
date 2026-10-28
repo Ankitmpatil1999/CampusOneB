@@ -23,6 +23,7 @@ import { qrSvg } from '../utils/qr';
 import { recordAudit } from './audit.service';
 import { activeFields } from './custom-values.service';
 import { logoUrlOf } from './institution-logo';
+import { brandFields, schoolBrand, type LogoFiles } from './school-brand';
 import { defaultValues, type SettingValues } from './settings.service';
 
 const day = (d: Date | string) => istBusinessDate(new Date(d));
@@ -50,6 +51,8 @@ export class AdmissionLinksService {
     private readonly deps: {
       readonly db: Kysely<Database>;
       readonly email?: MessageSender;
+      /** The school's logo for its e-mails (client 2026-10-26). */
+      readonly files?: LogoFiles;
       readonly webUrl: string;
       readonly settings?: { values(): Promise<SettingValues> };
       readonly now?: () => Date;
@@ -197,12 +200,18 @@ export class AdmissionLinksService {
       .executeTakeFirst();
     if (!l) throw new NotFoundError();
     const sent: string[] = [];
+    // The school's name and logo on the invitation (client 2026-10-26).
+    const brand = this.deps.email
+      ? brandFields(await schoolBrand(this.deps.db, this.deps.files, String(i.id)))
+      : {};
     for (const to of new Set(input.emails)) {
       if (!this.deps.email) break;
       await this.deps.email.send({
         to,
         purpose: 'admission.link',
         text: `Admissions are open at ${i.name}.\nApply online: ${this.urlOf(l.token)}\nYou can save your progress and come back later.`,
+        highlight: [i.name],
+        ...brand,
       });
       sent.push(to);
     }

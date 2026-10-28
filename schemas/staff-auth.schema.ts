@@ -88,7 +88,7 @@ export const consoleSignedInSchema = staffSignedInSchema
   .extend({ institutions: consoleInstitutionsField })
   .meta({ id: 'ConsoleSignedIn' });
 
-/** IDN-095: the institution the console opened and its console profile (client 2026-10-27). */
+/** IDN-096: the institution the console opened and its console profile (client 2026-10-27). */
 export const consoleInstitutionSetSchema = z
   .object({ institutionId: z.uuid(), profileId: z.uuid() })
   .meta({ id: 'ConsoleInstitutionSet' });

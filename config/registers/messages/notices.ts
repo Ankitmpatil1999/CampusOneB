@@ -32,6 +32,8 @@ export const NOTICE_MESSAGES = [
   info('NTF.COUPONS_ISSUED', '{types} coupons from {from} to {to}', ['types', 'from', 'to']),
   info('NTF.COUPONS_CANCELLED', 'Coupons from {from} to {to} are cancelled', ['from', 'to']),
   info('NTF.SETTLEMENT_PAID', 'Settlement of {amount} paid', ['amount']),
+  // Client 2026-10-26: the class teacher is told of each student placed in their section.
+  info('NTF.CLASS_STUDENT_ADDED', '{name} joined your class {section}', ['name', 'section']),
 ] as const satisfies readonly MessageDefinition[];
 
 export type NoticeMessageKey = (typeof NOTICE_MESSAGES)[number]['key'];

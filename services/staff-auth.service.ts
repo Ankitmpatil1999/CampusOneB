@@ -322,7 +322,7 @@ export class StaffAuthService {
   }
 
   /**
-   * IDN-094 (client 2026-10-27: staff may work at several institutions): the institutions whose
+   * IDN-095 (client 2026-10-27: staff may work at several institutions): the institutions whose
    * console the account may enter — one each, in sign-in order — and the session's.
    */
   async consoleInstitutions(p: Principal) {
@@ -336,7 +336,7 @@ export class StaffAuthService {
   }
 
   /**
-   * IDN-095: the console opens another of the account's institutions — the session moves to the
+   * IDN-096: the console opens another of the account's institutions — the session moves to the
    * account's console profile there; the next token renewal (web cookies, or the staff app's
    * IDN-089) carries the institution and that profile's sub-tasks.
    */
@@ -372,6 +372,79 @@ export class StaffAuthService {
     });
     this.deps.loggers.security.info('auth.console_institution_changed', {});
     return { institutionId, profileId };
+  }
+
+  /**
+   * IDN-092 (client 2026-10-27: "after click on this i should login again with the phone number and
+   * Password and OTP this is not required"): the member app's "Open the staff app" opens the staff
+   * app's console session for the account signed in on this phone, without a second sign-in. The
+   * member session already proved the password and, for this phone, the code (it is bound to the
+   * device, FR-IDN-09); the console's own checks still apply — an active, unlocked account with a
+   * console role at its school. A temporary password still to be changed, or anything else refused,
+   * answers the one 6.4 refusal, and the app falls back to the staff sign-in (IDN-031).
+   *
+   * Client 2026-10-27 ("one login, one unified experience" for staff; a choice of mode for a parent
+   * who is also staff): the member session goes on beside the staff app's, so one sign-in gives
+   * both. Each still reaches only its own surface's routes, checked as before; signing out ends
+   * both (the app signs each out).
+   */
+  async staffAppFromMember(p: Principal, client: ClientContext = {}): Promise<StaffSignedIn> {
+    if (p.surface !== 'member' || !isUuid(p.subject) || !isUuid(p.sessionId)) throw this.refused();
+    const now = this.now();
+    const member = await this.deps.db
+      .selectFrom('sessions as s')
+      .innerJoin('platform_accounts as a', 'a.id', 's.account_id')
+      .select(['s.device_id', 'a.id as account_id', 'a.public_id'])
+      .where('s.public_id', '=', uuidToBin(p.sessionId))
+      .where('s.surface', '=', 'MEMBER')
+      .where('s.ended_at', 'is', null)
+      .where('s.absolute_expires_at', '>', now)
+      .executeTakeFirst();
+    if (
+      !member ||
+      member.device_id === null ||
+      binToUuid(member.public_id).toLowerCase() !== p.subject.toLowerCase()
+    ) {
+      throw this.refused();
+    }
+    const account = await accountRepository.findById(this.deps.db, String(member.account_id));
+    if (!account || account.status !== 'ACTIVE') throw this.refused();
+    if (account.signin_lock === 'LOCKED') throw this.locked();
+    const access = await this.eligible('console', account.id);
+    if (!access || access.surface !== 'console') {
+      this.deps.loggers.security.warn('auth.staff_app_from_member_refused', {
+        reason: 'no_access',
+      });
+      throw this.refused();
+    }
+    const credential = await accountRepository.credential(this.deps.db, account.id, 'PASSWORD');
+    if (credential && Boolean(Number(credential.must_change))) {
+      // OI-IDN-20: the temporary password is changed through the staff sign-in first.
+      throw this.refused();
+    }
+    const tokens = await this.deps.sessions.start(
+      {
+        accountId: account.id,
+        accountPublicId: binToUuid(account.public_id),
+        surface: 'console',
+        staffApp: true,
+        institution: {
+          id: access.ctx.institution_id,
+          publicId: binToUuid(access.ctx.institution_public_id),
+        },
+        profile: {
+          id: access.ctx.profile_id,
+          publicId: binToUuid(access.ctx.profile_public_id),
+        },
+      },
+      client,
+    );
+    this.deps.loggers.security.info('auth.staff_signed_in', {
+      surface: 'console',
+      client: 'staff-app',
+      via: 'member-app',
+    });
+    return { tokens, name: fullName(account) };
   }
 
   /** IDN-089: the staff app renews its console session with the refresh token in the body. */

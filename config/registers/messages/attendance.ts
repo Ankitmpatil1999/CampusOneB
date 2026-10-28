@@ -80,6 +80,14 @@ export const ATTENDANCE_MESSAGES = [
     refs: ['21.8', 'OI-ATT-11', 'client standing approval 2026-10-03'],
   },
   n('ATT.NO_PERIOD_NOW', 409, 'There’s no period for this class right now.', ['21.6']),
+  // Client 2026-10-26: a second tap too soon after the check-in is no check-out.
+  n(
+    'ATT.CHECKOUT_TOO_SOON',
+    409,
+    '{name} is already checked in (at {in}). Tap again after {after} to check out.',
+    ['21.5', 'client 2026-10-26'],
+    ['name', 'in', 'after'],
+  ),
   n('ATT.NOT_IN_CLASS', 403, '{name} isn’t in this class.', ['21.6'], ['name']),
   n('ATT.FUTURE_DATE', 422, 'Attendance can’t be marked for a future date.', [
     '21.10',

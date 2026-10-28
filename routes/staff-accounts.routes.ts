@@ -74,7 +74,7 @@ doc({
   responses: { 200: { description: 'Active profile', schema: activeProfileResultSchema } },
 });
 doc({
-  id: 'IDN-092',
+  id: 'IDN-093',
   method: 'get',
   path: '/api/v1/me/institutions',
   summary:
@@ -84,7 +84,7 @@ doc({
   responses: { 200: { description: 'Institutions', schema: institutionsSchema } },
 });
 doc({
-  id: 'IDN-093',
+  id: 'IDN-094',
   method: 'put',
   path: '/api/v1/me/institution',
   summary:

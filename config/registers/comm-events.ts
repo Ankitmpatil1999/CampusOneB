@@ -121,9 +121,12 @@ export const COMM_EVENTS: readonly CommEventDefinition[] = [
   ev('RESULTS', 'Exam results', 'Results are published: the student and parents', [
     'NTF.RESULTS_PUBLISHED',
   ]),
-  ev('CLASS', 'Class allocation', 'A student is placed in a class: the student and parents', [
-    'NTF.CLASS_PLACED',
-  ]),
+  ev(
+    'CLASS',
+    'Class allocation',
+    'A student is placed in a class: the student and parents, and the class teacher',
+    ['NTF.CLASS_PLACED', 'NTF.CLASS_STUDENT_ADDED'],
+  ),
   ev(
     'TRANSPORT',
     'Transport',

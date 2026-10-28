@@ -1,6 +1,6 @@
 /**
  * Console accounts and roles (IDN-038, IDN-060…062), the member app's active profile and
- * institution (IDN-014, IDN-092/093) and the back office's home and search (RPT-007, RPT-008).
+ * institution (IDN-014, IDN-093/094) and the back office's home and search (RPT-007, RPT-008).
  */
 import { z } from 'zod';
 
@@ -67,7 +67,7 @@ export const activeProfileResultSchema = z
   .object({ activeProfileId: z.uuid() })
   .meta({ id: 'ActiveProfileSet' });
 
-/** IDN-093 (client 2026-10-27): the institution the app opened and the profile it works for. */
+/** IDN-094 (client 2026-10-27): the institution the app opened and the profile it works for. */
 export const memberInstitutionSetSchema = z
   .object({ activeProfileId: z.uuid(), institutionId: z.uuid() })
   .meta({ id: 'MemberInstitutionSet' });

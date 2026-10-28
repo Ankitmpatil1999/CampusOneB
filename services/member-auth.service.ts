@@ -146,7 +146,7 @@ export class MemberAuthService {
    * The profile a new member session works for: the first linked one, as IDN-013 shows it. The token
    * then carries it, so paying works right after sign-in; IDN-014 switches it (CR-04). With it, the
    * institutions of the account's profiles in that order (client 2026-10-27: a person may belong to
-   * several institutions; the app asks which one to open when there are two or more, and IDN-093
+   * several institutions; the app asks which one to open when there are two or more, and IDN-094
    * moves the session there).
    */
   private async defaultProfile(accountId: string) {

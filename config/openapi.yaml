@@ -510,6 +510,52 @@ paths:
       security:
         - bearer: []
         - cookie: []
+  /api/v1/auth/staff-app/from-member:
+    post:
+      operationId: IDN-092
+      summary: "One sign-in for staff (client 2026-10-27): the staff app’s console session for the account signed in on this phone (its member session, bound to this phone), without a second sign-in; the member session goes on beside it, so the app holds both — each reaches only its own routes. Refused like IDN-031 when the account may not enter the console or must change a temporary password first; the app then signs in as before"
+      tags:
+        - Staff auth
+      x-ringpe-auth: session (member)
+      responses:
+        "200":
+          description: The staff app’s session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  accessToken:
+                    type: string
+                  accessTokenExpiresAt:
+                    type: string
+                  refreshToken:
+                    type: string
+                  refreshTokenExpiresAt:
+                    type: string
+                  name:
+                    type: string
+                required:
+                  - sessionId
+                  - accessToken
+                  - accessTokenExpiresAt
+                  - refreshToken
+                  - refreshTokenExpiresAt
+                  - name
+                additionalProperties: false
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
   /api/v1/auth/staff-app/otp/verify:
     post:
       operationId: IDN-088
@@ -6338,7 +6384,7 @@ paths:
               - all
   /api/v1/console/me/institution:
     put:
-      operationId: IDN-095
+      operationId: IDN-096
       summary: "Open another of the account's institutions in the console (web or staff app): the session moves to the account's console profile there; renew the tokens next (cookie refresh, or IDN-089), which carry the institution and its sub-tasks. 404 IDN.INSTITUTION_NOT_LINKED otherwise"
       tags:
         - Staff auth
@@ -6367,7 +6413,7 @@ paths:
               $ref: "#/components/schemas/InstitutionChosen"
   /api/v1/console/me/institutions:
     get:
-      operationId: IDN-094
+      operationId: IDN-095
       summary: "The institutions whose console the account may enter, one each, and the session’s (client 2026-10-27: staff may work at several)"
       tags:
         - Staff auth
@@ -12367,7 +12413,7 @@ paths:
               $ref: "#/components/schemas/IncomeInput"
   /api/v1/me/institution:
     put:
-      operationId: IDN-093
+      operationId: IDN-094
       summary: "Open another of the account's institutions: the session works for the account's best profile there (its own first, else a child's or a student's own); the next token refresh carries it. 404 IDN.INSTITUTION_NOT_LINKED otherwise"
       tags:
         - Member account
@@ -12396,7 +12442,7 @@ paths:
               $ref: "#/components/schemas/InstitutionChosen"
   /api/v1/me/institutions:
     get:
-      operationId: IDN-092
+      operationId: IDN-093
       summary: "The institutions of the account's profiles, in the order of IDN-013's profiles, and the session's (client 2026-10-27: a person may belong to several)"
       tags:
         - Member account

@@ -526,7 +526,7 @@ export const IDENTITY_MESSAGES = [
     en: "This institution isn't on your account.",
     approval: 'approved',
     batch: 2,
-    refs: ['client 2026-10-27 (one person, several institutions)', 'IDN-093', 'IDN-095'],
+    refs: ['client 2026-10-27 (one person, several institutions)', 'IDN-094', 'IDN-096'],
   },
 ] as const satisfies readonly MessageDefinition[];
 

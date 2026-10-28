@@ -73,6 +73,7 @@ describe('Firebase push sender', () => {
             tag: `ringpe:${message.notificationId}`,
             notification_count: 3,
             visibility: 'PRIVATE',
+            notification_priority: 'PRIORITY_HIGH',
           }),
         },
       },

@@ -2,10 +2,10 @@
  * One person, several institutions, on a real MySQL (client 2026-10-27: BR-01 lifted — "a user
  * associated with several institutions must be asked which institution to open when they sign in"):
  * - a member's sign-up, sign-in and device binding answer the institutions of the account's
- *   profiles (IDN-003/006/007); IDN-092 lists them and IDN-093 moves the session to the account's
+ *   profiles (IDN-003/006/007); IDN-093 lists them and IDN-094 moves the session to the account's
  *   best profile at another one, which the next token refresh carries;
  * - a console sign-in, on the web or in the staff app, answers the institutions whose console the
- *   account may enter (IDN-033/088); IDN-094 lists them and IDN-095 moves the session to that
+ *   account may enter (IDN-033/088); IDN-095 lists them and IDN-096 moves the session to that
  *   institution's console profile, whose sub-tasks the next renewal carries;
  * - an institution the account has nothing at is refused (IDN.INSTITUTION_NOT_LINKED, 404).
  */
