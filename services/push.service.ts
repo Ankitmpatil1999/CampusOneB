@@ -121,7 +121,7 @@ export class PushTokensService {
    * token another account's session held (the phone signed in as someone else) moves here, so
    * pushes reach only who is signed in on the phone now. The same person's member and staff
    * sessions on one phone (client 2026-10-27: one sign-in, both modes) both keep it, each for its own
-   * surface's notices (migration 0089).
+   * surface's notices (migration 0091).
    */
   async register(p: Principal, input: PushTokenInput) {
     if (!isUuid(p.sessionId) || !isUuid(p.subject)) throw new NotFoundError();

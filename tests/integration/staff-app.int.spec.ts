@@ -361,7 +361,7 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
     expect((await request(f.app).get('/api/v1/me').set(acc.auth)).status).toBe(200);
   });
 
-  it('keeps the phone for both sessions of one person, and moves it from another person (migration 0089)', async () => {
+  it('keeps the phone for both sessions of one person, and moves it from another person (migration 0091)', async () => {
     const roles = Object.fromEntries(
       (await request(f.app).get('/api/v1/console/roles').set(con)).body.items.map(
         (r: { code: string; id: string }) => [r.code, r.id],

@@ -1,4 +1,4 @@
--- 0089_push_token_per_session.sql — forward-only migration (D-16). Client 2026-10-27: one sign-in on
+-- 0091_push_token_per_session.sql — forward-only migration (D-16). Client 2026-10-27: one sign-in on
 -- the phone holds the member session and, for staff, the staff app's console session together
 -- (one experience for staff, a choice of mode for a parent who is also staff). The phone's Firebase
 -- token is then registered for both sessions of the same account, each pushed its own surface's
