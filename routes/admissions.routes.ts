@@ -4,7 +4,12 @@ import { z } from 'zod';
 import { defineRoute } from '../config/openapi-registry';
 import { singleFileUpload, uploadErrors } from '../controllers/file.controller';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import {
+  authorize,
+  authorizeAny,
+  requireSurface,
+  requireTenant,
+} from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/ringpe_models';
 import {
@@ -19,6 +24,7 @@ import {
   linkEmailSchema,
   linkInputSchema,
   referenceInputSchema,
+  contactOtpVerifySchema,
   rejectionSchema,
   resumeAskSchema,
   resumeVerifySchema,
@@ -47,6 +53,11 @@ const application = z
     midTerm: z.boolean(),
     joiningDate: z.string().nullable(),
     student: z.looseObject({ firstName: z.string().nullable() }),
+    contactVerified: z
+      .boolean()
+      .describe(
+        'The primary contact’s mobile verified by a one-time code, and still the primary mobile (client 2026-10-27)',
+      ),
     references: z.array(z.object({ id: z.uuid(), name: z.string() }).loose()),
     documents: z.array(
       z.object({ type: docType, name: z.string(), url: z.string().nullable() }).loose(),
@@ -256,7 +267,7 @@ doc({
   method: 'post',
   path: '/api/v1/public/admissions/applications/{applicationId}/submission',
   summary:
-    'Submit with the declaration: everything is checked (student, address, contact, documents, age band; mid-term: TC or undertaking and a reference). Submitted at once, or after the application fee when it is mandatory',
+    'Submit with the declaration: everything is checked (student, address, contact, documents, age band; mid-term: TC or undertaking and a reference), then the primary contact’s mobile verified by a code (ADM-042/043; else 409 ADM.CONTACT_NOT_VERIFIED, client 2026-10-27). Submitted at once, or after the application fee when it is mandatory',
   auth: 'public (admission token)',
   request: submissionSchema,
   idempotent: 'required',
@@ -274,6 +285,37 @@ doc({
         .meta({ id: 'AdmissionSubmitted' }),
     },
   },
+});
+// The primary contact's mobile, verified by a one-time code (client 2026-10-27).
+const contactCodeSent = z
+  .object({
+    challengeId: z.uuid(),
+    sentTo: z.string().describe('The primary mobile, masked'),
+    expiresAt: z.string(),
+    testCode: z.string().optional().describe('Test mode only (OTP_TEST_SHOW_CODE)'),
+  })
+  .meta({ id: 'AdmissionContactCodeSent' });
+const contactVerified = z.object({ application }).meta({ id: 'AdmissionContactVerified' });
+const contactCodeSummary = (who: string) =>
+  `A one-time code by SMS to the application’s saved primary mobile (client 2026-10-27; ${who}); a live code is answered again without a new SMS. 409 ADM.CONTACT_MOBILE_MISSING without a primary mobile, 409 ADM.NOT_EDITABLE once approved or rejected`;
+const contactVerifySummary = (view: string) =>
+  `Check the code: the application keeps the number it verified, and contactVerified is true while that number stays the primary mobile — changing the contact or the number un-verifies it. Answers the application as ${view}; a wrong code is AUTH.OTP_INVALID (AUTH.OTP_EXPIRED, AUTH.OTP_ATTEMPTS_EXCEEDED, AUTH.OTP_ALREADY_USED)`;
+doc({
+  id: 'ADM-042',
+  method: 'post',
+  path: '/api/v1/public/admissions/applications/{applicationId}/contact-otp',
+  summary: contactCodeSummary(`the family on the public form, ${tokenHeader}`),
+  auth: 'public (admission token)',
+  responses: { 200: { description: 'Code sent', schema: contactCodeSent } },
+});
+doc({
+  id: 'ADM-043',
+  method: 'post',
+  path: '/api/v1/public/admissions/applications/{applicationId}/contact-otp/verify',
+  summary: contactVerifySummary('ADM-025 shows it'),
+  auth: 'public (admission token)',
+  request: contactOtpVerifySchema,
+  responses: { 200: { description: 'Verified', schema: contactVerified } },
 });
 doc({
   id: 'ADM-010',
@@ -418,7 +460,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/applications',
   summary:
-    'A counsellor’s application (same model and checks as the public form; submit: true to submit)',
+    'A counsellor’s application (same model and checks as the public form). submit: true is refused with 409 ADM.CONTACT_NOT_VERIFIED before anything is written: the draft’s primary contact is verified first (ADM-044/045), then submitted (ADM-030; client 2026-10-27)',
   auth: 'admissions.edit',
   request: consoleApplicationSchema,
   idempotent: 'required',
@@ -437,11 +479,31 @@ doc({
   id: 'ADM-030',
   method: 'post',
   path: '/api/v1/console/applications/{applicationId}/submission',
-  summary: 'Submit a counsellor’s draft (the same checks as the public form)',
+  summary:
+    'Submit a counsellor’s draft (the same checks as the public form, the primary contact’s mobile verified included: ADM-044/045, else 409 ADM.CONTACT_NOT_VERIFIED)',
   auth: 'admissions.edit',
   request: submissionSchema,
   idempotent: 'required',
   responses: { 200: { description: 'Submitted, or waiting for the fee' } },
+});
+doc({
+  id: 'ADM-044',
+  method: 'post',
+  path: '/api/v1/console/applications/{applicationId}/contact-otp',
+  summary: contactCodeSummary(
+    'the office at the console or in the staff app presses Send code and the parent reads the code out',
+  ),
+  auth: 'admissions.edit,admissions.approve',
+  responses: { 200: { description: 'Code sent', schema: contactCodeSent } },
+});
+doc({
+  id: 'ADM-045',
+  method: 'post',
+  path: '/api/v1/console/applications/{applicationId}/contact-otp/verify',
+  summary: contactVerifySummary('ADM-014 shows it (a new version: ETag)'),
+  auth: 'admissions.edit,admissions.approve',
+  request: contactOtpVerifySchema,
+  responses: { 200: { description: 'Verified', schema: contactVerified } },
 });
 doc({
   id: 'ADM-017',
@@ -487,7 +549,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/applications/{applicationId}/approval',
   summary:
-    'Approve (If-Match): user type and department, a section of the class applied for, the admission number → the student member, wallets, guardian links and enrolment, in one transaction',
+    'Approve (If-Match): user type and department, a section of the class applied for, the admission number → the student member, wallets, guardian link and enrolment, in one transaction. The primary contact’s mobile is verified first (ADM-044/045, else 409 ADM.CONTACT_NOT_VERIFIED) and only that contact becomes the student’s Parent member — their existing profile here when they have one, whatever other school they belong to; the other parents keep their RingPe accounts, with their login details in the approval e-mail, and no profile here (client 2026-10-27)',
   auth: 'admissions.approve',
   request: approvalSchema,
   idempotent: 'required',
@@ -848,6 +910,29 @@ export function admissionsRoutes(deps: {
       );
     }),
   );
+  // ADM-042/043: the primary contact's mobile, verified by a code (client 2026-10-27).
+  router.post(
+    '/public/admissions/applications/:applicationId/contact-otp',
+    deps.authLimiter,
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await A.publicContactCode(param(req, 'applicationId'), token(req)));
+    }),
+  );
+  router.post(
+    '/public/admissions/applications/:applicationId/contact-otp/verify',
+    deps.authLimiter,
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      const out = await A.publicContactVerify(
+        param(req, 'applicationId'),
+        token(req),
+        contactOtpVerifySchema.parse(req.body ?? {}),
+      );
+      setEtag(res, out.application.version);
+      res.json(out);
+    }),
+  );
   router.post(
     '/public/admissions/applications/:applicationId/fee-payments',
     once,
@@ -1025,6 +1110,32 @@ export function admissionsRoutes(deps: {
           payLater: b.payLater,
         }),
       );
+    }),
+  );
+  // ADM-044/045 (client 2026-10-27): whoever completes or approves an application sends the code
+  // to the primary contact and enters the one the parent reads out.
+  const contactDesk = authorizeAny(['admissions.edit', 'admissions.approve'], L);
+  router.post(
+    '/console/applications/:applicationId/contact-otp',
+    ...console,
+    contactDesk,
+    wrap(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await A.consoleContactCode(principal(req), param(req, 'applicationId')));
+    }),
+  );
+  router.post(
+    '/console/applications/:applicationId/contact-otp/verify',
+    ...console,
+    contactDesk,
+    wrap(async (req, res) => {
+      const out = await A.consoleContactVerify(
+        principal(req),
+        param(req, 'applicationId'),
+        contactOtpVerifySchema.parse(req.body ?? {}),
+      );
+      setEtag(res, out.application.version);
+      res.json(out);
     }),
   );
   router.put(

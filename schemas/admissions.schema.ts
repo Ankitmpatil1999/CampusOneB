@@ -316,6 +316,15 @@ export const resumeVerifySchema = z
     otp: z.string().regex(/^\d{4,8}$/, { message: 'AUTH.OTP_INVALID' }),
   })
   .meta({ id: 'AdmissionResumeVerify' });
+// The code sent to the primary contact's mobile (client 2026-10-27).
+export const contactOtpVerifySchema = z
+  .strictObject({
+    challengeId: z.string({ message: 'AUTH.OTP_INVALID' }).trim().max(40),
+    otp: z
+      .string({ message: 'AUTH.OTP_INVALID' })
+      .regex(/^\d{4,8}$/, { message: 'AUTH.OTP_INVALID' }),
+  })
+  .meta({ id: 'AdmissionContactOtpVerify' });
 export const statusLookupSchema = z
   .strictObject({
     applicationNo: z

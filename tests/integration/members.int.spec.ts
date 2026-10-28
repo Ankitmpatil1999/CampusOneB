@@ -1,10 +1,11 @@
 /**
  * Members in the console on a real MySQL (IDN-044…055, IDN-058, IDN-059; ACA-001…003,
- * ACA-009…013; BR-01, CR-06, CR-08, CR-12, CR-13; OI-IDN-20): the academic structure, onboarding a
- * student with a new parent, one institution per person, unique admission numbers, institution
- * fields, edits with If-Match, statuses with the administrator's self-apply and the checker path,
- * de-link, history, search, staff with a temporary password changed at first sign-in, sheets
- * checked before they are committed, and another institution's members never visible.
+ * ACA-009…013; CR-06, CR-08, CR-12, CR-13; OI-IDN-20): the academic structure, onboarding a student
+ * with a new parent, who may join another institution too (client 2026-10-27), unique admission
+ * numbers, institution fields, edits with If-Match, statuses with the administrator's self-apply
+ * and the checker path, de-link, history, search, staff with a temporary password changed at first
+ * sign-in, sheets checked before they are committed, and another institution's members never
+ * visible.
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
@@ -152,6 +153,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     Student: ['STUDENT', ['Primary', 'Middle school']],
     Parent: ['PARENT', ['Parents']],
     Teacher: ['TEACHER', ['Primary', 'Secondary']],
+    Merchant: ['MERCHANT', ['Canteen']],
   };
   /** The user type (created the first time it is needed; new schools start with Staff and Student). */
   const userType = async (con: Record<string, string>, name: string) => {
@@ -215,7 +217,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     expect(list.body.items[0].sections.map((s: { name: string }) => s.name)).toEqual(['A', 'B']);
   });
 
-  it('onboards a student with a new parent, one institution per person', async () => {
+  it('onboards a student with a new parent, who may join another institution too', async () => {
     const student = await userType(a.con, 'Student');
     await userType(a.con, 'Parent');
     const parentMobile = mobile();
@@ -274,22 +276,42 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       .set(a.con)
       .send({ mobile: parentMobile });
     expect(eligibleHere.body).toMatchObject({ eligible: true, code: 'IDN.PROFILE_EXISTS_HERE' });
+    // Client 2026-10-27: a person may belong to several institutions — the mobile joins B too,
+    // and B learns only that it is used elsewhere (never where, never A's profiles).
     const elsewhere = await request(app)
       .post('/api/v1/console/members/eligibility')
       .set(b.con)
       .send({ mobile: parentMobile });
-    expect(elsewhere.body).toMatchObject({
-      eligible: false,
-      code: 'IDN.MOBILE_IN_OTHER_INSTITUTION',
+    expect(elsewhere.body).toEqual({
+      eligible: true,
+      code: 'IDN.NEW_PERSON',
+      account: false,
+      elsewhere: true,
+      profiles: [],
     });
     const bParent = await userType(b.con, 'Teacher');
-    const refused = await onboardStaff(app, b.con, {
+    const joined = await onboardStaff(app, b.con, {
       userTypeId: bParent.id,
       firstName: 'Mahesh',
+      lastName: 'Hegde',
       mobile: parentMobile,
     });
-    expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe('IDN.MOBILE_IN_OTHER_INSTITUTION');
+    expect(joined.status, JSON.stringify(joined.body)).toBe(201);
+    const bothHere = await request(app)
+      .post('/api/v1/console/members/eligibility')
+      .set(a.con)
+      .send({ mobile: parentMobile });
+    expect(bothHere.body).toMatchObject({
+      eligible: true,
+      code: 'IDN.PROFILE_EXISTS_HERE',
+      account: true,
+      elsewhere: true,
+    });
+    // A's own profiles only (the parent, and the child under the mobile), never B's.
+    expect(bothHere.body.profiles.map((x: { name: string }) => x.name).sort()).toEqual([
+      'Aarav Hegde',
+      'Mahesh Hegde',
+    ]);
 
     // Another institution's member is not found; search finds by admission number.
     const id = students.body.items[0].id;
@@ -677,6 +699,98 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
     // Asha has the Teacher role from her row; Bhavya, None, has no console role.
     expect(await rolesByEmail(asha['E-mail'])).toEqual(['TEACHER']);
     expect(await rolesByEmail(bhavya['E-mail'])).toEqual([]);
+  });
+
+  it('takes a mobile used at another institution in a staff sheet and for a merchant (client 2026-10-27)', async () => {
+    // A parent at school A…
+    const student = await userType(a.con, 'Student');
+    await userType(a.con, 'Parent');
+    const theirs = mobile();
+    const kid = await onboard(a.con, {
+      userTypeId: student.id,
+      firstName: 'Sanvi',
+      lastName: 'Joshi',
+      gender: 'FEMALE',
+      dateOfBirth: '2015-01-02',
+      admissionNo: `SPS/${randomInt(0, 1e9)}`,
+      sectionId: grade6.sections[0]!.id,
+      customFields: { [blood]: 'B+' },
+      guardians: [
+        {
+          firstName: 'Nikhil',
+          lastName: 'Joshi',
+          mobile: theirs,
+          email: `nikhil.${randomInt(0, 1e9)}@example.in`,
+          relation: 'FATHER',
+        },
+      ],
+    });
+    expect(kid.status, JSON.stringify(kid.body)).toBe(201);
+    // …is a teacher on school B's staff sheet…
+    const teacher = await userType(b.con, 'Teacher');
+    const tpl = await request(app)
+      .get('/api/v1/console/members/uploads/templates/staff')
+      .set(b.con);
+    const header = tpl.text.replace(String.fromCharCode(0xfeff), '').split('\r\n')[0]!;
+    const values: Record<string, string> = {
+      'User type': 'Teacher',
+      Department: teacher.departments[0]!.name,
+      Role: 'None',
+      'First name': 'Nikhil',
+      'Last name': 'Joshi',
+      Gender: 'Male',
+      'Date of birth': '12/07/1988',
+      Mobile: theirs,
+      'E-mail': `nikhil.${randomInt(0, 1e9)}@school.example.in`,
+      'Joining date': '01/06/2026',
+    };
+    const csv = [
+      header,
+      header
+        .split(',')
+        .map((c) => values[c] ?? '')
+        .join(','),
+    ].join('\r\n');
+    const up = await request(app)
+      .post('/api/v1/console/members/uploads')
+      .set(b.con)
+      .set('Idempotency-Key', randomUUID())
+      .field('kind', 'staff')
+      .attach('file', Buffer.from(csv), { filename: 'staff.csv', contentType: 'text/csv' });
+    expect(up.status, JSON.stringify(up.body)).toBe(201);
+    expect(up.body).toMatchObject({ total: 1, accepted: 1 });
+    const done = await request(app)
+      .post(`/api/v1/console/members/uploads/${up.body.id}/commit`)
+      .set(b.con)
+      .set('Idempotency-Key', randomUUID())
+      .send({ mode: 'ALL' });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body.created).toBe(1);
+    // …the account made for the mobile holds the family's profiles at A too…
+    const profiles = await t.db
+      .selectFrom('member_profiles as m')
+      .innerJoin('platform_accounts as pa', 'pa.id', 'm.account_id')
+      .select('m.institution_id')
+      .where('pa.mobile', '=', theirs)
+      .execute();
+    expect([...new Set(profiles.map((x) => String(x.institution_id)))].sort()).toEqual(
+      [a.rowId, b.rowId].sort(),
+    );
+    // …and runs a counter at B, as a merchant on the same mobile.
+    await userType(b.con, 'Merchant');
+    const merchant = await request(app)
+      .post('/api/v1/console/merchants')
+      .set(b.con)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        displayName: `Joshi Stationery ${randomInt(0, 1e6)}`,
+        operatorFirstName: 'Nikhil',
+        operatorLastName: 'Joshi',
+        subType: 'REGULAR',
+        mobile: theirs,
+        email: `counter.${randomInt(0, 1e9)}@example.in`,
+      });
+    expect(merchant.status, JSON.stringify(merchant.body)).toBe(201);
   });
 
   /** The console roles of the staff member with this work e-mail. */

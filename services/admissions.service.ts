@@ -296,6 +296,9 @@ const maskName = (n: string) =>
         .join(' ')
     : 'Name not entered yet';
 const maskMobile = (m: string | null) => (m ? `+91 ••••• •••${m.slice(-2)}` : null);
+/** The primary contact's mobile as a sent code names it; another country's keeps no "+91". */
+const maskContact = (m: string) =>
+  m.startsWith('+') ? `+•• ••••• •••${m.slice(-2)}` : maskMobile(m)!;
 /** Where a payment link went, as the fee collection shows it (fee-payments.service.ts). */
 const maskSentMobile = (m: string) => `••••••${m.slice(-4)}`;
 const maskSentEmail = (e: string) => {
@@ -311,15 +314,20 @@ const WHO: Record<AdmissionAccountPerson, string> = {
   LOCAL_GUARDIAN: 'local guardian',
 };
 
-/** The login details of a family's RingPe accounts (client 2026-10-23). */
+/**
+ * The login details of a family's RingPe accounts (client 2026-10-23). A number already registered
+ * with RingPe signs in with its existing login and creates no new account (client 2026-10-27).
+ */
 export function loginText(logins: readonly IssuedLogin[]) {
   const lines = logins.map((l) =>
     l.password
       ? `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile}, one-time password ${l.password}`
-      : `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile} already has a RingPe account — sign in with your own password.`,
+      : `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile} is already registered with RingPe — sign in with your existing login (this mobile number and your password). Please don’t create a new account.`,
   );
   return [
-    'Your RingPe login details. Sign in to the RingPe app with the mobile number and the one-time password; you will then choose your own password (and give your PAN and Aadhaar number if we don’t have them).',
+    logins.some((l) => l.password)
+      ? 'Your RingPe login details. Sign in to the RingPe app with the mobile number and the one-time password; you will then choose your own password (and give your PAN and Aadhaar number if we don’t have them).'
+      : 'Your RingPe login details. Sign in to the RingPe app with your existing login.',
     '',
     ...lines,
   ].join('\n');
@@ -572,6 +580,8 @@ export class AdmissionsService {
           ? maskedIds(r, RELATION_HOLDER[r.primary_relation])
           : { aadhaar: null, pan: null }),
       },
+      // The primary contact's mobile verified by a code (client 2026-10-27).
+      contactVerified: this.contactVerified(r),
       // Each person's Aadhaar and PAN, masked (client 2026-10-13).
       identityNumbers: Object.fromEntries(ID_HOLDERS.map((h) => [h, maskedIds(r, h)])) as Record<
         IdHolder,
@@ -1685,6 +1695,143 @@ export class AdmissionsService {
     };
   }
 
+  // --- ADM-042…045: the primary contact's mobile, verified (client 2026-10-27) -------------------------
+  /**
+   * Verified only while the number the code went to is still the primary contact's: another contact
+   * or another number un-verifies the application without a write.
+   */
+  private contactVerified(r: {
+    primary_mobile: string | null;
+    contact_verified_mobile: string | null;
+  }) {
+    return !!r.primary_mobile && r.contact_verified_mobile === r.primary_mobile;
+  }
+
+  /**
+   * Binds a code to the school and the mobile it went to: a code for another number never verifies
+   * this one, and twins' applications on one mobile share the live code (reuseLive).
+   */
+  private contactContext(institutionId: string, mobile: string) {
+    return createHash('sha256').update(`admission-contact:${institutionId}:${mobile}`).digest();
+  }
+
+  /** The number to send a code to: a saved primary mobile of an undecided application. */
+  private contactMobile(r: { status: ApplicationStatus; primary_mobile: string | null }) {
+    if (r.status === 'APPROVED' || r.status === 'REJECTED') {
+      throw new CustomAPIError(409, 'ADM.NOT_EDITABLE');
+    }
+    if (!r.primary_mobile) {
+      throw new CustomAPIError(409, 'ADM.CONTACT_MOBILE_MISSING', {
+        errors: [{ field: 'parents.primaryMobile', code: 'ADM.CONTACT_MOBILE_MISSING' }],
+      });
+    }
+    return r.primary_mobile;
+  }
+
+  /** A code by SMS to the primary mobile (the family's form, or the office: "Send code"). */
+  private async sendContactCode(
+    institutionId: string,
+    r: { status: ApplicationStatus; primary_mobile: string | null },
+  ) {
+    const mobile = this.contactMobile(r);
+    const issued = await this.deps.otp.issue({
+      purpose: 'ADMISSION_CONTACT',
+      channel: 'SMS',
+      destination: mobile,
+      institutionId,
+      contextHash: this.contactContext(institutionId, mobile),
+      reuseLive: true,
+    });
+    return {
+      challengeId: issued.challengeId,
+      sentTo: maskContact(mobile),
+      expiresAt: issued.expiresAt.toISOString(),
+      ...(issued.testCode ? { testCode: issued.testCode } : {}),
+    };
+  }
+
+  /** The code checked: the application keeps the number it verified, audited. */
+  private async verifyContactCode(
+    institutionId: string,
+    id: string,
+    r: { id: string; status: ApplicationStatus; primary_mobile: string | null },
+    input: { challengeId: string; otp: string },
+  ) {
+    const mobile = this.contactMobile(r);
+    await this.deps.otp.verify(input.challengeId, input.otp, 'ADMISSION_CONTACT', {
+      contextHash: this.contactContext(institutionId, mobile),
+    });
+    const at = this.now();
+    await this.deps.db.transaction().execute(async (trx) => {
+      // Only while the number is still the one the code went to.
+      const res = await trx
+        .updateTable('admission_applications')
+        .set({
+          contact_verified_mobile: mobile,
+          contact_verified_at: at,
+          updated_at: at,
+          row_version: sql<number>`row_version + 1`,
+        })
+        .where('id', '=', r.id)
+        .where('primary_mobile', '=', mobile)
+        .where('status', 'in', ['DRAFT', 'SUBMITTED'])
+        .executeTakeFirst();
+      if (Number(res.numUpdatedRows) !== 1) throw new PreconditionFailedError();
+      await recordAudit(trx, {
+        institutionId,
+        action: 'ADMISSION_CONTACT_VERIFIED',
+        entityType: 'admission_application',
+        entityRef: id,
+        after: { mobile: maskSentMobile(mobile) },
+      });
+    });
+  }
+
+  /** ADM-042: the family's code, on the public form (resume token). */
+  async publicContactCode(id: string, token: string | undefined) {
+    const a = await this.access(id, token, 'edit');
+    return this.sendContactCode(a.inst.id, a.row);
+  }
+
+  /** ADM-043: the family's code checked; the application as ADM-025 shows it. */
+  async publicContactVerify(
+    id: string,
+    token: string | undefined,
+    input: { challengeId: string; otp: string },
+  ) {
+    const a = await this.access(id, token, 'edit');
+    await this.verifyContactCode(a.inst.id, id, a.row, input);
+    return { application: await this.view(await this.lockless(a.inst.id, id), { console: false }) };
+  }
+
+  /** ADM-044: the office sends the code; the parent reads it out (console, staff app). */
+  async consoleContactCode(p: Principal, id: string) {
+    const i = await this.consoleInst(p);
+    return this.sendContactCode(i.id, await this.lockless(i.id, id));
+  }
+
+  /** ADM-045: the code the parent read out; the application as ADM-014 shows it. */
+  async consoleContactVerify(
+    p: Principal,
+    id: string,
+    input: { challengeId: string; otp: string },
+  ) {
+    const i = await this.consoleInst(p);
+    await this.verifyContactCode(i.id, id, await this.lockless(i.id, id), input);
+    return { application: await this.detail(p, id) };
+  }
+
+  /** Submission and approval wait for the verified contact (client 2026-10-27). */
+  private assertContactVerified(r: {
+    primary_mobile: string | null;
+    contact_verified_mobile: string | null;
+  }) {
+    if (this.contactVerified(r)) return;
+    throw new CustomAPIError(409, 'ADM.CONTACT_NOT_VERIFIED', {
+      errors: [{ field: 'parents.primaryMobile', code: 'ADM.CONTACT_NOT_VERIFIED' }],
+    });
+  }
+
   // --- ADM-004 / ADM-025 / ADM-005 --------------------------------------------------------------------
   async publicCreate(linkToken: string, input: ApplicationInput) {
     const c = await this.deps.links.context(linkToken);
@@ -2167,6 +2314,8 @@ export class AdmissionsService {
     const r = await this.lockless(institutionId, id);
     if (r.status !== 'DRAFT') throw new CustomAPIError(409, 'ADM.NOT_DRAFT');
     await this.completeness(r);
+    // The primary contact's mobile verified by a code (client 2026-10-27), once the form is complete.
+    this.assertContactVerified(r);
     const fees = await this.entryFees(this.deps.db, institutionId, String(r.year_id));
     if (!fees) throw new CustomAPIError(409, 'ADM.FEE_CONFIG_MISSING');
     const appFee = Number(fees.application_fee_paise);
@@ -2967,6 +3116,7 @@ export class AdmissionsService {
             relation: r.primary_relation,
             mobile: r.primary_mobile,
           },
+          contactVerified: this.contactVerified(r),
           class: r.class_public_id
             ? { id: binToUuid(r.class_public_id), name: r.class_name! }
             : null,
@@ -3004,8 +3154,10 @@ export class AdmissionsService {
   async consoleCreate(p: Principal, input: ApplicationInput & { submit?: boolean | undefined }) {
     const i = await this.consoleInst(p);
     const { submit, ...rest } = input;
+    // A new draft's contact is not verified yet (client 2026-10-27): it is submitted once the code
+    // is checked (ADM-044/045, then ADM-030) — refused here before anything is written.
+    if (submit) this.assertContactVerified({ primary_mobile: null, contact_verified_mobile: null });
     const id = await this.createDraft(i.id, rest, 'COUNSELLOR', this.by(p));
-    if (submit) await this.submit(i.id, id, { declaredBy: 'Counsellor' }, this.by(p));
     return this.detail(p, id);
   }
 
@@ -3329,7 +3481,10 @@ export class AdmissionsService {
   /**
    * Approval (FR-ADM-09): the member (student), the wallets, the guardian links and the enrolment are
    * created by the onboarding service in the same transaction as the application's change; any
-   * refusal leaves nothing behind.
+   * refusal leaves nothing behind. Client 2026-10-27: the primary contact's mobile is verified first,
+   * and only that contact becomes a Parent member linked to the student — their existing profile here
+   * when they have one (a sibling's parent, a teacher), and whatever school they belong to besides
+   * (BR-01 lifted). The other parents on the form keep their RingPe accounts, with no profile here.
    */
   async approve(
     p: Principal,
@@ -3347,6 +3502,9 @@ export class AdmissionsService {
     const r = await this.lockless(i0.id, id);
     this.decidable(r);
     if (r.row_version !== expected) throw new PreconditionFailedError();
+    // An application submitted before codes were asked is verified at the console first. A change of
+    // number since moves row_version, which the transaction below checks again.
+    this.assertContactVerified(r);
     // The admission number and section follow Accounts' confirmation of both fees, the application
     // fee and the admission fee (client 2026-10-09). Confirmations only ever move forward.
     if ((await this.feeStates(this.deps.db, r)).some((f) => !f.confirmed)) {
@@ -3375,7 +3533,13 @@ export class AdmissionsService {
         params: { class: r.class_name ?? '—' },
       });
     }
-    const guardians = this.guardiansOf(this.dataOf(r).parents);
+    // The verified primary contact only (client 2026-10-27): linked without the name match a
+    // sibling's parent needs, as the code proved the number is theirs. A contact with another
+    // country's number has no RingPe account, so no parent is linked.
+    const primary = this.guardiansOf(this.dataOf(r).parents).find(
+      (g) => g.mobile === r.primary_mobile,
+    );
+    const guardians = primary ? [{ ...primary, verified: true }] : [];
     // A new institution has only the default Staff type (RNG-ONB-024): without a Parent type the
     // parents cannot be added, and the approval would fail on a field the form does not show.
     if (guardians.length) {
@@ -3800,17 +3964,9 @@ export class AdmissionsService {
         // The parents who get a RingPe account with the student, as on an approval.
         const guardians = this.guardiansOf(checked.state.data.parents);
         if (guardians.length && !parentType) err('Primary contact', 'ADM.PARENT_TYPE_MISSING');
+        // A parent who belongs to another school as well is no longer refused: one person, many
+        // schools (BR-01 lifted, client 2026-10-27).
         const who = { FATHER: 'Father', MOTHER: 'Mother', GUARDIAN: 'Guardian' } as const;
-        for (const g of guardians) {
-          if (
-            g.mobile &&
-            (await membersRepository.profilesOfMobile(db, g.mobile)).some(
-              (x) => String(x.institution_id) !== String(i.id),
-            )
-          ) {
-            err(`${who[g.relation]} mobile`, 'IDN.MOBILE_IN_OTHER_INSTITUTION');
-          }
-        }
         // Client 2026-10-16 (setting mem.parentEmail.required): the primary contact's e-mail.
         const primary = guardians[0];
         if (primary && !primary.email?.trim() && emailRequired) {
@@ -3962,8 +4118,9 @@ export class AdmissionsService {
   }
 
   /**
-   * The parents who get a RingPe account with the student (ADM-018): the primary contact first, then
-   * the father, the mother and a guardian, each mobile once.
+   * The parents on the form as guardians of the student: the primary contact first, then the father,
+   * the mother and a guardian, each mobile once. The existing-students upload links them all; an
+   * approval only the verified primary contact (client 2026-10-27).
    */
   guardiansOf(parents: StoredData['parents']) {
     const guardians: NonNullable<OnboardInput['guardians']>[number][] = [];

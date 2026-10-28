@@ -97,6 +97,30 @@ export const accountSummarySchema = z
   })
   .meta({ id: 'AccountSummary' });
 
+/** An institution a person may open (client 2026-10-27: one person, several institutions). */
+export const institutionItemSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    shortName: z.string(),
+    city: z.string(),
+    logoUrl: z.string().nullable(),
+  })
+  .meta({ id: 'InstitutionItem' });
+
+/** The institutions a person may open, and the session's (client 2026-10-27). */
+export const institutionsSchema = z
+  .object({
+    current: z.uuid().nullable().describe("The session's institution"),
+    institutions: z.array(institutionItemSchema),
+  })
+  .meta({ id: 'InstitutionChoice' });
+
+/** Opens another institution of the account (client 2026-10-27). */
+export const institutionChoiceSchema = z
+  .strictObject({ institutionId: z.uuid({ message: 'VALIDATION.FORMAT' }) })
+  .meta({ id: 'InstitutionChosen' });
+
 export const memberSessionSchema = z
   .object({
     sessionId: z.uuid(),
@@ -105,6 +129,11 @@ export const memberSessionSchema = z
     refreshToken: z.string(),
     refreshTokenExpiresAt: z.iso.datetime(),
     account: accountSummarySchema,
+    institutions: z
+      .array(institutionItemSchema)
+      .describe(
+        "The institutions of the account's profiles, the session's first (client 2026-10-27): with two or more, the app asks which to open (PUT /api/v1/me/institution)",
+      ),
   })
   .meta({ id: 'MemberSession' });
 
@@ -238,7 +267,12 @@ export const meSchema = z
           id: z.uuid(),
           memberNo: z.string(),
           name: z.string(),
-          institution: z.object({ id: z.uuid(), name: z.string(), shortName: z.string() }),
+          institution: z.object({
+            id: z.uuid(),
+            name: z.string(),
+            shortName: z.string(),
+            logoUrl: z.string().nullable(),
+          }),
           userType: z.string(),
           kind: z.enum(['STUDENTS', 'PARENTS', 'STAFF', 'MERCHANTS']),
           category: z

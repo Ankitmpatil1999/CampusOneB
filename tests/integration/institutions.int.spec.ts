@@ -288,9 +288,11 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
       code: 'INS.NAME_ADDRESS_TAKEN',
       detail: 'Organization already registered',
     });
-    // The administrator's account now belongs to an institution.
-    const taken = await register({ adminEmail: admin.email });
-    expect(taken.r.body).toMatchObject({ code: 'INS.ADMIN_IN_INSTITUTION' });
+    // The administrator's account belongs to an institution, and may administer another one too
+    // (client 2026-10-27: BR-01 lifted).
+    const second = await register({ adminEmail: admin.email });
+    expect(second.r.status, JSON.stringify(second.r.body)).toBe(201);
+    expect(second.r.body.administrator).toMatchObject({ pending: false });
   });
 
   it('registers for an administrator without an account yet, who claims it on sign-in', async () => {
@@ -311,10 +313,10 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
     const d = await detail(r.body.id);
     expect(d.body.administrator).toMatchObject({ email, pending: true });
 
-    // The same e-mail can't wait for a second institution.
+    // The same e-mail may wait for a second institution (client 2026-10-27).
     const twice = await register({ adminEmail: email });
-    expect(twice.r.status).toBe(409);
-    expect(twice.r.body.code).toBe('INS.ADMIN_IN_INSTITUTION');
+    expect(twice.r.status, JSON.stringify(twice.r.body)).toBe(201);
+    expect(twice.r.body.administrator).toMatchObject({ email, pending: true });
 
     // The account made later with that e-mail: an unverified e-mail claims nothing.
     const pub = newPublicIdPair();
@@ -351,6 +353,11 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
       email,
       pending: false,
       name: expect.stringMatching(/kavya/i),
+    });
+    // Both institutions waiting for the e-mail are the account's now (client 2026-10-27).
+    expect((await detail(twice.r.body.id)).body.administrator).toMatchObject({
+      email,
+      pending: false,
     });
     await passwordShown(1);
   });

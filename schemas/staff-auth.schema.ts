@@ -3,7 +3,7 @@
  * single 6.4 message from the service (RNG-IDN-376).
  */
 import { z } from 'zod';
-import { challengeSchema } from './member-auth.schema';
+import { challengeSchema, institutionItemSchema } from './member-auth.schema';
 
 const req = (max: number) =>
   z
@@ -76,6 +76,22 @@ export const staffSignedInSchema = z
     refreshTokenExpiresAt: z.iso.datetime(),
   })
   .meta({ id: 'StaffSignedIn' });
+
+/** Client 2026-10-27: the institutions whose console the account may enter, the session's first. */
+export const consoleInstitutionsField = z
+  .array(institutionItemSchema)
+  .describe(
+    'The institutions whose console the account may enter (one each), the session’s first (client 2026-10-27): with two or more, the app asks which to open (PUT /api/v1/console/me/institution)',
+  );
+
+export const consoleSignedInSchema = staffSignedInSchema
+  .extend({ institutions: consoleInstitutionsField })
+  .meta({ id: 'ConsoleSignedIn' });
+
+/** IDN-096: the institution the console opened and its console profile (client 2026-10-27). */
+export const consoleInstitutionSetSchema = z
+  .object({ institutionId: z.uuid(), profileId: z.uuid() })
+  .meta({ id: 'ConsoleInstitutionSet' });
 
 /** A temporary password must be changed first (OI-IDN-20): the token opens the reset step (IDN-083). */
 export const staffPasswordChangeSchema = z

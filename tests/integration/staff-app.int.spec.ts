@@ -281,4 +281,143 @@ describe.skipIf(!adminUrl)('the staff app: sign-in, push and staff notifications
     expect((await setRoles(['ACCOUNTANT'])).status).toBe(200);
     expect(await office()).toEqual({ roles: ['Accountant'] });
   });
+
+  it('opens the staff app from the member app without a second sign-in (IDN-092, client 2026-10-27)', async () => {
+    const fromMember = (auth: Auth) =>
+      request(f.app).post('/api/v1/auth/staff-app/from-member').set(auth).send({});
+    // A member with no console role at the school: refused as the staff sign-in refuses it.
+    const student: Payer = await f.student('Mira', 0);
+    const none = await fromMember(student.auth);
+    expect(none.status).toBe(401);
+    expect(none.body.code).toBe('IDN.CONSOLE_SIGNIN_REFUSED');
+    expect((await request(f.app).get('/api/v1/me').set(student.auth)).status).toBe(200);
+
+    // The web console's session is not a member session.
+    expect((await fromMember(con)).status).toBe(401);
+
+    // A member with office work (the Accountant, set in the test above): the staff app's session.
+    const roles = Object.fromEntries(
+      (await request(f.app).get('/api/v1/console/roles').set(con)).body.items.map(
+        (r: { code: string; id: string }) => [r.code, r.id],
+      ),
+    ) as Record<string, string>;
+    const acc = await f.payer('Usha', 0);
+    expect(
+      (
+        await request(f.app)
+          .put(`/api/v1/console/staff-accounts/${acc.id}/roles`)
+          .set(con)
+          .send({ roleIds: [roles.ACCOUNTANT] })
+      ).status,
+    ).toBe(200);
+    const smsBefore = f.h.sms.sent.length;
+    const r = await fromMember(acc.auth);
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body).toMatchObject({ name: expect.any(String), accessToken: expect.any(String) });
+    expect(f.h.sms.sent.length).toBe(smsBefore); // no code sent: no second sign-in
+    const session = await request(f.app).get('/api/v1/console/session').set(bearer(r.body));
+    expect(session.status, JSON.stringify(session.body)).toBe(200);
+    expect(session.body.subTasks).toEqual(expect.arrayContaining(['fees.collect']));
+    const row = await f.t.db
+      .selectFrom('sessions')
+      .select(['surface', 'staff_app'])
+      .where('public_id', '=', uuidToBin(r.body.sessionId))
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ surface: 'CONSOLE', staff_app: 1 });
+    // Renewed like a staff app session (IDN-089).
+    expect(
+      (
+        await request(f.app)
+          .post('/api/v1/auth/staff-app/token/refresh')
+          .send({ refreshToken: r.body.refreshToken })
+      ).status,
+    ).toBe(200);
+    // One sign-in, both sessions (client 2026-10-27): the member session goes on beside it, and
+    // each session reaches only its own surface's routes.
+    expect((await request(f.app).get('/api/v1/me').set(acc.auth)).status).toBe(200);
+    expect([401, 403]).toContain(
+      (await request(f.app).get('/api/v1/console/session').set(acc.auth)).status,
+    );
+    expect([401, 403]).toContain(
+      (await request(f.app).get('/api/v1/me').set(bearer(r.body))).status,
+    );
+    // Asked again (the app restarted): a new staff app session replaces the first.
+    const again = await fromMember(acc.auth);
+    expect(again.status).toBe(200);
+    expect(
+      (
+        await request(f.app)
+          .post('/api/v1/auth/staff-app/token/refresh')
+          .send({ refreshToken: r.body.refreshToken })
+      ).status,
+    ).toBe(401);
+    // Signing out of each ends each.
+    expect((await request(f.app).post('/api/v1/auth/signout').set(bearer(again.body))).status).toBe(
+      204,
+    );
+    expect(
+      (await request(f.app).get('/api/v1/console/session').set(bearer(again.body))).status,
+    ).toBe(401);
+    expect((await request(f.app).get('/api/v1/me').set(acc.auth)).status).toBe(200);
+  });
+
+  it('keeps the phone for both sessions of one person, and moves it from another person (migration 0089)', async () => {
+    const roles = Object.fromEntries(
+      (await request(f.app).get('/api/v1/console/roles').set(con)).body.items.map(
+        (r: { code: string; id: string }) => [r.code, r.id],
+      ),
+    ) as Record<string, string>;
+    const desk = await f.payer('Ravi', 0);
+    expect(
+      (
+        await request(f.app)
+          .put(`/api/v1/console/staff-accounts/${desk.id}/roles`)
+          .set(con)
+          .send({ roleIds: [roles.ACCOUNTANT] })
+      ).status,
+    ).toBe(200);
+    const staff = await request(f.app)
+      .post('/api/v1/auth/staff-app/from-member')
+      .set(desk.auth)
+      .send({});
+    expect(staff.status, JSON.stringify(staff.body)).toBe(200);
+    const token = `fcm-${randomUUID()}-${randomUUID()}`;
+    const holders = () =>
+      f.t.db
+        .selectFrom('session_push_tokens as t')
+        .innerJoin('sessions as s', 's.id', 't.session_id')
+        .select(['s.surface', 't.account_id'])
+        .where('t.token_hash', '=', tokenHash(token))
+        .orderBy('s.surface')
+        .execute();
+    expect(
+      (
+        await request(f.app)
+          .put('/api/v1/me/push-token')
+          .set(desk.auth)
+          .send({ token, platform: 'ANDROID' })
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await request(f.app)
+          .put('/api/v1/console/push-token')
+          .set(bearer(staff.body))
+          .send({ token, platform: 'ANDROID' })
+      ).status,
+    ).toBe(204);
+    // Both of the person's sessions keep the phone: member notices and console notices reach it.
+    expect((await holders()).map((h) => h.surface).sort()).toEqual(['CONSOLE', 'MEMBER']);
+    // Someone else signs in on the phone: the token moves to them alone.
+    const other = await f.student('Gita', 0);
+    expect(
+      (
+        await request(f.app)
+          .put('/api/v1/me/push-token')
+          .set(other.auth)
+          .send({ token, platform: 'ANDROID' })
+      ).status,
+    ).toBe(204);
+    expect((await holders()).map((h) => String(h.account_id))).toEqual([String(other.accountId)]);
+  });
 });

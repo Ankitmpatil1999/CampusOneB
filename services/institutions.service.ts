@@ -486,15 +486,11 @@ export class InstitutionsService {
       // Only a closed or blocked account; an unknown e-mail is never refused (client 2026-10-06/07).
       throw new CustomAPIError(409, 'INS.ADMIN_ACCOUNT_INACTIVE');
     }
-    if (admin && (await repo.hasInstitutionProfile(this.deps.db, String(admin.id)))) {
-      throw new CustomAPIError(409, 'INS.ADMIN_IN_INSTITUTION');
-    }
+    // An administrator of another institution, or an e-mail already waiting for one, may take
+    // this one too (client 2026-10-27: a person may belong to several institutions); never a
+    // back-office account.
     if (admin && (await repo.isOperator(this.deps.db, String(admin.id)))) {
       throw new CustomAPIError(409, 'INS.ADMIN_IS_OPERATOR');
-    }
-    if (!admin && (await repo.pendingAdministrator(this.deps.db, adminEmail))) {
-      // One institution per person (BR-01): an e-mail already waiting for another institution.
-      throw new CustomAPIError(409, 'INS.ADMIN_IN_INSTITUTION');
     }
     // E-mail is not integrated yet (client 2026-10-07): the account is made now with a temporary
     // password shown once to the operator, changed at first sign-in (OI-IDN-20). With the setting
@@ -646,6 +642,23 @@ export class InstitutionsService {
           entityRef: acc.id,
           after: { email: adminEmail, via: 'institution registration', password: 'temporary' },
         });
+        // Institutions already waiting for this e-mail get the new account as their administrator
+        // too (client 2026-10-27: a person may administer several).
+        const claimed = await repo.claimPendingAdministrator(trx, {
+          id: accountId,
+          email: adminEmail,
+          firstName: newAdmin.first,
+          lastName: newAdmin.last,
+        });
+        for (const c of claimed) {
+          await recordAudit(trx, {
+            institutionId: String(c.institution_id),
+            action: 'ADMINISTRATOR_LINKED',
+            entityType: 'institution',
+            entityRef: binToUuid(c.public_id),
+            after: { email: adminEmail, via: 'institution registration' },
+          });
+        }
       }
       const profile = await trx
         .insertInto('member_profiles')

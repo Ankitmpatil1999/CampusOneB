@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express';
+import { institutionChoiceSchema } from '../schemas/member-auth.schema';
 import {
   staffAppRefreshSchema,
   staffForgotSchema,
@@ -80,6 +81,8 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
         csrfToken,
         accessTokenExpiresAt: iso(tokens.accessTokenExpiresAt),
         refreshTokenExpiresAt: iso(tokens.refreshTokenExpiresAt),
+        // The console's institutions (client 2026-10-27): the web asks which to open.
+        ...(out.institutions ? { institutions: out.institutions } : {}),
       });
     });
 
@@ -116,7 +119,7 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
       });
       return;
     }
-    res.json({ ...appTokens(out.tokens), name: out.name });
+    res.json({ ...appTokens(out.tokens), name: out.name, institutions: out.institutions ?? [] });
   });
 
   /** IDN-089. */
@@ -128,6 +131,18 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
     });
     res.setHeader('Cache-Control', 'no-store');
     res.json(appTokens(t));
+  });
+
+  /** IDN-092: the member app opens the staff app for the account signed in on it. */
+  const appFromMember = wrap(async (req, res) => {
+    if (!req.principal) throw new AuthenticationError();
+    const out = await service.staffAppFromMember(req.principal, {
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    if ('passwordChange' in out) throw new AuthenticationError();
+    res.json({ ...appTokens(out.tokens), name: out.name });
   });
 
   /** Same answer whether or not the account exists (enumeration-safe). */
@@ -160,16 +175,33 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
     res.json(await service.portalSession(req.principal));
   });
 
+  /** IDN-095 / IDN-096 (client 2026-10-27): the console's institutions, and opening another. */
+  const consoleInstitutions = wrap(async (req, res) => {
+    if (!req.principal) throw new AuthenticationError();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await service.consoleInstitutions(req.principal));
+  });
+
+  const setConsoleInstitution = wrap(async (req, res) => {
+    if (!req.principal) throw new AuthenticationError();
+    const body = institutionChoiceSchema.parse(req.body ?? {});
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await service.setConsoleInstitution(req.principal, body));
+  });
+
   return {
     signIn,
     resend,
     verify,
     appVerify,
     appRefresh,
+    appFromMember,
     forgot,
     passwordReset,
     consoleSession,
     opsSession,
     portalSession,
+    consoleInstitutions,
+    setConsoleInstitution,
   };
 }

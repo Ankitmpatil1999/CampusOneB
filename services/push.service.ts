@@ -118,8 +118,10 @@ export class PushTokensService {
 
   /**
    * COM-034 (member app) and COM-037 (staff app): the phone's token for this signed-in session. A
-   * token another session held (the phone signed in as someone else) moves here, so pushes reach
-   * only who is signed in on the phone now.
+   * token another account's session held (the phone signed in as someone else) moves here, so
+   * pushes reach only who is signed in on the phone now. The same person's member and staff
+   * sessions on one phone (client 2026-10-27: one sign-in, both modes) both keep it, each for its own
+   * surface's notices (migration 0089).
    */
   async register(p: Principal, input: PushTokenInput) {
     if (!isUuid(p.sessionId) || !isUuid(p.subject)) throw new NotFoundError();
@@ -144,7 +146,7 @@ export class PushTokensService {
       await trx
         .deleteFrom('session_push_tokens')
         .where('token_hash', '=', hash)
-        .where('session_id', '!=', String(session.id))
+        .where('account_id', '!=', String(session.account_id))
         .execute();
       await trx
         .insertInto('session_push_tokens')

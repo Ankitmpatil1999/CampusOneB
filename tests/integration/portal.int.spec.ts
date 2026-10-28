@@ -258,15 +258,43 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
     });
   });
 
+  it('signs up a second institution with the same account, never a back-office one (client 2026-10-27)', async () => {
+    const admin = await account('GEETHA');
+    const first = await signUp(admin, `Varada Vidyalaya ${randomInt(0, 1e6)}`);
+    const second = await signUp(admin, `Malaprabha Vidyalaya ${randomInt(0, 1e6)}`);
+    expect(second.id).not.toBe(first.id);
+    // The portal shows the institution its session opened, not the account's first.
+    const who = await request(app).get('/api/v1/portal/session').set(second.session);
+    expect(who.status, JSON.stringify(who.body)).toBe(200);
+    expect(who.body.institution.id).toBe(second.id);
+
+    const op = await account('NAVYA');
+    const role = await t.db
+      .selectFrom('roles')
+      .select('id')
+      .where('code', '=', 'PLATFORM_ADMIN')
+      .executeTakeFirstOrThrow();
+    await t.db
+      .insertInto('operator_accounts')
+      .values({ public_id: newPublicIdPair().bin, account_id: op.id, role_id: String(role.id) })
+      .execute();
+    const refused = await request(app)
+      .post('/api/v1/portal/signup/otp')
+      .send({ mobile: op.mobile });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('SAS.SIGNUP_ACCOUNT_IN_USE');
+  });
+
   it('signs up, finishes the checklist, goes live on a trial and signs in again', async () => {
     const admin = await account('SAVITHA');
     const { id, session } = await signUp(admin, `Sharavathi Vidyalaya ${randomInt(0, 1e6)}`);
 
-    // The same account can't sign up a second institution (BR-01).
+    // The same account may sign up a second institution (client 2026-10-27: BR-01 lifted).
     const again = await request(app)
       .post('/api/v1/portal/signup/otp')
       .send({ mobile: admin.mobile });
-    expect(again.body.code).toBe('SAS.SIGNUP_ACCOUNT_IN_USE');
+    expect(again.status).toBe(202);
+    expect(again.body.newAccount).toBe(false);
 
     const who = await request(app).get('/api/v1/portal/session').set(session);
     expect(who.status).toBe(200);

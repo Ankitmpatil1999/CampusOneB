@@ -90,7 +90,8 @@ doc({
   id: 'IDN-047',
   method: 'post',
   path: '/api/v1/console/members/eligibility',
-  summary: 'Onboarding step 1: may this mobile join here? (BR-01: one institution per person)',
+  summary:
+    'Onboarding step 1: who this mobile is here; one used at another institution may join too (elsewhere, never named; client 2026-10-27)',
   tags,
   auth: 'members.onboard',
   request: eligibilitySchema,

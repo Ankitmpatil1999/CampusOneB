@@ -230,9 +230,16 @@ export const eligibilitySchema = z.strictObject({ mobile }).meta({ id: 'MemberEl
 
 export const eligibilityResultSchema = z
   .object({
-    eligible: z.boolean(),
-    code: z.string().describe('Why: other institution, profile here, account exists, new person'),
+    eligible: z
+      .boolean()
+      .describe('Always true now (client 2026-10-27: a person may belong to several institutions)'),
+    code: z
+      .string()
+      .describe('IDN.PROFILE_EXISTS_HERE, IDN.ACCOUNT_EXISTS (a RingPe account) or IDN.NEW_PERSON'),
     account: z.boolean(),
+    elsewhere: z
+      .boolean()
+      .describe('The mobile is used at another institution too (never named; client 2026-10-27)'),
     profiles: z.array(
       z.object({
         id: z.uuid(),
@@ -267,9 +274,9 @@ export const familyLookupResultSchema = z
   .object({
     mobile: z.string(),
     status: z
-      .enum(['NEW', 'FAMILY', 'STAFF', 'OTHER_INSTITUTION'])
+      .enum(['NEW', 'FAMILY', 'STAFF'])
       .describe(
-        'NEW: no one here; FAMILY: a parent or a child of a family studying here; STAFF: a staff member working here (and no family); OTHER_INSTITUTION: used at another institution',
+        'NEW: no one here; FAMILY: a parent or a child of a family studying here; STAFF: a staff member working here (and no family). Profiles at other institutions play no part (client 2026-10-27)',
       ),
     account: z.boolean().describe('A RingPe account holds this mobile'),
     family: z
