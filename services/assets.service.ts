@@ -11,7 +11,7 @@
  */
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
-import type { AssetType, Database } from '../models/ringpe_models';
+import type { AssetType, Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError, PreconditionFailedError } from '../utils/CustomAPIError';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

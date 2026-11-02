@@ -14,7 +14,7 @@
  */
 import { sql, type Transaction } from 'kysely';
 import { newReference, type PaymentChannelCode } from '../config/registers';
-import type { Database, LedgerAccountKind, LedgerTxnType } from '../models/ringpe_models';
+import type { Database, LedgerAccountKind, LedgerTxnType } from '../models/campusone_models';
 import { getContext } from '../utils/request-context';
 import { CustomAPIError } from '../utils/CustomAPIError';
 import { istBusinessDate, formatInr } from '../utils/format';

@@ -2,9 +2,9 @@
 -- contact's mobile on an admission form is verified with a one-time code — the family on the public
 -- form, the office at the console or in the staff app ("Send code", the parent reads it out) — before
 -- the application is submitted or approved. Approval then makes only that verified contact a Parent
--- member of the school; the other parents on the form keep their RingPe accounts only.
+-- member of the school; the other parents on the form keep their CampusOne accounts only.
 --
--- * otp_challenges.purpose: ADMISSION_CONTACT, a code to the primary contact's mobile (RingPe
+-- * otp_challenges.purpose: ADMISSION_CONTACT, a code to the primary contact's mobile (CampusOne
 --   database; every earlier value kept, 0009).
 ALTER TABLE otp_challenges
   MODIFY COLUMN purpose ENUM('SIGNUP','DEVICE','CONSOLE_2FA','OPS_2FA','PORTAL_2FA','RECOVERY',

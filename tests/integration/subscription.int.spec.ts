@@ -16,7 +16,7 @@ import { istBusinessDate } from '../../utils/format';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 
 describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
   let t: TestDatabase;
@@ -317,7 +317,7 @@ describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
     expect(again.status).toBe(409);
     expect(again.body.code).toBe('SAS.REQUEST_CLOSED');
 
-    // Declined by RingPe, with the reason e-mailed.
+    // Declined by CampusOne, with the reason e-mailed.
     const second = await ask({ planId: plan('PL-PRO').id, timing: 'RENEWAL' });
     const decline = await request(app)
       .post(`/api/v1/ops/plan-change-requests/${second.body.id}/decline`)
@@ -326,7 +326,7 @@ describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
     expect(decline.status).toBe(200);
     expect(h.email.sent.at(-1)!.text).toContain('Campus Pro is not offered in this region yet');
 
-    // Applied when RingPe changes the plan.
+    // Applied when CampusOne changes the plan.
     const third = await ask({ planId: plan('PL-PLUS').id, timing: 'NOW' });
     await change(s.id, { planId: plan('PL-PLUS').id, timing: 'NOW' });
     const after = await request(app).get('/api/v1/console/subscription').set(con);
@@ -335,7 +335,7 @@ describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
       'APPLIED',
     );
 
-    // A bank transfer reported from the console, confirmed by RingPe.
+    // A bank transfer reported from the console, confirmed by CampusOne.
     const inv = after.body.invoices.find(
       (i: { trigger: string }) => i.trigger === 'PLAN_ACTIVATION',
     );
@@ -420,13 +420,13 @@ describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
 
     // While another run holds the lock, a manual run is refused.
     await t.db.connection().execute(async (conn) => {
-      await sql`SELECT GET_LOCK('ringpe:job:subscription-billing', 0)`.execute(conn);
+      await sql`SELECT GET_LOCK('campusone:job:subscription-billing', 0)`.execute(conn);
       try {
         const busy = await runNow();
         expect(busy.status).toBe(409);
         expect(busy.body.code).toBe('GOV.JOB_RUNNING');
       } finally {
-        await sql`SELECT RELEASE_LOCK('ringpe:job:subscription-billing')`.execute(conn);
+        await sql`SELECT RELEASE_LOCK('campusone:job:subscription-billing')`.execute(conn);
       }
     });
     const future = await request(app)
@@ -436,7 +436,7 @@ describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
       .send({ reason: 'A future date', period: addDays(today(), 3) });
     expect(future.status).toBe(422);
   });
-  it('keeps example invoice details until RingPe enters its own, and prints GST invoices', async () => {
+  it('keeps example invoice details until CampusOne enters its own, and prints GST invoices', async () => {
     const s = await school();
     const con = await signedIn('console', s.admin.email);
     const sum = await request(app).get('/api/v1/console/subscription').set(con);
@@ -457,7 +457,7 @@ describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
     expect(pdf.headers['content-disposition']).toContain(`${inv.invoiceNo}.pdf`);
     const text = (pdf.body as Buffer).toString('latin1');
     expect(text.startsWith('%PDF-1.4')).toBe(true);
-    expect(text).toContain('SAMPLE - example RingPe details');
+    expect(text).toContain('SAMPLE - example CampusOne details');
 
     // Another institution's console can't read it; the back office can.
     const other = await school();
@@ -472,12 +472,12 @@ describe.skipIf(!adminUrl)('subscriptions after go-live on real MySQL', () => {
     const profile = await request(app).get('/api/v1/ops/billing-profile').set(ops);
     expect(profile.body).toMatchObject({ example: true, stateCode: '29', stateName: 'Karnataka' });
     const body = {
-      legalName: 'RingPe Technologies Private Limited',
+      legalName: 'CampusOne Technologies Private Limited',
       gstin: '29ABCDE1234F1Z5',
       address: '2nd Floor, MG Road, Bengaluru, Karnataka 560001',
       sacCode: '998314',
       payee: {
-        name: 'RingPe Technologies',
+        name: 'CampusOne Technologies',
         bank: 'State Bank of India',
         accountNo: '40123456789',
         ifsc: 'SBIN0001234',

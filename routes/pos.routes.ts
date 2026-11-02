@@ -5,7 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { PartnersService } from '../services/partners.service';
 import type { CaptureInput, PosService } from '../services/pos.service';
 import type { TerminalsService } from '../services/terminals.service';

@@ -7,7 +7,7 @@
  *   fields; paged by name.
  * - A person may belong to several institutions (client 2026-10-27, BR-01 lifted): a mobile used at
  *   another institution joins here too, and nothing of the other institution is shown. A profile
- *   links to the person's RingPe account when there is one; otherwise it keeps the contact mobile
+ *   links to the person's CampusOne account when there is one; otherwise it keeps the contact mobile
  *   and links when that number signs up. Students may have no phone (BR-02).
  * - Members are never deleted (CR-08): Active, Inactive or Suspended. Deactivating and lifting are
  *   immediate; a suspension and a de-link go to a checker — except an Institution Administrator's
@@ -23,7 +23,7 @@ import { sql, type Kysely } from 'kysely';
 import { LIMITS, MEMBER_PROFILE } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { MessageSender } from '../integrations/sms.provider';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { academicsRepository } from '../repositories/academics.repository';
 import { accountRepository } from '../repositories/account.repository';
 import { raiseApproval } from './approvals.service';
@@ -968,7 +968,7 @@ export class MembersService {
   }
 
   /**
-   * The mobile's RingPe account, if any — it may belong to other institutions too (client
+   * The mobile's CampusOne account, if any — it may belong to other institutions too (client
    * 2026-10-27: BR-01 lifted).
    */
   private async mobileFor(trx: Kysely<Database>, mobile: string) {
@@ -1458,9 +1458,9 @@ export class MembersService {
     for (const x of list) {
       const text = x.password
         ? shown
-          ? `Welcome to RingPe at ${x.institution}. Sign in at ${link} with ${x.email} and the temporary password your institution gave you — you'll choose your own password at first sign-in. Your employee ID is ${x.employeeNo}.`
-          : `Welcome to RingPe at ${x.institution}. Sign in at ${link} with ${x.email} and this temporary password: ${x.password} — you'll choose your own password at first sign-in. Your employee ID is ${x.employeeNo}.`
-        : `Your RingPe account is now linked to ${x.institution} as staff (employee ID ${x.employeeNo}). Sign in with your usual password.`;
+          ? `Welcome to CampusOne at ${x.institution}. Sign in at ${link} with ${x.email} and the temporary password your institution gave you — you'll choose your own password at first sign-in. Your employee ID is ${x.employeeNo}.`
+          : `Welcome to CampusOne at ${x.institution}. Sign in at ${link} with ${x.email} and this temporary password: ${x.password} — you'll choose your own password at first sign-in. Your employee ID is ${x.employeeNo}.`
+        : `Your CampusOne account is now linked to ${x.institution} as staff (employee ID ${x.employeeNo}). Sign in with your usual password.`;
       await this.deps.email
         .send({ to: x.email, purpose: 'staff.onboarded', text })
         .catch((e: unknown) =>
@@ -1472,7 +1472,7 @@ export class MembersService {
   /**
    * The console role a staff member is given as they are onboarded (client 2026-10-22), checked as
    * the access page checks it (IDN-061): an active institution role, not the Institution
-   * Administrator's (RingPe gives it), that fits the profile — the Principal role to the principal or
+   * Administrator's (CampusOne gives it), that fits the profile — the Principal role to the principal or
    * management, never a merchant's role.
    */
   async staffRole(db: Kysely<Database>, roleId: string, category: string) {
@@ -1880,7 +1880,7 @@ export class MembersService {
         at: new Date(h.occurred_at).toISOString(),
         by:
           personName(h.first_name, h.last_name) ||
-          (h.actor_type === 'system' ? 'System' : 'RingPe'),
+          (h.actor_type === 'system' ? 'System' : 'CampusOne'),
         before: parse(h.before_state),
         after: parse(h.after_state),
         reason: h.reason,

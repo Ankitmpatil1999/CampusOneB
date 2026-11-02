@@ -37,10 +37,10 @@ const ACCOUNT = '0199a8b2-7c3e-7d40-8a1b-3f2e4d5c6b7a';
 
 describe('password hashing (Argon2id)', () => {
   it('verifies the right secret and refuses a wrong one', async () => {
-    const h = await hashSecret('Ringpe@2026');
+    const h = await hashSecret('CampusOne@2026');
     expect(h).toMatch(/^\$argon2id\$v=19\$m=19456,t=2,p=1\$/);
-    expect(await verifySecret(h, 'Ringpe@2026')).toBe(true);
-    expect(await verifySecret(h, 'ringpe@2026')).toBe(false);
+    expect(await verifySecret(h, 'CampusOne@2026')).toBe(true);
+    expect(await verifySecret(h, 'campusone@2026')).toBe(false);
     expect(await verifySecret('not-a-hash', 'x')).toBe(false);
   });
 
@@ -130,9 +130,9 @@ describe('access tokens (ADR-0011)', () => {
   it('keeps the back-office keys and audience apart from every other surface', async () => {
     const keys = await keySetFromFile(await generateKeyFile('d'));
     const opsKeys = await keySetFromFile(await generateKeyFile('o'));
-    const signer = createTokenSigner({ issuer: 'ringpe', keys, opsKeys, ttlSeconds: 900 });
+    const signer = createTokenSigner({ issuer: 'campusone', keys, opsKeys, ttlSeconds: 900 });
     const verifier = createTokenVerifier({
-      issuer: 'ringpe',
+      issuer: 'campusone',
       jwks: keys.publicJwks,
       opsJwks: opsKeys.publicJwks,
     });
@@ -147,7 +147,7 @@ describe('access tokens (ADR-0011)', () => {
     // An `ops` audience signed with the default key is refused, and the reverse.
     const forgedOps = await new SignJWT({ sid: 's', st: [] })
       .setProtectedHeader({ alg: 'ES256', kid: keys.activeKid })
-      .setIssuer('ringpe')
+      .setIssuer('campusone')
       .setSubject(ACCOUNT)
       .setAudience('ops')
       .setIssuedAt()
@@ -156,7 +156,7 @@ describe('access tokens (ADR-0011)', () => {
     await expect(verifier.verify(forgedOps)).rejects.toThrow();
     const consoleWithOpsKey = await new SignJWT({ sid: 's', st: [] })
       .setProtectedHeader({ alg: 'ES256', kid: opsKeys.activeKid })
-      .setIssuer('ringpe')
+      .setIssuer('campusone')
       .setSubject(ACCOUNT)
       .setAudience('console')
       .setIssuedAt()
@@ -177,7 +177,7 @@ describe('access tokens (ADR-0011)', () => {
     await expect(s.verifier.verify(foreign.token)).rejects.toThrow(/unknown_kid/);
     await expect(s.verifier.verify('abc.def.ghi')).rejects.toThrow();
     const past = createTokenSigner({
-      issuer: 'ringpe',
+      issuer: 'campusone',
       keys: await keySetFromFile(await generateKeyFile('p')),
       opsKeys: await keySetFromFile(await generateKeyFile('po')),
       ttlSeconds: 60,
@@ -189,7 +189,7 @@ describe('access tokens (ADR-0011)', () => {
       sessionId: 's',
       subTasks: [],
     });
-    const v = createTokenVerifier({ issuer: 'ringpe', jwks: { keys: [] } });
+    const v = createTokenVerifier({ issuer: 'campusone', jwks: { keys: [] } });
     await expect(v.verify(expired.token)).rejects.toThrow();
   });
 

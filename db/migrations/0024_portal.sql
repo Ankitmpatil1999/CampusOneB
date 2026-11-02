@@ -36,7 +36,7 @@ CREATE TABLE data_exports (
   CONSTRAINT fk_data_exports__file FOREIGN KEY (file_id) REFERENCES files (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- A cancellation the institution asks for (FR-SAS-04, OQ-30): RingPe confirms it with the
+-- A cancellation the institution asks for (FR-SAS-04, OQ-30): CampusOne confirms it with the
 -- lifecycle action Cancel, or declines it; the institution can withdraw it while pending. RC-28.
 CREATE TABLE cancellation_requests (
   id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

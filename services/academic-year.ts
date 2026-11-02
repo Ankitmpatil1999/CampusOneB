@@ -4,7 +4,7 @@
  * A closed year refuses every write; a date must fall inside its year.
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { formatDate } from '../utils/format';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';

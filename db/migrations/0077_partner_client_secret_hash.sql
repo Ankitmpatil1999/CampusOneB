@@ -3,7 +3,7 @@
 -- hash) must keep working. Such a client is imported with its own client id and the hash; its secret
 -- is checked against the hash at the token call (as the earlier application did). It can't sign
 -- (WAL-012/013 need the secret itself): it uses the bearer-only bank calls (BNK-001…003).
--- Rotating its secret gives it a RingPe secret; the hash stays valid for the rotation's overlap.
+-- Rotating its secret gives it a CampusOne secret; the hash stays valid for the rotation's overlap.
 
 ALTER TABLE api_clients
   MODIFY COLUMN secret_enc VARBINARY(512) NULL,

@@ -23,7 +23,7 @@ import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS, newQrToken, qrPayload, type MessageKey } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
-import type { Database, PosOrderType } from '../models/ringpe_models';
+import type { Database, PosOrderType } from '../models/campusone_models';
 import {
   CustomAPIError,
   NotFoundError,

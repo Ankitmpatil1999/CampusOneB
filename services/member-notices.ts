@@ -5,7 +5,7 @@
  * event (comm-events.ts). One notice per account, whatever the number of members it is about.
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { familyAccountsByStudent } from './fee-notices.service';
 import { notify } from './notifications.service';
 

@@ -1,6 +1,6 @@
 /**
  * Integration test on a real MySQL (brief §7.6). Runs only when TEST_DB_MIGRATOR_URL is set; the
- * user needs CREATE/DROP DATABASE. A throwaway schema `ringpe_it_<random>` is created and dropped, with
+ * user needs CREATE/DROP DATABASE. A throwaway schema `campusone_it_<random>` is created and dropped, with
  * the CUG database migration 0081 creates beside it (`<name>_cug`).
  */
 import { randomBytes } from 'node:crypto';
@@ -15,7 +15,7 @@ const adminUrl = process.env['TEST_DB_MIGRATOR_URL'];
 const files = readMigrationDir(join(import.meta.dirname, '../../db/migrations'));
 
 describe.skipIf(!adminUrl)('migrations on real MySQL', () => {
-  const dbName = `ringpe_it_${randomBytes(4).toString('hex')}`;
+  const dbName = `campusone_it_${randomBytes(4).toString('hex')}`;
   let url = '';
 
   beforeAll(async () => {
@@ -107,7 +107,7 @@ describe.skipIf(!adminUrl)('migrations on real MySQL', () => {
     }
   });
 
-  it('keeps the school tables in the CUG database and the platform tables in RingPe (0081)', async () => {
+  it('keeps the school tables in the CUG database and the platform tables in CampusOne (0081)', async () => {
     const conn = await openMigrationConnection(url);
     try {
       const tablesOf = async (db: string) =>
@@ -118,10 +118,10 @@ describe.skipIf(!adminUrl)('migrations on real MySQL', () => {
           )
         ).map((r) => r.t);
       const cug = await tablesOf(cugDatabaseOf(dbName));
-      const ringpe = await tablesOf(dbName);
+      const campusone = await tablesOf(dbName);
       expect([...cug].sort()).toEqual([...CUG_TABLES].sort());
-      expect(ringpe.filter((t) => CUG_TABLES.includes(t))).toEqual([]);
-      expect(ringpe).toEqual(
+      expect(campusone.filter((t) => CUG_TABLES.includes(t))).toEqual([]);
+      expect(campusone).toEqual(
         expect.arrayContaining(['platform_accounts', 'sessions', 'schema_migrations']),
       );
       // The school tables' triggers moved with them.

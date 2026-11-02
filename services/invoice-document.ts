@@ -1,6 +1,6 @@
 /**
  * The GST invoice as a PDF (FR-SAS-07; SAS-042/043; prototype c.subscription "Download" → "GST
- * invoice"). Supplier: RingPe's billing profile (example values are marked "SAMPLE" until the client
+ * invoice"). Supplier: CampusOne's billing profile (example values are marked "SAMPLE" until the client
  * supplies them — Q25, Q26). Recipient: the institution, its state from the PIN code (place of
  * supply); CGST + SGST within the supplier's state, IGST otherwise. Amounts in rupees with paise
  * and in words (Indian system).
@@ -61,7 +61,7 @@ const WARN_SOFT: Rgb = [254, 243, 199];
 const inr = (paise: number) => formatInr(paise);
 
 export function renderInvoicePdf(d: InvoiceDocumentData): Buffer {
-  const doc = new PdfDocument(`RingPe invoice ${d.invoice.invoiceNo}`);
+  const doc = new PdfDocument(`CampusOne invoice ${d.invoice.invoiceNo}`);
   const L = 40;
   const R = doc.width - 40;
   let y = 40;
@@ -71,7 +71,7 @@ export function renderInvoicePdf(d: InvoiceDocumentData): Buffer {
     doc.text(
       L + 10,
       y + 17,
-      'SAMPLE - example RingPe details; not a valid tax invoice until the real details are entered.',
+      'SAMPLE - example CampusOne details; not a valid tax invoice until the real details are entered.',
       { size: 9, bold: true, color: WARN },
     );
     y += 38;
@@ -123,7 +123,7 @@ export function renderInvoicePdf(d: InvoiceDocumentData): Buffer {
   const billTo = [
     ...doc.wrap(d.institution.address, 280, 9),
     [d.institution.city, d.institution.pin].filter(Boolean).join(' '),
-    `RingPe institution id ${d.institution.identifier}`,
+    `CampusOne institution id ${d.institution.identifier}`,
   ];
   for (const l of billTo) {
     doc.text(L, y, l, { size: 9, color: MUTED });
@@ -211,6 +211,6 @@ export function renderInvoicePdf(d: InvoiceDocumentData): Buffer {
     size: 8,
     color: MUTED,
   });
-  doc.text(R, doc.height - 40, 'RingPe', { size: 8, bold: true, color: BRAND, align: 'right' });
+  doc.text(R, doc.height - 40, 'CampusOne', { size: 8, bold: true, color: BRAND, align: 'right' });
   return doc.toBuffer();
 }

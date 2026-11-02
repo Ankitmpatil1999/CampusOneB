@@ -1,5 +1,5 @@
 /**
- * The testers' Postman collection for adding money to a wallet (RingPe_Axis_Bank_Test.postman_
+ * The testers' Postman collection for adding money to a wallet (CampusOne_Axis_Bank_Test.postman_
  * collection.json, client 2026-10-22) on a real MySQL: its three requests, played as Postman plays
  * them — the variables filled in, its pre-request and test scripts run — credit the wallet whose
  * account number the app shows; the next run is another transfer; a repeat of the credit is refused.
@@ -23,7 +23,7 @@ interface Item {
 }
 const collection = JSON.parse(
   readFileSync(
-    new URL('../../RingPe_Axis_Bank_Test.postman_collection.json', import.meta.url),
+    new URL('../../CampusOne_Axis_Bank_Test.postman_collection.json', import.meta.url),
     'utf8',
   ),
 ) as { variable: { key: string; value: string }[]; item: Item[] };

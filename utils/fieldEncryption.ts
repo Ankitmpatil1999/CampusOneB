@@ -56,7 +56,7 @@ export class FieldCipher {
   private derive(root: Buffer, info: string): Buffer {
     const cached = this.derived.get(info);
     if (cached) return cached;
-    const k = Buffer.from(hkdfSync('sha256', root, Buffer.from('ringpe-field-v1'), info, 32));
+    const k = Buffer.from(hkdfSync('sha256', root, Buffer.from('campusone-field-v1'), info, 32));
     this.derived.set(info, k);
     return k;
   }

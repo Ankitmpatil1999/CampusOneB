@@ -5,7 +5,7 @@
  */
 import type { Kysely } from 'kysely';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { istBusinessDate } from '../utils/format';
 import { cronMatches, firedToday, type JobDefinition } from './index';
 import type { JobRunner } from './runner';

@@ -18,7 +18,7 @@
 import type { Insertable, Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS, parseQrPayload } from '../config/registers';
-import type { CouponPeriod, CouponsTable, CouponTypeKind, Database } from '../models/ringpe_models';
+import type { CouponPeriod, CouponsTable, CouponTypeKind, Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import type { JobContext } from '../schedulers';
 import {

@@ -1,4 +1,4 @@
--- RingPe CUG database triggers: 19 triggers, generated from a migrated database by
+-- CampusOne CUG database triggers: 19 triggers, generated from a migrated database by
 -- scripts/export-triggers.ts. Do not edit by hand; the migrations (db/migrations) are the source.
 --
 -- Before running:
@@ -7,7 +7,7 @@
 --   * with binary logging on and a user without SUPER, set once as an administrator:
 --       SET GLOBAL log_bin_trust_function_creators = 1;
 --
--- Run (MySQL client):  mysql -u <user> -p <CUG database, e.g. ringpe_cug> < create-triggers-cug.sql
+-- Run (MySQL client):  mysql -u <user> -p <CUG database, e.g. campusone_cug> < create-triggers-cug.sql
 -- MySQL Workbench:     open this file with that database selected and run it all (Ctrl+Shift+Enter).
 
 SET NAMES utf8mb4;

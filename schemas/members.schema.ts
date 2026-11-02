@@ -90,7 +90,7 @@ export const memberListSchema = z
           .array(z.object({ id: z.uuid(), name: z.string(), grade: z.string().nullable() }))
           .optional(),
         relation: z.string().nullable().optional(),
-        linked: z.boolean().describe('Linked to a RingPe account'),
+        linked: z.boolean().describe('Linked to a CampusOne account'),
         status,
         wallet: z
           .object({
@@ -235,7 +235,7 @@ export const eligibilityResultSchema = z
       .describe('Always true now (client 2026-10-27: a person may belong to several institutions)'),
     code: z
       .string()
-      .describe('IDN.PROFILE_EXISTS_HERE, IDN.ACCOUNT_EXISTS (a RingPe account) or IDN.NEW_PERSON'),
+      .describe('IDN.PROFILE_EXISTS_HERE, IDN.ACCOUNT_EXISTS (a CampusOne account) or IDN.NEW_PERSON'),
     account: z.boolean(),
     elsewhere: z
       .boolean()
@@ -278,7 +278,7 @@ export const familyLookupResultSchema = z
       .describe(
         'NEW: no one here; FAMILY: a parent or a child of a family studying here; STAFF: a staff member working here (and no family). Profiles at other institutions play no part (client 2026-10-27)',
       ),
-    account: z.boolean().describe('A RingPe account holds this mobile'),
+    account: z.boolean().describe('A CampusOne account holds this mobile'),
     family: z
       .object({
         children: z.array(
@@ -391,7 +391,7 @@ export const staffResultSchema = z
     id: z.uuid(),
     memberNo: z.string(),
     employeeNo: z.string(),
-    newAccount: z.boolean().describe('A RingPe account was created with a temporary password'),
+    newAccount: z.boolean().describe('A CampusOne account was created with a temporary password'),
     temporaryPassword: z
       .string()
       .optional()

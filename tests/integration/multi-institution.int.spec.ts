@@ -17,7 +17,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 let panSeq = randomInt(0, 5_000);
 
@@ -202,7 +202,7 @@ describe.skipIf(!adminUrl)('one person, several institutions (client 2026-10-27)
     const refreshed = await request(app)
       .post('/api/v1/auth/token/refresh')
       .set('Cookie', cookies)
-      .set('X-RingPe-Surface', 'console')
+      .set('X-CampusOne-Surface', 'console')
       .set('X-CSRF-Token', csrf)
       .send({});
     expect(refreshed.status, JSON.stringify(refreshed.body)).toBe(200);

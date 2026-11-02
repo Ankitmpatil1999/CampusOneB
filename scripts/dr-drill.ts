@@ -2,7 +2,7 @@
  * Backup and restore drill (Phase 9.4; docs/runbooks §5). Development and staging only — refused in
  * production. Run: `npm run dr:drill` (reads DB_MIGRATOR_URL and FIELD_KEYS_FILE from .env).
  *
- * 1. Full backup: mysqldump of the RingPe and CUG databases together (migration 0081: one consistent
+ * 1. Full backup: mysqldump of the CampusOne and CUG databases together (migration 0081: one consistent
  *    transaction for both, routines, triggers, the binary-log position) → restore into two empty
  *    scratch schemas (the names inside the dump follow) → verify: the same tables and row
  *    counts for the key tables, the ledger balanced, the migration level, and that encrypted personal
@@ -52,7 +52,7 @@ async function main() {
   if (!url) fail('DB_MIGRATOR_URL is not set');
   const u = new URL(url);
   const sourceDb = decodeURIComponent(u.pathname.replace(/^\//, ''));
-  const work = await mkdtemp(join(tmpdir(), 'ringpe-dr-'));
+  const work = await mkdtemp(join(tmpdir(), 'campusone-dr-'));
   const creds = join(work, 'client.cnf');
   // Credentials go to the tools through a file only this run reads, never the command line.
   await writeFile(
@@ -62,10 +62,10 @@ async function main() {
   );
   const tool = (name: string) => join(BIN, `${name}.exe`);
   const admin = await mysql.createConnection({ uri: url, multipleStatements: false });
-  const restore = 'ringpe_dr_restore';
+  const restore = 'campusone_dr_restore';
   const restoreCug = cugDatabaseOf(restore);
-  const pitr = 'ringpe_dr_pitr';
-  const pitrRestore = 'ringpe_dr_pitr_restore';
+  const pitr = 'campusone_dr_pitr';
+  const pitrRestore = 'campusone_dr_pitr_restore';
   const results: string[] = [];
   const timed = async <T>(label: string, fn: () => Promise<T>) => {
     const t0 = performance.now();
@@ -115,10 +115,10 @@ async function main() {
       p.stdout.pipe(createWriteStream(file));
       p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(0, 500)))));
     });
-  const counts = async (dbs: { ringpe: string; cug: string }) => {
+  const counts = async (dbs: { campusone: string; cug: string }) => {
     const out: Record<string, number> = {};
     for (const t of KEY_TABLES) {
-      const db = isCugTable(t) ? dbs.cug : dbs.ringpe;
+      const db = isCugTable(t) ? dbs.cug : dbs.campusone;
       const [rows] = await admin.query(`SELECT COUNT(*) AS n FROM \`${db}\`.\`${t}\``);
       out[t] = Number((rows as { n: number }[])[0]?.n ?? 0);
     }
@@ -132,7 +132,7 @@ async function main() {
     return Number((rows as { n: number }[])[0]?.n);
   };
   const dropAll = async () => {
-    // The RingPe and CUG databases reference each other: foreign-key checks off to drop them.
+    // The CampusOne and CUG databases reference each other: foreign-key checks off to drop them.
     await admin.query('SET FOREIGN_KEY_CHECKS = 0');
     for (const db of [restore, restoreCug, pitr, pitrRestore]) {
       await admin.query(`DROP DATABASE IF EXISTS \`${db}\``).catch(() => undefined);
@@ -146,11 +146,11 @@ async function main() {
     // --- 1. Full backup and restore -------------------------------------------------------------
     // Both databases in one dump and one transaction (migration 0081): a consistent copy of the two.
     const dump = join(work, 'full.sql');
-    const source = { ringpe: sourceDb, cug: cugDatabaseOf(sourceDb) };
-    const target = { ringpe: restore, cug: restoreCug };
+    const source = { campusone: sourceDb, cug: cugDatabaseOf(sourceDb) };
+    const target = { campusone: restore, cug: restoreCug };
     const before = await counts(source);
     await timed('full backup (mysqldump, both databases, one transaction)', () =>
-      dumpTo([source.ringpe, source.cug], dump),
+      dumpTo([source.campusone, source.cug], dump),
     );
     const size = (await stat(dump)).size;
     results.push(`dump size: ${(size / 1024 / 1024).toFixed(1)} MB`);
@@ -163,15 +163,15 @@ async function main() {
       (await readFile(dump, 'utf8'))
         .split(`\`${source.cug}\``)
         .join(`\`${target.cug}\``)
-        .split(`\`${source.ringpe}\``)
-        .join(`\`${target.ringpe}\``),
+        .split(`\`${source.campusone}\``)
+        .join(`\`${target.campusone}\``),
     );
     await timed('restore into empty schemas', () => pipeInto(null, renamed));
 
-    const nSrc = await tableCount([source.ringpe, source.cug]);
-    const nDst = await tableCount([target.ringpe, target.cug]);
+    const nSrc = await tableCount([source.campusone, source.cug]);
+    const nDst = await tableCount([target.campusone, target.cug]);
     if (nSrc !== nDst) fail(`tables ${nSrc} → ${nDst}`);
-    results.push(`tables: ${nDst} of ${nSrc} (RingPe and CUG)`);
+    results.push(`tables: ${nDst} of ${nSrc} (CampusOne and CUG)`);
     const after = await counts(target);
     for (const t of KEY_TABLES) {
       // The source may move on during the drill (the user's API is running): never fewer rows.

@@ -27,7 +27,7 @@ doc({
   method: 'get',
   path: '/api/v1/console/roles',
   summary:
-    "Institution roles with their tasks and sub-tasks; the operator keeps the catalogue, and the Institution Administrator role is RingPe's to give",
+    "Institution roles with their tasks and sub-tasks; the operator keeps the catalogue, and the Institution Administrator role is CampusOne's to give",
   tags: ['Console accounts'],
   auth: 'members.roles',
   responses: { 200: { description: 'Roles', schema: consoleRolesSchema } },
@@ -36,7 +36,7 @@ doc({
   id: 'IDN-060',
   method: 'get',
   path: '/api/v1/console/staff-accounts',
-  summary: 'Staff with a RingPe account: institution roles, last sign-in and sign-in lock',
+  summary: 'Staff with a CampusOne account: institution roles, last sign-in and sign-in lock',
   tags: ['Console accounts'],
   auth: 'members.roles',
   responses: { 200: { description: 'Staff accounts', schema: staffAccountsSchema } },

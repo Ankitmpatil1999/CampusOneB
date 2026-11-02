@@ -14,7 +14,7 @@ import { randomBytes } from 'node:crypto';
 import type { Kysely, Transaction } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
-import type { Database, SurfaceCode } from '../models/ringpe_models';
+import type { Database, SurfaceCode } from '../models/campusone_models';
 import { type RefreshTokenRow, sessionRepository } from '../repositories/session.repository';
 import { AuthenticationError, CustomAPIError } from '../utils/CustomAPIError';
 import { binToUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

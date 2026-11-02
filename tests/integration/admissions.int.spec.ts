@@ -475,7 +475,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     });
     expect(filled.body.parents.father).not.toHaveProperty('aadhaar');
     expect(filled.body.parents.mother).not.toHaveProperty('pan');
-    // The family's consent to register their RingPe account is required (client 2026-10-12).
+    // The family's consent to register their CampusOne account is required (client 2026-10-12).
     const noConsent = await pub(
       'post',
       `/api/v1/public/admissions/applications/${app.id}/submission`,
@@ -828,7 +828,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
   });
 
   it('pays both fees in one live order: checked against the order total, and settled by webhook', async () => {
-    // Before the school adds its own gateway (next test): RingPe's own gateway takes the order.
+    // Before the school adds its own gateway (next test): CampusOne's own gateway takes the order.
     const hmac = (secret: string, data: string) =>
       createHmac('sha256', secret).update(data).digest('hex');
     const held = new Map<string, GatewayPayment>();
@@ -951,7 +951,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     let n = 0;
     const hmac = (secret: string, data: string) =>
       createHmac('sha256', secret).update(data).digest('hex');
-    // RingPe's own gateway (live) and the school's, each answering like Razorpay.
+    // CampusOne's own gateway (live) and the school's, each answering like Razorpay.
     const platform: PaymentGateway = {
       mode: 'live',
       createOrder: async ({ amountPaise }) => ({
@@ -1032,7 +1032,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       .executeTakeFirstOrThrow();
     expect(row.label).toBe('Admissions account');
 
-    // Signed with RingPe's key instead of the school's: refused.
+    // Signed with CampusOne's key instead of the school's: refused.
     held.set('pay_S1', {
       id: 'pay_S1',
       orderId,
@@ -1051,7 +1051,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       });
     expect(wrongKey.status).toBe(402);
 
-    // The webhook: RingPe's own address doesn't settle the school's order; the school's does.
+    // The webhook: CampusOne's own address doesn't settle the school's order; the school's does.
     const again = await request(live.app)
       .post(`/api/v1/public/admissions/applications/${id}/fee-payments`)
       .set(TOKEN, token)
@@ -1400,7 +1400,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
         gender: 'MALE',
         dob: `${Number(currentYear.label.slice(0, 4)) - 12}-08-01`,
         aadhaar: aadhaar(),
-        // The student's own contact (client 2026-10-23): a RingPe account of their own.
+        // The student's own contact (client 2026-10-23): a CampusOne account of their own.
         mobile: '9845001144',
         email: 'kiran.bhat@example.in',
       },
@@ -1515,7 +1515,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     });
     expect(cashApp.status, JSON.stringify(cashApp.body)).toBe(201);
     expect(cashApp.body.application.status).toBe('SUBMITTED');
-    // Submitted: the student, the father and the mother have RingPe accounts (client 2026-10-23),
+    // Submitted: the student, the father and the mother have CampusOne accounts (client 2026-10-23),
     // made by the school — nobody signs up — and no login details have gone out yet.
     const appRow = await f.t.db
       .selectFrom('admission_applications')
@@ -1734,7 +1734,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
       .executeTakeFirstOrThrow();
     expect(member).toMatchObject({ admission_no: 'ADM/2026/0042' });
     // Only the verified primary contact, the father, is the student's parent here (client
-    // 2026-10-27); the mother keeps her RingPe account, with no profile at the school.
+    // 2026-10-27); the mother keeps her CampusOne account, with no profile at the school.
     expect(
       await f.t.db
         .selectFrom('guardianships as g')
@@ -1769,7 +1769,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(otpOf('mother')?.[1]).toBe('9845001133');
     const studentOtp = otpOf('student')!;
     expect(studentOtp[1]).toBe('9845001144');
-    // Client 2026-10-26: from the school, not RingPe, with the details a parent looks for marked.
+    // Client 2026-10-26: from the school, not CampusOne, with the details a parent looks for marked.
     const school = await f.t.db
       .selectFrom('institutions')
       .select('name')
@@ -1959,7 +1959,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     // Existing students: the template is the public admission form (client 2026-10-21).
     const tpl = await request(f.app).get('/api/v1/console/applications/imports/template').set(con);
     expect(tpl.status).toBe(200);
-    expect(tpl.headers['content-disposition']).toContain('ringpe-existing-students-template.csv');
+    expect(tpl.headers['content-disposition']).toContain('campusone-existing-students-template.csv');
     const lines = tpl.text.replace(String.fromCharCode(0xfeff), '').split(/\r?\n/);
     const cols = lines[0]!.split(',');
     expect(
@@ -2199,7 +2199,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(
       f.h.email.sent.some((m) => m.purpose === 'admission.approved' && m.text.includes(no)),
     ).toBe(false);
-    // The family's RingPe logins instead (client 2026-10-23): one e-mail, to the primary contact
+    // The family's CampusOne logins instead (client 2026-10-23): one e-mail, to the primary contact
     // with the student in copy, and no word of an approval.
     const logins = f.h.email.sent.filter((m) => m.purpose === 'admission.logins');
     expect(logins).toHaveLength(1);
@@ -2892,7 +2892,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const up = await request(f.app)
       .post('/api/v1/files')
       .set(con)
-      .set('X-RingPe-Surface', 'console')
+      .set('X-CampusOne-Surface', 'console')
       .field('purpose', 'logo')
       .attach('file', png, { filename: 'logo.png', contentType: 'image/png' });
     expect(up.status, JSON.stringify(up.body)).toBe(201);
@@ -3193,9 +3193,9 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
   };
   const approvedMail = () => f.h.email.sent.findLast((m) => m.purpose === 'admission.approved')!;
   const existingLogin = (name: string, who: string, mob: string) =>
-    `• ${name} (${who}): mobile ${mob} is already registered with RingPe — sign in with your existing login (this mobile number and your password). Please don’t create a new account.`;
+    `• ${name} (${who}): mobile ${mob} is already registered with CampusOne — sign in with your existing login (this mobile number and your password). Please don’t create a new account.`;
 
-  it('approves only the verified primary contact as the student’s parent: the other parents keep their RingPe accounts; a sibling’s parent and a teacher are who they are here (ADM-044/045/018, client 2026-10-27)', async () => {
+  it('approves only the verified primary contact as the student’s parent: the other parents keep their CampusOne accounts; a sibling’s parent and a teacher are who they are here (ADM-044/045/018, client 2026-10-27)', async () => {
     const father = randomMobile();
     const mother = randomMobile();
     const id = await readyToApprove('Aarav', {
@@ -3227,7 +3227,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     expect(linked.map((x) => [x.relation, x.contact_mobile, x.category])).toEqual([
       ['FATHER', father, 'PARENT'],
     ]);
-    // The mother: her RingPe account and her login details in the approval e-mail, no profile here.
+    // The mother: her CampusOne account and her login details in the approval e-mail, no profile here.
     const motherAccount = await f.t.db
       .selectFrom('platform_accounts')
       .select('id')
@@ -3275,7 +3275,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
     const mail2 = approvedMail().text;
     expect(mail2).toContain(existingLogin('Ramesh Hegde', 'father', father));
     expect(mail2).toContain(existingLogin('Asha Hegde', 'mother', mother));
-    expect(mail2).toContain('Sign in to the RingPe app with your existing login.');
+    expect(mail2).toContain('Sign in to the CampusOne app with your existing login.');
     expect(mail2).not.toContain('one-time password');
 
     // A teacher here who is the mother and the contact: a Parent profile under her own account.
@@ -3352,7 +3352,7 @@ describe.skipIf(!adminUrl)('admissions on real MySQL', () => {
           .executeTakeFirstOrThrow()
       ).id,
     );
-    // The mother: her own RingPe account, and a Parent profile at the other school.
+    // The mother: her own CampusOne account, and a Parent profile at the other school.
     const mob = randomMobile();
     await f.signUp(mob, 'Geetha');
     const account = String(

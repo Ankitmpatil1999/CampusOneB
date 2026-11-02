@@ -11,7 +11,7 @@
  * - A spreadsheet adds entries in bulk: checked first, then imported (accepted rows only).
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { CalendarAudience, Database, Recurrence } from '../models/ringpe_models';
+import type { CalendarAudience, Database, Recurrence } from '../models/campusone_models';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { parseCsv } from '../utils/csv';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

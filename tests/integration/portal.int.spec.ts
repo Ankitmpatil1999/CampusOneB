@@ -1,7 +1,7 @@
 /**
  * The customer portal on a real MySQL (SAS-001…025, SAS-044…050; FR-SAS-04…11, BR-01): an
- * administrator signs the institution up with their own RingPe account, finishes the checklist,
- * goes live on a trial, signs in again, changes plan, reports a transfer, asks RingPe to change the
+ * administrator signs the institution up with their own CampusOne account, finishes the checklist,
+ * goes live on a trial, signs in again, changes plan, reports a transfer, asks CampusOne to change the
  * name, exports the data and asks to cancel.
  */
 import { randomInt, randomUUID } from 'node:crypto';
@@ -12,7 +12,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 
 describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
@@ -128,7 +128,7 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
     expect(plans.body).toMatchObject({ graceDays: 14, dueDays: 15 });
   });
 
-  /** A number without a RingPe account: the code, then the account made here (SAS-051). */
+  /** A number without a CampusOne account: the code, then the account made here (SAS-051). */
   async function newAccount(email: string, mob = mobile()) {
     const otp = await request(app).post('/api/v1/portal/signup/otp').send({ mobile: mob });
     expect(otp.status).toBe(202);
@@ -160,7 +160,7 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
     return { r, mobile: mob };
   }
 
-  it('makes the RingPe account on the customer site for a new number (SAS-051)', async () => {
+  it('makes the CampusOne account on the customer site for a new number (SAS-051)', async () => {
     const email = `kavya.${randomInt(0, 1e9)}@example.in`;
     const { r, mobile: mob } = await newAccount(email);
     expect(r.body.invited).toBe(false);
@@ -336,7 +336,7 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
       .send({ mode: 'TRIAL' });
     expect(early.body.code).toBe('INS.CHECKLIST_INCOMPLETE');
 
-    // RingPe sets up the bank step.
+    // CampusOne sets up the bank step.
     const version = (await request(app).get(`/api/v1/ops/institutions/${id}`).set(ops)).body
       .version;
     const bank = await request(app)
@@ -365,7 +365,7 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
     expect((await request(app).get('/api/v1/portal/onboarding').set(again2)).status).toBe(200);
   });
 
-  it('changes plan, refuses online payment, asks RingPe to rename, exports and asks to cancel', async () => {
+  it('changes plan, refuses online payment, asks CampusOne to rename, exports and asks to cancel', async () => {
     const admin = await account('RAMESH');
     const { id, session } = await signUp(admin, `Tunga Vidya Kendra ${randomInt(0, 1e6)}`);
 
@@ -389,7 +389,7 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
       .send({ method: 'GATEWAY' });
     expect(gw.body.code).toBe('SAS.GATEWAY_UNAVAILABLE');
 
-    // Contacts the institution keeps; the name goes through RingPe.
+    // Contacts the institution keeps; the name goes through CampusOne.
     const det = await request(app).get('/api/v1/portal/institution-details').set(session);
     expect(det.status).toBe(200);
     const saved = await request(app)
@@ -456,7 +456,7 @@ describe.skipIf(!adminUrl)('customer portal on real MySQL', () => {
       (await request(app).get('/api/v1/portal/data-exports').set(session)).body.items,
     ).toHaveLength(1);
 
-    // Cancellation: asked, withdrawn, asked again, declined by RingPe.
+    // Cancellation: asked, withdrawn, asked again, declined by CampusOne.
     const cancel = () =>
       request(app)
         .post('/api/v1/portal/cancellation-requests')

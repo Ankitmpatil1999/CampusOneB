@@ -10,7 +10,7 @@
  * - Only the Institution Administrator decides approvals (Q9); only the Platform Administrator may
  *   drill through into one institution (Q10a).
  */
-import type { RoleScope } from '../../models/ringpe_models';
+import type { RoleScope } from '../../models/campusone_models';
 
 export interface SubTaskDefinition {
   readonly code: string;

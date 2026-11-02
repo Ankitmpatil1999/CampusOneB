@@ -6,7 +6,7 @@
  */
 import type { Kysely } from 'kysely';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 export interface RequestLogRow {
   readonly at: Date;

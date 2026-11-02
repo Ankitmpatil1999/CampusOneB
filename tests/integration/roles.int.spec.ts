@@ -12,7 +12,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 
 describe.skipIf(!adminUrl)('roles and jobs on real MySQL', () => {
   let t: TestDatabase;
@@ -42,7 +42,7 @@ describe.skipIf(!adminUrl)('roles and jobs on real MySQL', () => {
     );
 
   async function account(first = 'ARJUN') {
-    const email = `${first.toLowerCase()}.${randomInt(0, 1e9)}@ringpe.example`;
+    const email = `${first.toLowerCase()}.${randomInt(0, 1e9)}@campusone.example`;
     const p = newPublicIdPair();
     const r = await t.db
       .insertInto('platform_accounts')
@@ -226,7 +226,7 @@ describe.skipIf(!adminUrl)('roles and jobs on real MySQL', () => {
     expect(refused.body.code).toBe('IDN.ROLE_NOT_EDITABLE');
   });
 
-  it('assigns roles to RingPe accounts only, changes them and disables accounts', async () => {
+  it('assigns roles to CampusOne accounts only, changes them and disables accounts', async () => {
     const admin = await signedIn((await operator()).email);
     const roles = await request(app).get('/api/v1/ops/roles?scope=OPERATOR').set(admin);
     const role = (code: string) =>
@@ -238,7 +238,7 @@ describe.skipIf(!adminUrl)('roles and jobs on real MySQL', () => {
         .set('Idempotency-Key', randomUUID())
         .send({ email, roleId: role(code), reason: 'Joins the settlement desk' });
 
-    expect((await assign('nobody@ringpe.example', 'SETTLEMENT_CHECKER')).body.code).toBe(
+    expect((await assign('nobody@campusone.example', 'SETTLEMENT_CHECKER')).body.code).toBe(
       'IDN.ACCOUNT_EMAIL_UNKNOWN',
     );
     // An institution account never holds an operator role.

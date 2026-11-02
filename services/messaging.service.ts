@@ -26,7 +26,7 @@
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
-import type { Database, DirectMessageStatus, UserTypeCategory } from '../models/ringpe_models';
+import type { Database, DirectMessageStatus, UserTypeCategory } from '../models/campusone_models';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';
 import { emit, rooms } from '../utils/outbox';

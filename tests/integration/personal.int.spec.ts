@@ -13,7 +13,7 @@ import { buildHttpApp, codeOf } from './http-app';
 let panSeq = randomInt(0, 5_000);
 const uniquePan = () => `ABCDE${String(++panSeq % 10_000).padStart(4, '0')}F`;
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 
 describe.skipIf(!adminUrl)('personal details on real MySQL', () => {
   let t: TestDatabase;

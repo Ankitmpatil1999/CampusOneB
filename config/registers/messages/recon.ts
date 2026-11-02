@@ -210,10 +210,10 @@ export const RECON_MESSAGES = [
   {
     key: 'NTF.REFUND_PROCESSED',
     register: 'MSG-REC-63',
-    srsText: 'Refund Successfully Processed on RingPe for <reference> - Biller: <biller>',
+    srsText: 'Refund Successfully Processed on CampusOne for <reference> - Biller: <biller>',
     class: 'R',
     type: 'info',
-    en: 'Refund Successfully Processed on RingPe for {reference}: {amount} back in the wallet',
+    en: 'Refund Successfully Processed on CampusOne for {reference}: {amount} back in the wallet',
     placeholders: ['reference', 'amount'],
     approval: 'approved',
     batch: 6,

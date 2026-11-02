@@ -14,7 +14,7 @@
 import type { Kysely } from 'kysely';
 import { LIMITS, type MessageKey } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { accessRepository } from '../repositories/access.repository';
 import { accountRepository } from '../repositories/account.repository';
 import { institutionsRepository } from '../repositories/institutions.repository';
@@ -506,7 +506,7 @@ export class StaffAuthService {
     await this.deps.email.send({
       to: account.email,
       purpose: `password_reset.${surface}`,
-      text: `Choose a new password for the RingPe ${where}: ${link} — the link works once, within ${minutes} minutes. If you didn't ask for it, ignore this e-mail; your password stays the same.`,
+      text: `Choose a new password for the CampusOne ${where}: ${link} — the link works once, within ${minutes} minutes. If you didn't ask for it, ignore this e-mail; your password stays the same.`,
     });
     this.deps.loggers.security.info('auth.staff_reset_link_sent', { surface });
   }

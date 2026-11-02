@@ -1,6 +1,6 @@
 /** Platform settings over the limits-register defaults (migration 0006). */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

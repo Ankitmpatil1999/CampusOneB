@@ -4,7 +4,7 @@
  * internal ids, never from anything a client sends (OI-INT-05).
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { NIL_UUID_BIN, isUuid, newPublicIdPair, uuidToBin } from './idGenerator';
 import { getContext } from './request-context';
 

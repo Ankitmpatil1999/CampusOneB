@@ -17,7 +17,7 @@ import { hashSecret } from '../../utils/password';
 /** PANs are unique per platform: a counter keeps sign-ups in one file from colliding. */
 let panSeq = randomInt(0, 5_000);
 const uniquePan = () => `ABCDE${String(++panSeq % 10_000).padStart(4, '0')}F`;
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 
 describe.skipIf(!adminUrl)('wallets and the ledger on real MySQL', () => {

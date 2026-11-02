@@ -7,7 +7,7 @@ import { jobsController } from '../controllers/jobs.controller';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { AuthenticationError } from '../utils/CustomAPIError';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   jobCatalogueSchema,
   jobRunLogSchema,

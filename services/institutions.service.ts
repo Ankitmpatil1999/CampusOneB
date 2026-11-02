@@ -32,7 +32,7 @@ import {
 } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { MessageSender } from '../integrations/sms.provider';
-import type { Database, InstitutionStatusCode } from '../models/ringpe_models';
+import type { Database, InstitutionStatusCode } from '../models/campusone_models';
 import { institutionsRepository as repo } from '../repositories/institutions.repository';
 import { plansRepository, type PlanTerms } from '../repositories/plans.repository';
 import { academicsRepository } from '../repositories/academics.repository';
@@ -479,7 +479,7 @@ export class InstitutionsService {
       .select(['id', 'public_id', 'first_name', 'last_name', 'status'])
       .where('email', '=', adminEmail)
       .executeTakeFirst();
-    // An e-mail without a RingPe account no longer stops registration (client 2026-10-06): the
+    // An e-mail without a CampusOne account no longer stops registration (client 2026-10-06): the
     // administrator profile waits for it and is linked once that person creates their account on
     // the customer site and confirms the e-mail (claimPendingAdministrator).
     if (admin && admin.status !== 'ACTIVE') {
@@ -742,8 +742,8 @@ export class InstitutionsService {
       const next = admin
         ? `Sign in to the console: ${link}`
         : newAdmin
-          ? `Your RingPe account has been created for this e-mail address. Sign in to the customer site with it and the temporary password RingPe gave you: ${web}/portal/signin — you'll choose your own password at first sign-in. Once it is live, sign in to the console: ${link}`
-          : `Create your RingPe account on the customer site with this e-mail address: ${web}/portal/signup\nYou become the administrator of ${name} once the e-mail is confirmed. Then sign in to the customer site while it is being set up: ${web}/portal/signin\nOnce it is live, sign in to the console: ${link}`;
+          ? `Your CampusOne account has been created for this e-mail address. Sign in to the customer site with it and the temporary password CampusOne gave you: ${web}/portal/signin — you'll choose your own password at first sign-in. Once it is live, sign in to the console: ${link}`
+          : `Create your CampusOne account on the customer site with this e-mail address: ${web}/portal/signup\nYou become the administrator of ${name} once the e-mail is confirmed. Then sign in to the customer site while it is being set up: ${web}/portal/signin\nOnce it is live, sign in to the console: ${link}`;
       await this.deps.email
         .send({
           to: adminEmail,
@@ -1035,7 +1035,7 @@ export class InstitutionsService {
         await this.deps.email.send({
           to: c.email,
           purpose: 'institution.lifecycle',
-          text: `${row.name} (${row.identifier}) is now ${STATUS_LABEL[to] ?? to} on RingPe.\nReason: ${reason}`,
+          text: `${row.name} (${row.identifier}) is now ${STATUS_LABEL[to] ?? to} on CampusOne.\nReason: ${reason}`,
         });
         sent.push(c.name);
       } catch (e) {

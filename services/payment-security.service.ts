@@ -14,7 +14,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { referenceRepository } from '../repositories/account.repository';
 import { PATTERNS } from '../utils/validators';

@@ -1,9 +1,9 @@
 {
-  "name": "ringpe-backend-api",
+  "name": "campusone-backend-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "RingPe API (server.ts) and worker (worker.ts): campus wallets, payments and school management, multi-tenant (one code base, ADR-0002).",
+  "description": "CampusOne API (server.ts) and worker (worker.ts): campus wallets, payments and school management, multi-tenant (one code base, ADR-0002).",
   "main": "dist/server.js",
   "author": "SABADO Technologies",
   "license": "UNLICENSED",

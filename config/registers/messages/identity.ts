@@ -499,7 +499,7 @@ export const IDENTITY_MESSAGES = [
     class: 'N',
     type: 'error',
     http: 409,
-    en: 'This PAN is already linked to another RingPe account.',
+    en: 'This PAN is already linked to another CampusOne account.',
     approval: 'approved',
     batch: 2,
     refs: ['docs/04 §3.2 (PAN unique per account)'],

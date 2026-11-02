@@ -89,7 +89,7 @@ export const MEMBER_MESSAGES = [
     'MSG-IDN-288',
     'This mobile number is already registered for CUG Wallet in another organization.',
     409,
-    'This mobile number is already registered with RingPe in another institution.',
+    'This mobile number is already registered with CampusOne in another institution.',
     ['6.18', 'BR-01'],
   ),
   k('IDN.ADMISSION_NO_REQUIRED', 'MSG-IDN-311', 'Admission number is mandatory', 422, ['6.18']),

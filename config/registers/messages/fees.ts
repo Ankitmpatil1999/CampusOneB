@@ -123,7 +123,7 @@ export const FEE_MESSAGES = [
   n(
     'FEE.RECEIPT_TAKEN',
     409,
-    'Receipt number {no} is already used. Check the counterfoil book, or leave it empty for RingPe to number it.',
+    'Receipt number {no} is already used. Check the counterfoil book, or leave it empty for CampusOne to number it.',
     ['13.15', 'client 2026-10-22'],
     ['no'],
   ),

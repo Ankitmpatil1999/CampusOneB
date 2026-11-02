@@ -1,6 +1,6 @@
 -- 0067_admission_identity.sql — forward-only migration (D-16). The admission form asks for the
 -- student's Aadhaar number (required) and PAN (optional), the primary contact's Aadhaar number and
--- PAN (both required), and the family's consent to use what is collected to register their RingPe
+-- PAN (both required), and the family's consent to use what is collected to register their CampusOne
 -- account (client 2026-10-12; this replaces the last-6-digits identity number of Q16 e).
 -- Each number is kept encrypted (AES-256-GCM, its own purpose key) with only its last four
 -- characters in clear for masked display; the student's Aadhaar also has a blind index, so the same

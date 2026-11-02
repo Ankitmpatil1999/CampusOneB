@@ -14,7 +14,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 let panSeq = randomInt(0, 5_000);
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 
@@ -58,7 +58,7 @@ describe.skipIf(!adminUrl)('terminals, readers and cards on real MySQL', () => {
       .map((c) => c.split(';')[0] ?? '');
     return { Cookie: cookies.join('; '), 'X-CSRF-Token': r.body.csrfToken as string };
   }
-  /** A member with a RingPe account and an active profile; returns its app session. */
+  /** A member with a CampusOne account and an active profile; returns its app session. */
   async function member(name: string) {
     const mob = mobile();
     const start = await request(app)

@@ -7,7 +7,7 @@
  * sends nothing and leaves the platform's push channel switched off.
  *
  * Android shows the push itself when the app is closed or in the background, in the app's
- * "RingPe notifications" channel (LocalAlertsModule.kt) — high priority, so a locked phone lights
+ * "CampusOne notifications" channel (LocalAlertsModule.kt) — high priority, so a locked phone lights
  * up — with the unread count for the icon badge.
  */
 import { readFileSync } from 'node:fs';
@@ -36,8 +36,8 @@ export interface PushSender {
 }
 
 /** Firebase's names for the Android channel and the notification, as the app creates them. */
-export const ANDROID_CHANNEL = 'ringpe_notifications';
-export const tagOf = (notificationId: string) => `ringpe:${notificationId}`;
+export const ANDROID_CHANNEL = 'campusone_notifications';
+export const tagOf = (notificationId: string) => `campusone:${notificationId}`;
 
 export interface FcmServiceAccount {
   readonly project_id: string;

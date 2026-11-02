@@ -25,7 +25,7 @@ import {
   type AxisBankResponse,
   type AxisBankScope,
 } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { ipToBin } from '../utils/ip';
 import { parseAmount } from '../utils/money';
 import type { BankCreditInput, BankCreditsService } from './bank-credits.service';

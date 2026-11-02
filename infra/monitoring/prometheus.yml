@@ -1,4 +1,4 @@
-# Prometheus scrape configuration for RingPe (Phase 9.5). Written as a file: Prometheus is not
+# Prometheus scrape configuration for CampusOne (Phase 9.5). Written as a file: Prometheus is not
 # installed on this workstation — load it on the monitoring host once hosting is decided.
 # /metrics answers only from INTERNAL_ALLOWLIST addresses: add the Prometheus host there.
 global:
@@ -9,15 +9,15 @@ rule_files:
   - alerts.yml
 
 scrape_configs:
-  - job_name: ringpe-api
+  - job_name: campusone-api
     metrics_path: /metrics
     static_configs:
       - targets: ['api-1.internal:3000'] # one entry per API instance
-  - job_name: ringpe-worker
+  - job_name: campusone-worker
     metrics_path: /metrics
     static_configs:
       - targets: ['worker.internal:3001'] # WORKER_HEALTH_PORT
-  - job_name: ringpe-readiness
+  - job_name: campusone-readiness
     metrics_path: /probe
     params:
       module: [http_2xx]

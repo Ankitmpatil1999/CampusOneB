@@ -1,7 +1,7 @@
 /**
- * Shared file. The master is RingPe_Backend_API/utils/translate.ts; identical copies live in
- * RingPe_Web_App/src/components/Utils/ and RingPe_Mobile_App/src/utils/. Edit the master,
- * then run `npm run shared:sync` in RingPe_Backend_API (`npm run shared:check` fails on drift).
+ * Shared file. The master is CampusOne_Backend_API/utils/translate.ts; identical copies live in
+ * CampusOne_Web_App/src/components/Utils/ and CampusOne_Mobile_App/src/utils/. Edit the master,
+ * then run `npm run shared:sync` in CampusOne_Backend_API (`npm run shared:check` fails on drift).
  *
  * Message lookup with `{name}` placeholders and a fallback to English — never to the key itself
  * (OI-GAS-20, FR-PLT-01).

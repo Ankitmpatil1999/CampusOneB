@@ -50,7 +50,7 @@ describe.skipIf(!adminUrl)('teachers on the web on real MySQL', () => {
       .executeTakeFirstOrThrow();
     const cookies = await f.signedIn('console', acc.email!);
     // Teacher routes are outside /console: the web names its cookie session's surface.
-    return { ...cookies, 'X-RingPe-Surface': 'console' };
+    return { ...cookies, 'X-CampusOne-Surface': 'console' };
   };
 
   beforeAll(async () => {
@@ -138,11 +138,11 @@ describe.skipIf(!adminUrl)('teachers on the web on real MySQL', () => {
 
   it('keeps the teacher routes shut without the grant, the surface name or CSRF', async () => {
     // The administrator's console session has no teaching grant.
-    expect((await get('/teacher/exams', { ...con, 'X-RingPe-Surface': 'console' })).status).toBe(
+    expect((await get('/teacher/exams', { ...con, 'X-CampusOne-Surface': 'console' })).status).toBe(
       403,
     );
     // The cookie session is read only when the web names its surface.
-    expect((await get('/teacher/exams', without(meenaWeb, 'X-RingPe-Surface'))).status).toBe(401);
+    expect((await get('/teacher/exams', without(meenaWeb, 'X-CampusOne-Surface'))).status).toBe(401);
     // A change without the CSRF header is refused.
     const r = await request(f.app)
       .put(`/api/v1/teacher/exams/${examId}/marks`)

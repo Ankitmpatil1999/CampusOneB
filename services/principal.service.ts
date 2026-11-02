@@ -5,7 +5,7 @@
  * principal's approvals (ACA-062).
  */
 import { sql, type Kysely } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { istBusinessDate } from '../utils/format';
 import { NotFoundError } from '../utils/CustomAPIError';
 import { maskIdNumber, maskPan } from '../utils/fieldEncryption';
@@ -675,7 +675,7 @@ export class PrincipalService {
         classTeacher: classTeacher ? nameOf(classTeacher.first_name, classTeacher.last_name) : null,
         mobile: s.account_mobile ?? s.contact_mobile,
         email: s.contact_email ?? s.account_email,
-        ringPeAccount: s.account_id !== null,
+        campusOneAccount: s.account_id !== null,
         // From the admission form, when there is one.
         bloodGroup: data.student?.bloodGroup ?? null,
         category: data.student?.category ?? null,
@@ -1144,7 +1144,7 @@ export class PrincipalService {
       statusReason: t.status_reason,
       email: t.contact_email ?? t.account_email,
       mobile: t.account_mobile ?? t.contact_mobile,
-      ringPeAccount: t.account_id !== null,
+      campusOneAccount: t.account_id !== null,
       consoleRoles: consoleRoles.map((r) => r.name),
       customFields: fields
         .map((f) => ({

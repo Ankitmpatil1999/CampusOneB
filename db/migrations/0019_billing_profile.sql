@@ -1,4 +1,4 @@
--- 0019_billing_profile.sql — forward-only migration (D-16). Phase 2.7: RingPe's own details printed
+-- 0019_billing_profile.sql — forward-only migration (D-16). Phase 2.7: CampusOne's own details printed
 -- on GST invoices and shown to schools paying by bank transfer (docs/07 Q25, Q26). Until the client
 -- supplies them, the reference seed writes clearly marked example values (`is_example`); operators
 -- replace them in Plans & billing → Billing rules.

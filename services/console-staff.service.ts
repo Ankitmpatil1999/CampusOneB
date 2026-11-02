@@ -2,17 +2,17 @@
  * Console accounts of an institution (SRS 6.28, CR-05; IDN-038, IDN-060…062): who may sign in to
  * the console, with which institution roles, and the administrator's release of a locked account.
  *
- * - A "staff account" is a staff profile of the institution that has a RingPe account; students
+ * - A "staff account" is a staff profile of the institution that has a CampusOne account; students
  *   and parents never hold console roles. A merchant may hold the Merchant or Vendor merchant role
  *   matching its type (client 2026-10-13), and nothing else.
  * - Roles are the platform's institution roles (the operator keeps the catalogue, IDN-063…066).
- *   The Institution Administrator role is given and taken away by RingPe only (it decides
+ *   The Institution Administrator role is given and taken away by CampusOne only (it decides
  *   approvals, Q9); every other active role can be assigned here. New grants apply at the account's
  *   next token refresh; a role taken away ends the account's console sessions.
  */
 import type { Kysely } from 'kysely';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { rolesRepository } from '../repositories/roles.repository';
 import { recordAudit } from './audit.service';
@@ -107,7 +107,7 @@ export class ConsoleStaffService {
   }
 
   // --- IDN-060 ------------------------------------------------------------------------------------
-  /** Staff of the institution with a RingPe account: roles, last sign-in, lock. */
+  /** Staff of the institution with a CampusOne account: roles, last sign-in, lock. */
   async accounts(p: Principal) {
     const inst = await this.inst(p);
     const db = this.deps.db;
@@ -195,7 +195,7 @@ export class ConsoleStaffService {
   }
 
   // --- IDN-061 ------------------------------------------------------------------------------------
-  /** Sets the staff member's institution roles (the administrator role is RingPe's to give). */
+  /** Sets the staff member's institution roles (the administrator role is CampusOne's to give). */
   async setRoles(p: Principal, profileId: string, input: { roleIds: readonly string[] }) {
     const { inst, m } = await this.staff(p, profileId);
     if (['STUDENT', 'PARENT'].includes(m.category)) {

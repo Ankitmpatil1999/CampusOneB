@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { MessageSender } from '../integrations/sms.provider';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';

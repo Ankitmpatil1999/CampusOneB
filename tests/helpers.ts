@@ -11,8 +11,8 @@ import { createTokenVerifier } from '../utils/token-verifier';
 export const BASE_ENV = {
   NODE_ENV: 'test',
   APP_ENV: 'ci',
-  DATABASE_URL: 'mysql://ringpe_app:secret-value@127.0.0.1:3306/ringpe_test',
-  CORS_ORIGINS: 'https://console.ringpe.test',
+  DATABASE_URL: 'mysql://campusone_app:secret-value@127.0.0.1:3306/campusone_test',
+  CORS_ORIGINS: 'https://console.campusone.test',
   LOG_LEVEL: 'debug',
 } as const;
 
@@ -85,7 +85,7 @@ export async function testKeys(): Promise<TestKeys> {
     sign: (claims, opts = {}) =>
       new SignJWT(claims)
         .setProtectedHeader({ alg: 'ES256', kid: 'test-1' })
-        .setIssuer(opts.issuer ?? 'ringpe')
+        .setIssuer(opts.issuer ?? 'campusone')
         .setAudience(opts.audience ?? 'console')
         .setSubject(String(claims['sub'] ?? '0199a8b2-7c3e-7d40-8a1b-3f2e4d5c6b7a'))
         .setIssuedAt()
@@ -120,7 +120,7 @@ export async function buildTestApp(
 }
 
 /** Security building blocks with in-memory keys (signing, field cipher, revocations). */
-export async function testSecurity(issuer = 'ringpe') {
+export async function testSecurity(issuer = 'campusone') {
   const { assembleSecurity } = await import('../config/security');
   const { generateKeyFile, keySetFromFile } = await import('../utils/signing-keys');
   const { FieldCipher, generateFieldKeyFile } = await import('../utils/fieldEncryption');

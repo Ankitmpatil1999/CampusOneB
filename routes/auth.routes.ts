@@ -11,7 +11,7 @@ defineRoute({
   method: 'post',
   path: '/api/v1/auth/token/refresh',
   summary:
-    'Rotate the refresh token and issue a new access token. Member app: token in the body. Web: refresh cookie + X-RingPe-Surface + X-CSRF-Token. Reusing an old token ends the session.',
+    'Rotate the refresh token and issue a new access token. Member app: token in the body. Web: refresh cookie + X-CampusOne-Surface + X-CSRF-Token. Reusing an old token ends the session.',
   tags: ['Auth'],
   auth: 'public',
   request: refreshRequestSchema,

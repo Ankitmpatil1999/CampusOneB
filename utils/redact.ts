@@ -31,7 +31,7 @@ const SECRET_KEYS = new Set(
     'apikey',
     'privatekey',
     'signature',
-    'xringpesignature',
+    'xcampusonesignature',
     'pan',
     'pannumber',
     'aadhaar',

@@ -61,7 +61,7 @@ export const gatewayListSchema = z
     platform: z
       .object({ provider: z.string(), inUse: z.boolean() })
       .describe(
-        "inUse: no gateway of the school's own yet — payments use RingPe's Razorpay account",
+        "inUse: no gateway of the school's own yet — payments use CampusOne's Razorpay account",
       ),
   })
   .meta({ id: 'PaymentGatewayList' });

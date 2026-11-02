@@ -8,7 +8,7 @@ defineRoute({
   method: 'get',
   path: '/.well-known/jwks.json',
   summary:
-    'Public ES256 keys that verify RingPe access tokens (kid rotation; FR-INT-05). Back-office keys are not published.',
+    'Public ES256 keys that verify CampusOne access tokens (kid rotation; FR-INT-05). Back-office keys are not published.',
   tags: ['Platform'],
   auth: 'public',
   responses: { 200: { description: 'JSON Web Key Set', schema: jwksSchema } },

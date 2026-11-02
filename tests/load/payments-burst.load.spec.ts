@@ -17,7 +17,7 @@ import { binToUuid, newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
 const RUN = process.env['npm_lifecycle_event'] === 'test:load' || process.env['LOAD'] === '1';
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const PIN = '4826';
 const PAYERS = Number(process.env['LOAD_PAYERS'] ?? 300);
 const CONCURRENCY = Number(process.env['LOAD_CONCURRENCY'] ?? 50);
@@ -304,7 +304,7 @@ describe.skipIf(!adminUrl || !RUN)('payment burst (load)', () => {
         '',
         ...report,
         '',
-        'The test is `RingPe_Backend_API/tests/load/payments-burst.load.spec.ts` (`npm run test:load`; `LOAD_PAYERS`, `LOAD_CONCURRENCY`). `tests/load/payments-burst.k6.js` runs the same burst with k6 against a staging API.',
+        'The test is `CampusOne_Backend_API/tests/load/payments-burst.load.spec.ts` (`npm run test:load`; `LOAD_PAYERS`, `LOAD_CONCURRENCY`). `tests/load/payments-burst.k6.js` runs the same burst with k6 against a staging API.',
         '',
       ].join('\n'),
     );

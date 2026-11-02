@@ -1,7 +1,7 @@
 # API and worker image (one code base, two commands — ADR-0002). Build from this folder:
-#   docker build -t ringpe-backend-api .
-#   docker run ringpe-backend-api                          # API (dist/server.js)
-#   docker run ringpe-backend-api node dist/worker.js      # worker
+#   docker build -t campusone-backend-api .
+#   docker run campusone-backend-api                          # API (dist/server.js)
+#   docker run campusone-backend-api node dist/worker.js      # worker
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

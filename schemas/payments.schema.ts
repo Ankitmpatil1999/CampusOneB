@@ -30,7 +30,7 @@ const kind = z.enum(['PAYMENT', 'ALLOWANCE', 'COUPON']);
 
 // --- member -----------------------------------------------------------------------------------------
 export const resolveSchema = z
-  .strictObject({ qrPayload: required(200).describe('The scanned text, e.g. ringpe://pay/s/…') })
+  .strictObject({ qrPayload: required(200).describe('The scanned text, e.g. campusone://pay/s/…') })
   .meta({ id: 'QrResolve' });
 
 export const resolvedSchema = z

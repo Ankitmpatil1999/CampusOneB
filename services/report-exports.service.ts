@@ -12,7 +12,7 @@
  */
 import type { Kysely } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError } from '../utils/CustomAPIError';
 import { toCsv } from '../utils/csv';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

@@ -17,7 +17,7 @@ import { emit, rooms } from '../utils/outbox';
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS, renderMessage, type MessageKey } from '../config/registers';
-import type { Database, PiiField } from '../models/ringpe_models';
+import type { Database, PiiField } from '../models/campusone_models';
 import {
   approvalsRepository,
   type ApprovalModule,
@@ -355,7 +355,7 @@ export class ApprovalsService {
       })),
       makers: makers.map((m) => ({
         id: binToUuid(m.maker_ref),
-        name: personName(m.first_name, m.last_name) || 'RingPe',
+        name: personName(m.first_name, m.last_name) || 'CampusOne',
         you: me !== null && m.maker_ref.equals(me),
       })),
       items: page.map((r) => this.row(r, me, decider)),
@@ -381,14 +381,14 @@ export class ApprovalsService {
       status: r.status,
       maker: {
         id: binToUuid(r.maker_ref),
-        name: personName(r.maker_first, r.maker_last) || 'RingPe',
+        name: personName(r.maker_first, r.maker_last) || 'CampusOne',
         you: own,
         type: r.maker_type,
       },
       raisedAt: new Date(r.created_at).toISOString(),
       checker:
         r.checker_ref !== null
-          ? { name: personName(r.checker_first, r.checker_last) || 'RingPe' }
+          ? { name: personName(r.checker_first, r.checker_last) || 'CampusOne' }
           : null,
       decidedAt: r.decided_at ? new Date(r.decided_at).toISOString() : null,
       remarks: r.remarks,

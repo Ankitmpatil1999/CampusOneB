@@ -149,7 +149,7 @@ describe.skipIf(!adminUrl || !RUN)('campus load (load)', () => {
         '- **Communication report:** the first run took p50 460 ms / p95 477 ms over a month of log. Two causes: the totals were counted afresh on every read, and the page joined names before its limit, so MySQL sorted the whole month. Now a finished day’s totals are counted once and kept (migration 0064, removed by the purge with their rows) and the page reads its ids first. Result: p50 about 130 ms; the slowest read is the first, which counts the days.',
         '- **Everything else** met its target on the first run: gate taps p95 under 250 ms at about 80 taps a second, a whole-school announcement sent in under a second, console reads around 20 ms.',
         '',
-        'The test is `RingPe_Backend_API/tests/load/campus.load.spec.ts` (`npm run test:load`; `LOAD_STUDENTS`, `LOAD_READERS`, `LOAD_LOG_ROWS`). The payment burst is in [load-phase-3.md](load-phase-3.md).',
+        'The test is `CampusOne_Backend_API/tests/load/campus.load.spec.ts` (`npm run test:load`; `LOAD_STUDENTS`, `LOAD_READERS`, `LOAD_LOG_ROWS`). The payment burst is in [load-phase-3.md](load-phase-3.md).',
         '',
       ].join('\n'),
     );

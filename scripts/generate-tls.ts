@@ -2,8 +2,8 @@
  * A certificate for HTTPS on a server reached by its LAN address or an internal name, until it has
  * one from a public certificate authority. Creates, in keys/tls/ (gitignored):
  *
- * - ca.crt / ca.key — "RingPe Local CA", made once and kept. Install ca.crt as a trusted root on
- *   each computer and phone that opens RingPe (then no browser warning); ca.key never leaves here.
+ * - ca.crt / ca.key — "CampusOne Local CA", made once and kept. Install ca.crt as a trusted root on
+ *   each computer and phone that opens CampusOne (then no browser warning); ca.key never leaves here.
  * - server.crt (the full chain) / server.key — for this server's names and addresses: localhost,
  *   127.0.0.1, this computer's name and its LAN addresses, plus any names or addresses given.
  *   Made again on every run (valid 825 days, the most browsers accept).
@@ -50,7 +50,7 @@ const run = (args: string[]) => execFileSync(bin, args, { cwd: dir, stdio: 'pipe
 const caKey = join(dir, 'ca.key');
 const caCrt = join(dir, 'ca.crt');
 if (existsSync(caKey) && existsSync(caCrt)) {
-  console.log('kept     keys/tls/ca.crt (RingPe Local CA)');
+  console.log('kept     keys/tls/ca.crt (CampusOne Local CA)');
 } else {
   run(['genrsa', '-out', 'ca.key', '3072']);
   run([
@@ -63,7 +63,7 @@ if (existsSync(caKey) && existsSync(caCrt)) {
     '-days',
     '3650',
     '-subj',
-    '/CN=RingPe Local CA/O=RingPe',
+    '/CN=CampusOne Local CA/O=CampusOne',
     '-addext',
     'basicConstraints=critical,CA:TRUE,pathlen:0',
     '-addext',
@@ -71,7 +71,7 @@ if (existsSync(caKey) && existsSync(caCrt)) {
     '-out',
     'ca.crt',
   ]);
-  console.log('created  keys/tls/ca.crt (RingPe Local CA)');
+  console.log('created  keys/tls/ca.crt (CampusOne Local CA)');
 }
 
 // --- the server certificate (made again each run) -------------------------------------------------
@@ -106,7 +106,7 @@ run([
   '-key',
   'server.key',
   '-subj',
-  `/CN=${names[2]}/O=RingPe`,
+  `/CN=${names[2]}/O=CampusOne`,
   '-out',
   'server.csr',
 ]);
@@ -145,5 +145,5 @@ KEY_PATH=keys/tls/server.key
 CERTIFICATE_PATH=keys/tls/server.crt
 
 Then install keys/tls/ca.crt as a trusted root certificate on every computer and phone that opens
-RingPe (Windows: double-click it → Install Certificate → Local Machine → "Trusted Root Certification
+CampusOne (Windows: double-click it → Install Certificate → Local Machine → "Trusted Root Certification
 Authorities"). Never copy ca.key anywhere.`);

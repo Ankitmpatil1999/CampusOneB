@@ -20,7 +20,7 @@
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
-import type { BoardingStatus, Database, TripStatus } from '../models/ringpe_models';
+import type { BoardingStatus, Database, TripStatus } from '../models/campusone_models';
 import type { JobContext } from '../schedulers';
 import { CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { formatTime, istBusinessDate } from '../utils/format';

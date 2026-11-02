@@ -1,6 +1,6 @@
 /** One-time code challenges (docs/04 §3.2). Codes are stored only as an HMAC. */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database, OtpPurpose } from '../models/ringpe_models';
+import type { Database, OtpPurpose } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

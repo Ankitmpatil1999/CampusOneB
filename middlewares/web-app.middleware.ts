@@ -8,7 +8,7 @@
  *   It is read again whenever a build rewrites it, so a redeployed web app needs no API restart.
  * - Pages get their own security headers. The API's policy blocks everything; a page needs its own
  *   scripts and styles, the inline loader script the build writes (allowed by its hash), Razorpay
- *   Checkout, and the RingPe Card Reader helper on this computer (http://127.0.0.1:47821).
+ *   Checkout, and the CampusOne Card Reader helper on this computer (http://127.0.0.1:47821).
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -42,7 +42,7 @@ export function webAppRoutes(opts: { root: string; production: boolean }): Route
   const indexPath = join(root, 'index.html');
   if (!existsSync(indexPath)) {
     throw new Error(
-      'WEB_ROOT: index.html not found (build RingPe_Web_App and point to dist/browser)',
+      'WEB_ROOT: index.html not found (build CampusOne_Web_App and point to dist/browser)',
     );
   }
   const load = (): Page => {

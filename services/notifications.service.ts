@@ -12,7 +12,7 @@
 import { emit, rooms } from '../utils/outbox';
 import type { Kysely, Transaction } from 'kysely';
 import { commEventOf, renderMessage, type MessageKey } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
   notificationsRepository,
@@ -59,10 +59,10 @@ export interface NotifyInput {
    */
   readonly about?: readonly string[];
   /**
-   * The e-mail also tells each person how to sign in to the RingPe app (client 2026-10-22, the
+   * The e-mail also tells each person how to sign in to the CampusOne app (client 2026-10-22, the
    * class placement e-mail): the mobile number to sign in with and their password, or — without an
    * account yet — to sign up with the mobile the school holds (a code is sent to it; the school's
-   * profile links at sign-up). Never a password: RingPe keeps none it could send.
+   * profile links at sign-up). Never a password: CampusOne keeps none it could send.
    */
   readonly signIn?: boolean;
 }
@@ -100,15 +100,15 @@ async function signInTexts(
     const registered = r?.mobile ?? (p.accountId ? byAccount.get(p.accountId) : undefined);
     if (registered) {
       return [
-        'Signing in to the RingPe app:',
+        'Signing in to the CampusOne app:',
         `Mobile number: ${spaced(registered)}`,
         'Password: the one you chose. Forgotten it? Tap "Forgot password?" on the sign-in screen and a code is sent to this mobile.',
       ].join('\n');
     }
     if (r?.contact_mobile) {
       return [
-        'Signing in to the RingPe app:',
-        'Open the RingPe app and tap "Sign up".',
+        'Signing in to the CampusOne app:',
+        'Open the CampusOne app and tap "Sign up".',
         `Mobile number: ${spaced(r.contact_mobile)} — a one-time code is sent to it.`,
         'Then choose your password. Your school profile is linked to it, and from then on you sign in with this mobile and that password.',
       ].join('\n');

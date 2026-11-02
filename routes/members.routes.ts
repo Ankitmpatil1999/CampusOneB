@@ -11,7 +11,7 @@ import {
   requireTenant,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   classInputSchema,
   classSchema,
@@ -113,7 +113,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/members',
   summary:
-    'Onboard one student, with grade, section and parents (client 2026-10-19: every other role through staff onboarding, IDN-053; another user type is refused, IDN.STUDENTS_ONLY); linked to the RingPe account of the mobile, or linked when it signs up',
+    'Onboard one student, with grade, section and parents (client 2026-10-19: every other role through staff onboarding, IDN-053; another user type is refused, IDN.STUDENTS_ONLY); linked to the CampusOne account of the mobile, or linked when it signs up',
   tags,
   auth: 'members.onboard',
   request: onboardSchema,
@@ -166,7 +166,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/staff',
   summary:
-    'Onboard staff (18 or older): a RingPe account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given; the console role chosen is given with the profile (client 2026-10-22; needs members.roles)',
+    'Onboard staff (18 or older): a CampusOne account is created when the mobile has none, with a temporary password shown once in the answer (or e-mailed when idn.staff.passwordShownOnce is 0) and changed at first sign-in; employee ID EMP… when not given; the console role chosen is given with the profile (client 2026-10-22; needs members.roles)',
   tags,
   auth: 'members.onboard',
   request: staffSchema,

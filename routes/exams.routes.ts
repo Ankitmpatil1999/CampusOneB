@@ -11,7 +11,7 @@ import {
   teacherAccess,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { ExamsService } from '../services/exams.service';
 import { AuthenticationError } from '../utils/CustomAPIError';
 import { expectedVersion, setEtag } from '../utils/etag';

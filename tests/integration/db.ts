@@ -1,10 +1,10 @@
 /**
  * Throwaway MySQL schemas for integration tests (brief §7.6). Needs TEST_DB_MIGRATOR_URL with
- * CREATE/DROP DATABASE; each call creates `ringpe_it_<random>` holding every migration and the
+ * CREATE/DROP DATABASE; each call creates `campusone_it_<random>` holding every migration and the
  * reference seeds, and drops the schema afterwards.
  *
  * Applying all the migrations takes most of a minute, so it is done once per set of migration files
- * into a template schema (`ringpe_it_tpl_<hash>`, built under a MySQL lock so parallel workers wait for
+ * into a template schema (`campusone_it_tpl_<hash>`, built under a MySQL lock so parallel workers wait for
  * one build); each test schema is then copied from it — tables (with their keys, checks, partitions and
  * auto-increment positions), rows, then triggers. The migrations suite still migrates from scratch.
  *
@@ -35,7 +35,7 @@ export interface TestDatabase {
 
 export async function createTestDatabase(): Promise<TestDatabase> {
   if (!adminUrl) throw new Error('TEST_DB_MIGRATOR_URL is not set');
-  const name = `ringpe_it_${randomBytes(4).toString('hex')}`;
+  const name = `campusone_it_${randomBytes(4).toString('hex')}`;
   const admin = await createConnection({ uri: adminUrl });
   for (const db of [name, cugDatabaseOf(name)]) {
     await admin.query(`CREATE DATABASE \`${db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
@@ -74,7 +74,7 @@ async function template(): Promise<string> {
     .update(seed)
     .digest('hex')
     .slice(0, 12);
-  const name = `ringpe_it_tpl_${hash}`;
+  const name = `campusone_it_tpl_${hash}`;
   const admin = await createConnection({ uri: adminUrl! });
   try {
     await admin.query('SELECT GET_LOCK(?, 900)', [name]);
@@ -98,7 +98,7 @@ async function template(): Promise<string> {
         await admin.query(`CREATE TABLE \`${name}\`._template_ready (id INT PRIMARY KEY)`);
         // Templates of earlier migration sets are no longer needed.
         const [old] = await admin.query<RowDataPacket[]>(
-          `SELECT SCHEMA_NAME AS s FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE 'ringpe\\_it\\_tpl\\_%' AND SCHEMA_NAME <> ?`,
+          `SELECT SCHEMA_NAME AS s FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE 'campusone\\_it\\_tpl\\_%' AND SCHEMA_NAME <> ?`,
           [name],
         );
         for (const o of old) {

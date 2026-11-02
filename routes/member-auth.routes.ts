@@ -3,7 +3,7 @@ import type { Kysely } from 'kysely';
 import { defineRoute } from '../config/openapi-registry';
 import { memberAuthController } from '../controllers/member-auth.controller';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   challengeSchema,
   codeVerifySchema,

@@ -8,7 +8,7 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import type { Kysely } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { Database, OtpPurpose } from '../models/ringpe_models';
+import type { Database, OtpPurpose } from '../models/campusone_models';
 import type { MessageSender } from '../integrations/sms.provider';
 import { otpRepository } from '../repositories/otp.repository';
 import { BadRequestError, ConflictError } from '../utils/CustomAPIError';

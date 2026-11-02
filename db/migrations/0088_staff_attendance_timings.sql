@@ -11,7 +11,7 @@
 -- member whose roles are in two timings follows the one made first; one whose roles are in none keeps
 -- the school's rules (the late cut-off, the half-day hours and the auto-absent cut-off).
 --
--- All three are school tables in the CUG database (db/cug-tables.ts). Roles are in the RingPe
+-- All three are school tables in the CUG database (db/cug-tables.ts). Roles are in the CampusOne
 -- database beside it, which a migration cannot name, so role_id is kept by the service
 -- (services/staff-timings.ts) rather than by a foreign key.
 

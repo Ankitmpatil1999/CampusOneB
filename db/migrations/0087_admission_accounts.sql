@@ -1,11 +1,11 @@
 -- 0087_admission_accounts.sql — forward-only migration (D-16). Client 2026-10-23: the student, the
--- father, the mother, the guardian and the local guardian get their RingPe accounts as soon as the
+-- father, the mother, the guardian and the local guardian get their CampusOne accounts as soon as the
 -- admission form has their mobile number (when it is submitted, or a submitted one changes) — nobody
 -- signs up themselves. The login details go out only once the admission is approved (or the student
 -- is uploaded as an existing student): a one-time password, changed on the first sign-in.
 --
 -- Both tables are school tables in the CUG database (db/cug-tables.ts). The accounts they name are in
--- the RingPe database beside it, which a migration cannot name, so those two columns are kept by the
+-- the CampusOne database beside it, which a migration cannot name, so those two columns are kept by the
 -- service (services/admission-accounts.ts) rather than by a foreign key.
 --
 -- * admission_accounts: whose account each person on an application has — one the admission made

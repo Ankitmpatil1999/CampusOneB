@@ -1,15 +1,15 @@
 /**
  * Carries a school's staff over from the earlier CUG application's database (client 2026-10-23: "migrate
  * all teaching and non-teaching staff with their wallet number, NFC details and all other details";
- * SRGS first). Runs against a fresh RingPe database, which it can create:
+ * SRGS first). Runs against a fresh CampusOne database, which it can create:
  *
- *   npm run import:cug-staff -- --db ringpe_live --create --org 21 \
+ *   npm run import:cug-staff -- --db campusone_live --create --org 21 \
  *     --sheet "C:\path\staff.xlsx" --city Bengaluru --state Karnataka --out "C:\private\folder"
  *
- * - `--create` makes the RingPe database `--db` (it must not exist yet) and applies every migration and
+ * - `--create` makes the CampusOne database `--db` (it must not exist yet) and applies every migration and
  *   the reference seeds; its CUG database `<db>_cug` comes with them (ADR-0019). The connection is
  *   DB_MIGRATOR_URL's server and login with only the database name replaced; nothing from .env is printed.
- * - The earlier database (`--source`, default ringpe_cug_db_prod, same server) is only read.
+ * - The earlier database (`--source`, default campusone_cug_db_prod, same server) is only read.
  * - `--sheet` is the school's staff list (.xlsx, columns as the earlier application exported them): its
  *   Role column gives the console roles, its VAN / IFSC / Bank Name the school's bank code. Only the
  *   staff on the sheet are carried over; everything else comes from the earlier database.
@@ -43,7 +43,7 @@ import { createPool } from 'mysql2';
 import { createConnection, type Connection, type RowDataPacket } from 'mysql2/promise';
 import { cugDatabaseOf } from '../db/cug-tables';
 import { CugSchemaPlugin } from '../models/cug-schema-plugin';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { recordAudit } from '../services/audit.service';
 import { nameAddressKey } from '../services/institutions.service';
 import { LedgerService } from '../services/ledger.service';
@@ -80,8 +80,8 @@ const fail = (message: string): never => {
   process.exit(2);
 };
 
-const target = opt('db') ?? fail('--db <name> is required (the RingPe database to fill)');
-const source = opt('source') ?? 'ringpe_cug_db_prod';
+const target = opt('db') ?? fail('--db <name> is required (the CampusOne database to fill)');
+const source = opt('source') ?? 'campusone_cug_db_prod';
 const orgId = Number(opt('org') ?? fail('--org <earlier organisation id> is required'));
 const sheetPath = opt('sheet');
 const outDir = opt('out');

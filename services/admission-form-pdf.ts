@@ -316,7 +316,7 @@ export function admissionFormPdf(
 ): Buffer {
   const w = new FormWriter(
     `Application ${v.applicationNo}`,
-    `${v.applicationNo} · a copy of the application as submitted, made by RingPe on ${formatDateTime(now)}`,
+    `${v.applicationNo} · a copy of the application as submitted, made by CampusOne on ${formatDateTime(now)}`,
   );
   const d = w.doc;
   // The school's logo, fitted in a 44-point square beside its name.

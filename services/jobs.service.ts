@@ -6,7 +6,7 @@
  * takes the same lock as the worker's scheduled run and is recorded with who asked and why.
  */
 import type { Kysely } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { JOB_CATALOGUE } from '../schedulers/catalogue';
 import { RUNNABLE_JOB_IDS, type JobDefinition } from '../schedulers';
 import type { JobRunner } from '../schedulers/runner';

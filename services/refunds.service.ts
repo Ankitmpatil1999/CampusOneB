@@ -20,7 +20,7 @@ import type {
   Database,
   RefundSource,
   RefundStatus,
-} from '../models/ringpe_models';
+} from '../models/campusone_models';
 import {
   CustomAPIError,
   NotFoundError,

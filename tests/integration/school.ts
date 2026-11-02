@@ -15,7 +15,7 @@ import { hasAadhaarCheckDigit } from '../../utils/validators';
 
 let panSeq = randomInt(0, 5_000);
 const uniquePan = () => `ABCDE${String(++panSeq % 10_000).padStart(4, '0')}F`;
-export const PASSWORD = 'Ringpe@2026';
+export const PASSWORD = 'CampusOne@2026';
 export const PIN = '4826';
 export const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 /** A valid, random Aadhaar number: eleven digits and the one Verhoeff check digit that fits. */

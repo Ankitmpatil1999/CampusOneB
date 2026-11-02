@@ -1,11 +1,11 @@
 // Isolated stack for the web app's end-to-end journeys (Phase 9.1). DEVELOPMENT ONLY — refused when
 // NODE_ENV=production or APP_ENV is uat/prod.
 //
-//   npm run e2e:db              drop and recreate the schema `ringpe_e2e`, apply every migration and the
+//   npm run e2e:db              drop and recreate the schema `campusone_e2e`, apply every migration and the
 //                               reference seeds, then the development seed (sample school TVPS, its staff,
 //                               the operators, the sample parent)
 //   npm run e2e:db -- --keep    keep the schema: apply pending migrations and re-run the (idempotent) seeds
-//   npm run e2e:db -- serve     start the API on port 3021 against `ringpe_e2e` (test banner codes on)
+//   npm run e2e:db -- serve     start the API on port 3021 against `campusone_e2e` (test banner codes on)
 //
 // The connection details come from DB_MIGRATOR_URL / DATABASE_URL (environment, else .env) with only the
 // database name replaced; nothing from .env is printed. The schema must be on the local server and its
@@ -33,7 +33,7 @@ if ((base.NODE_ENV ?? 'development') === 'production' || ['uat', 'prod'].include
   fail('refused outside local and development environments');
 }
 
-const dbName = base.E2E_DB_NAME || 'ringpe_e2e';
+const dbName = base.E2E_DB_NAME || 'campusone_e2e';
 if (!/^[a-z0-9_]+_e2e$/.test(dbName)) fail('E2E_DB_NAME must be lower-case and end in _e2e');
 const apiPort = Number(base.E2E_API_PORT || 3021);
 const webPort = Number(base.E2E_WEB_PORT || 4321);
@@ -68,7 +68,7 @@ const childEnv = {
   DATABASE_URL: appUrl,
   UPLOAD_DIR: uploadDir,
   DEV_STAFF_PASSWORD: base.E2E_STAFF_PASSWORD || 'Tvps@2026',
-  DEV_OPS_PASSWORD: base.E2E_OPS_PASSWORD || 'Ringpe@2026',
+  DEV_OPS_PASSWORD: base.E2E_OPS_PASSWORD || 'CampusOne@2026',
   DEV_MEMBER_PASSWORD: base.E2E_MEMBER_PASSWORD || 'Member@2026',
 };
 // Never hand the user's report connection to the e2e processes.

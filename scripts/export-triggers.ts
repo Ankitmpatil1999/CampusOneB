@@ -2,7 +2,7 @@
  * Writes the triggers of a migrated database pair as SQL scripts, so they can be created on another
  * server (client 2026-10-09):
  *
- * - db/triggers/create-triggers.sql     — the RingPe database's triggers;
+ * - db/triggers/create-triggers.sql     — the CampusOne database's triggers;
  * - db/triggers/create-triggers-cug.sql — the CUG database's (the school tables, migration 0081).
  *
  * Each trigger is dropped if it exists and created again exactly as MySQL stores it, without DEFINER
@@ -39,7 +39,7 @@ async function exportOf(db: mysql.Connection, schema: string, file: string, whic
       .replace(/;\s*$/, '');
     parts.push(`-- ${r.tbl}\nDROP TRIGGER IF EXISTS \`${r.name}\`$$\n${sql}$$\n`);
   }
-  const header = `-- RingPe ${which} triggers: ${rows.length} triggers, generated from a migrated database by
+  const header = `-- CampusOne ${which} triggers: ${rows.length} triggers, generated from a migrated database by
 -- scripts/export-triggers.ts. Do not edit by hand; the migrations (db/migrations) are the source.
 --
 -- Before running:
@@ -48,7 +48,7 @@ async function exportOf(db: mysql.Connection, schema: string, file: string, whic
 --   * with binary logging on and a user without SUPER, set once as an administrator:
 --       SET GLOBAL log_bin_trust_function_creators = 1;
 --
--- Run (MySQL client):  mysql -u <user> -p <${which === 'CUG database' ? 'CUG database, e.g. ringpe_cug' : 'RingPe database, e.g. ringpe'}> < ${file}
+-- Run (MySQL client):  mysql -u <user> -p <${which === 'CUG database' ? 'CUG database, e.g. campusone_cug' : 'CampusOne database, e.g. campusone'}> < ${file}
 -- MySQL Workbench:     open this file with that database selected and run it all (Ctrl+Shift+Enter).
 
 SET NAMES utf8mb4;
@@ -62,12 +62,12 @@ DELIMITER $$
 async function main() {
   const url = process.env['DATABASE_URL'];
   if (!url) throw new Error('DATABASE_URL is not set');
-  const ringpe = databaseOfUrl(url);
+  const campusone = databaseOfUrl(url);
   const db = await mysql.createConnection(url);
   mkdirSync(DIR, { recursive: true });
   try {
-    await exportOf(db, ringpe, 'create-triggers.sql', 'RingPe database');
-    await exportOf(db, cugDatabaseOf(ringpe), 'create-triggers-cug.sql', 'CUG database');
+    await exportOf(db, campusone, 'create-triggers.sql', 'CampusOne database');
+    await exportOf(db, cugDatabaseOf(campusone), 'create-triggers-cug.sql', 'CUG database');
   } finally {
     await db.end();
   }

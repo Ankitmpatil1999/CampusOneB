@@ -18,7 +18,7 @@
  */
 import { sql, type Kysely } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';
 import { NIL_UUID_BIN, binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

@@ -3,7 +3,7 @@
 #   docker compose -f infra/docker-compose.yml --profile av up -d         # + ClamAV
 #   docker compose -f infra/docker-compose.yml --profile observability up -d
 # Passwords below are for local development only; copy infra/.env.example to infra/.env to change them.
-name: ringpe
+name: campusone
 
 services:
   mysql:
@@ -11,10 +11,10 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-local-only}
-      MYSQL_DATABASE: ringpe
-      RINGPE_APP_PASSWORD: ${RINGPE_APP_PASSWORD:-app-local-only}
-      RINGPE_MIGRATOR_PASSWORD: ${RINGPE_MIGRATOR_PASSWORD:-migrator-local-only}
-      RINGPE_REPORT_PASSWORD: ${RINGPE_REPORT_PASSWORD:-report-local-only}
+      MYSQL_DATABASE: campusone
+      CAMPUSONE_APP_PASSWORD: ${CAMPUSONE_APP_PASSWORD:-app-local-only}
+      CAMPUSONE_MIGRATOR_PASSWORD: ${CAMPUSONE_MIGRATOR_PASSWORD:-migrator-local-only}
+      CAMPUSONE_REPORT_PASSWORD: ${CAMPUSONE_REPORT_PASSWORD:-report-local-only}
     ports:
       - '127.0.0.1:3307:3306' # 3307 so it does not clash with a local MySQL service on 3306
     volumes:
@@ -46,8 +46,8 @@ services:
     restart: unless-stopped
     command: ['server', '/data', '--console-address', ':9001']
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ringpe-local}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ringpe-local-secret}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-campusone-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-campusone-local-secret}
     ports:
       - '127.0.0.1:9000:9000'
       - '127.0.0.1:9001:9001'

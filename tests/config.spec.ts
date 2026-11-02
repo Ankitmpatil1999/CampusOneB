@@ -1,6 +1,6 @@
 import { ConfigError, loadConfig } from '../config/config';
 
-const base = { DATABASE_URL: 'mysql://app:s3cret-pw@localhost:3306/ringpe' };
+const base = { DATABASE_URL: 'mysql://app:s3cret-pw@localhost:3306/campusone' };
 
 describe('loadConfig', () => {
   it('applies defaults, including limits from the register', () => {
@@ -56,7 +56,7 @@ describe('loadConfig', () => {
   });
 
   it('refuses the MySQL root account in production but allows it locally', () => {
-    const rootUrl = { DATABASE_URL: 'mysql://root:root@127.0.0.1:3306/ringpe' };
+    const rootUrl = { DATABASE_URL: 'mysql://root:root@127.0.0.1:3306/campusone' };
     expect(() => loadConfig({ ...base, ...rootUrl })).not.toThrow();
     expect(() =>
       loadConfig({
@@ -64,13 +64,13 @@ describe('loadConfig', () => {
         ...rootUrl,
         NODE_ENV: 'production',
         REDIS_URL: 'rediss://cache:6380',
-        CORS_ORIGINS: 'https://console.ringpe.in',
+        CORS_ORIGINS: 'https://console.campusone.in',
         AUTH_SIGNING_KEYS_FILE: '/run/secrets/signing-keys.json',
         AUTH_OPS_SIGNING_KEYS_FILE: '/run/secrets/ops-signing-keys.json',
         FIELD_KEYS_FILE: '/run/secrets/field-keys.json',
         SMS_PROVIDER: 'kaleyra',
         EMAIL_PROVIDER: 'smtp',
-        EMAIL_USER: 'noreply@ringpe.example.in',
+        EMAIL_USER: 'noreply@campusone.example.in',
         EMAIL_PASS: 'test-only',
         STORAGE_PROVIDER: 's3',
         FILE_SCAN_MODE: 'clamav',
@@ -90,13 +90,13 @@ describe('loadConfig', () => {
       ...base,
       NODE_ENV: 'production',
       REDIS_URL: 'rediss://cache:6380',
-      CORS_ORIGINS: 'https://console.ringpe.in',
+      CORS_ORIGINS: 'https://console.campusone.in',
       AUTH_SIGNING_KEYS_FILE: '/run/secrets/signing-keys.json',
       AUTH_OPS_SIGNING_KEYS_FILE: '/run/secrets/ops-signing-keys.json',
       FIELD_KEYS_FILE: '/run/secrets/field-keys.json',
       SMS_PROVIDER: 'kaleyra',
       EMAIL_PROVIDER: 'smtp',
-      EMAIL_USER: 'noreply@ringpe.example.in',
+      EMAIL_USER: 'noreply@campusone.example.in',
       EMAIL_PASS: 'test-only',
       STORAGE_PROVIDER: 's3',
       FILE_SCAN_MODE: 'clamav',
@@ -108,7 +108,7 @@ describe('loadConfig', () => {
       RAZORPAY_SECRET: 'example-secret',
       RAZORPAY_WEBHOOK_SECRET: 'example-webhook-secret',
       ACCOUNTING_MODE: 'off',
-      PUBLIC_WEB_URL: 'https://app.ringpe.in',
+      PUBLIC_WEB_URL: 'https://app.campusone.in',
     };
     expect(loadConfig(production).notify.otpTestShowCode).toBe(false);
     expect(() => loadConfig({ ...production, OTP_TEST_SHOW_CODE: 'true' })).toThrow(
@@ -141,13 +141,13 @@ describe('loadConfig', () => {
       NODE_ENV: 'production',
       APP_ENV: 'prod',
       REDIS_URL: 'rediss://cache:6380',
-      CORS_ORIGINS: 'https://console.ringpe.in, https://ops.ringpe.in',
+      CORS_ORIGINS: 'https://console.campusone.in, https://ops.campusone.in',
       AUTH_SIGNING_KEYS_FILE: '/run/secrets/signing-keys.json',
       AUTH_OPS_SIGNING_KEYS_FILE: '/run/secrets/ops-signing-keys.json',
       FIELD_KEYS_FILE: '/run/secrets/field-keys.json',
       SMS_PROVIDER: 'kaleyra',
       EMAIL_PROVIDER: 'smtp',
-      EMAIL_USER: 'noreply@ringpe.example.in',
+      EMAIL_USER: 'noreply@campusone.example.in',
       EMAIL_PASS: 'test-only',
       STORAGE_PROVIDER: 's3',
       FILE_SCAN_MODE: 'clamav',
@@ -159,12 +159,12 @@ describe('loadConfig', () => {
       RAZORPAY_SECRET: 'example-secret',
       RAZORPAY_WEBHOOK_SECRET: 'example-webhook-secret',
       ACCOUNTING_MODE: 'off',
-      PUBLIC_WEB_URL: 'https://app.ringpe.in/',
+      PUBLIC_WEB_URL: 'https://app.campusone.in/',
     });
     expect(c.social).toEqual({ mode: 'live', providers: ['google', 'apple'] });
-    expect(c.http.corsOrigins).toEqual(['https://console.ringpe.in', 'https://ops.ringpe.in']);
+    expect(c.http.corsOrigins).toEqual(['https://console.campusone.in', 'https://ops.campusone.in']);
     expect(c.redis.url).toBe('rediss://cache:6380');
-    expect(c.publicWebUrl).toBe('https://app.ringpe.in');
+    expect(c.publicWebUrl).toBe('https://app.campusone.in');
     expect(c.razorpay).toEqual({
       keyId: 'rzp_live_example',
       keySecret: 'example-secret',
@@ -178,13 +178,13 @@ describe('loadConfig', () => {
       NODE_ENV: 'production',
       APP_ENV: 'prod',
       REDIS_URL: 'rediss://cache:6380',
-      CORS_ORIGINS: 'https://console.ringpe.in',
+      CORS_ORIGINS: 'https://console.campusone.in',
       AUTH_SIGNING_KEYS_FILE: '/run/secrets/signing-keys.json',
       AUTH_OPS_SIGNING_KEYS_FILE: '/run/secrets/ops-signing-keys.json',
       FIELD_KEYS_FILE: '/run/secrets/field-keys.json',
       SMS_PROVIDER: 'kaleyra',
       EMAIL_PROVIDER: 'smtp',
-      EMAIL_USER: 'noreply@ringpe.example.in',
+      EMAIL_USER: 'noreply@campusone.example.in',
       EMAIL_PASS: 'test-only',
       STORAGE_PROVIDER: 's3',
       FILE_SCAN_MODE: 'clamav',
@@ -193,7 +193,7 @@ describe('loadConfig', () => {
       FINANCING_PARTNER_MODE: 'live',
       PAYMENT_GATEWAY_MODE: 'live',
       ACCOUNTING_MODE: 'off',
-      PUBLIC_WEB_URL: 'https://app.ringpe.in/',
+      PUBLIC_WEB_URL: 'https://app.campusone.in/',
     };
     expect(() =>
       loadConfig({

@@ -25,7 +25,7 @@ describe.skipIf(!adminUrl)('cross-institution reporting on real MySQL', () => {
   const post = (path: string, auth: Auth, body: object = {}) =>
     request(f.app).post(`/api/v1${path}`).set(auth).set('Idempotency-Key', randomUUID()).send(body);
   const get = (path: string, auth: Auth = f.ops) =>
-    request(f.app).get(`/api/v1${path}`).set(auth).set('X-RingPe-Surface', 'ops');
+    request(f.app).get(`/api/v1${path}`).set(auth).set('X-CampusOne-Surface', 'ops');
   const operator = async (first: string, code: string) => {
     const acct = await f.account(first);
     const role = await f.t.db

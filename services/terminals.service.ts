@@ -18,7 +18,7 @@ import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS } from '../config/registers';
 import { istBusinessDate } from '../utils/format';
-import type { Database, TerminalPurpose } from '../models/ringpe_models';
+import type { Database, TerminalPurpose } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
   AuthenticationError,

@@ -14,7 +14,7 @@
  * refused as an incorrect VAN.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

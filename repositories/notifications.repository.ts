@@ -4,7 +4,7 @@
  * order (keyset) and marked read; they are never deleted by the app.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

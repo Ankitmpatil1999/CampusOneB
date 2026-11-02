@@ -31,7 +31,7 @@ import { FEE_RECORD } from '../config/registers/status/fees';
 import { SETTLEMENT } from '../config/registers/status/settlement';
 import { STAFF_LEAVE } from '../config/registers/status/teaching';
 import { TRIP } from '../config/registers/status/transport';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';
 import { isUuid, uuidToBin } from '../utils/idGenerator';

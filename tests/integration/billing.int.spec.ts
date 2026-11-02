@@ -15,7 +15,7 @@ import { istBusinessDate } from '../../utils/format';
 import { newPublicIdPair } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 
 describe.skipIf(!adminUrl)('trials and billing on real MySQL', () => {
   let t: TestDatabase;

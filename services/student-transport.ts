@@ -5,7 +5,7 @@
  * with the vehicle, the driver and the attendant.
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { istBusinessDate } from '../utils/format';
 import { newPublicIdPair } from '../utils/idGenerator';
 import { notify } from './notifications.service';

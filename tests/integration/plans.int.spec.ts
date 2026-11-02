@@ -12,7 +12,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 
 describe.skipIf(!adminUrl)('plans on real MySQL', () => {
   let t: TestDatabase;
@@ -31,7 +31,7 @@ describe.skipIf(!adminUrl)('plans on real MySQL', () => {
   });
 
   async function operator(role: string) {
-    const email = `ops.${randomInt(0, 1e9)}@ringpe.example`;
+    const email = `ops.${randomInt(0, 1e9)}@campusone.example`;
     const acc = await t.db
       .insertInto('platform_accounts')
       .values({

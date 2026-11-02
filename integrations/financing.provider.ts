@@ -2,10 +2,10 @@
  * The fee-financing partner (SRS 13.11–13.12, FR-FEE-11, OQ-03). The partner is not named yet, so
  * this is an example contract:
  * - a registration sends the minimum data (RNG-GOV-007): the student's name, class, admission number
- *   and the fee records to finance, with RingPe's reference;
+ *   and the fee records to finance, with CampusOne's reference;
  * - the partner answers later on its signed webhook (FEE-026): approved, rejected, or paid.
  *
- * test: STUB — every registration is acknowledged at once; nothing leaves RingPe. Production refuses
+ * test: STUB — every registration is acknowledged at once; nothing leaves CampusOne. Production refuses
  * it (FINANCING_PARTNER_MODE). live: not built until the partner's API is known; a registration then
  * stays pending with "not sent", so nothing is lost.
  */

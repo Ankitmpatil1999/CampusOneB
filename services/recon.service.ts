@@ -5,7 +5,7 @@
  */
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { NotFoundError } from '../utils/CustomAPIError';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import { toMoneyDto } from '../utils/money';

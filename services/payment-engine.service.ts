@@ -32,7 +32,7 @@ import {
   type PaymentCheck,
   type PaymentStage,
 } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError } from '../utils/CustomAPIError';
 import { formatInr, istBusinessDate } from '../utils/format';
 import { binToUuid, newPublicIdPair } from '../utils/idGenerator';

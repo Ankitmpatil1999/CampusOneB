@@ -11,7 +11,7 @@ import {
   requireTenant,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   ADMISSION_DOC_TYPES,
   applicationInputSchema,
@@ -549,7 +549,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/applications/{applicationId}/approval',
   summary:
-    'Approve (If-Match): user type and department, a section of the class applied for, the admission number → the student member, wallets, guardian link and enrolment, in one transaction. The primary contact’s mobile is verified first (ADM-044/045, else 409 ADM.CONTACT_NOT_VERIFIED) and only that contact becomes the student’s Parent member — their existing profile here when they have one, whatever other school they belong to; the other parents keep their RingPe accounts, with their login details in the approval e-mail, and no profile here (client 2026-10-27)',
+    'Approve (If-Match): user type and department, a section of the class applied for, the admission number → the student member, wallets, guardian link and enrolment, in one transaction. The primary contact’s mobile is verified first (ADM-044/045, else 409 ADM.CONTACT_NOT_VERIFIED) and only that contact becomes the student’s Parent member — their existing profile here when they have one, whatever other school they belong to; the other parents keep their CampusOne accounts, with their login details in the approval e-mail, and no profile here (client 2026-10-27)',
   auth: 'admissions.approve',
   request: approvalSchema,
   idempotent: 'required',
@@ -618,7 +618,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/applications/{applicationId}/admission-fee/online',
   summary:
-    'A payment link for the admission fee (valid adm.payLink.days, one day), sent at once (client 2026-10-22): by SMS and e-mail to the parents on the application — and the student once a member — through the school’s channels, and in the app to those with a RingPe account at the school; `sent` says where (masked)',
+    'A payment link for the admission fee (valid adm.payLink.days, one day), sent at once (client 2026-10-22): by SMS and e-mail to the parents on the application — and the student once a member — through the school’s channels, and in the app to those with a CampusOne account at the school; `sent` says where (masked)',
   auth: 'admfees.collect',
   idempotent: 'required',
   responses: { 201: { description: 'Link' } },

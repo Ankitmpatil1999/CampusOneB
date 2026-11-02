@@ -22,7 +22,7 @@ import {
   taskOfSubTask,
 } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
-import type { Database, RoleScope } from '../models/ringpe_models';
+import type { Database, RoleScope } from '../models/campusone_models';
 import { accessRepository } from '../repositories/access.repository';
 import { rolesRepository } from '../repositories/roles.repository';
 import { recordAudit } from './audit.service';
@@ -376,7 +376,7 @@ export class RolesService {
     };
   }
 
-  /** IDN-068: give an existing RingPe account an operator role ("Assign a role"). */
+  /** IDN-068: give an existing CampusOne account an operator role ("Assign a role"). */
   async assign(p: Principal, input: { email: string; roleId: string; reason: string }) {
     const reason = requireReason(input.reason);
     const email = String(input.email ?? '')

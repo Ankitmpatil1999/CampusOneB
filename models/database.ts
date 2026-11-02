@@ -3,7 +3,7 @@
  * - `supportBigNumbers` + `bigNumberStrings`: BIGINT (paise, ids) never becomes a float (ADR-0004).
  * - `decimalNumbers: false`, `timezone: 'Z'`: no float decimals, UTC on the wire.
  * - Query logging records SQL text and duration only — never parameters (they may hold PII).
- * - Two databases on one server (client 2026-10-21; db/cug-tables.ts): the connection opens the RingPe
+ * - Two databases on one server (client 2026-10-21; db/cug-tables.ts): the connection opens the CampusOne
  *   database of the URL; CugSchemaPlugin sends the school tables to its CUG database (`<name>_cug`).
  */
 import { createPool, type Pool } from 'mysql2';
@@ -12,11 +12,11 @@ import type { Loggers } from '../controllers/logger';
 import type { Metrics } from '../utils/metrics';
 import { cugDatabaseOf, databaseOfUrl } from '../db/cug-tables';
 import { CugSchemaPlugin } from './cug-schema-plugin';
-import type { Database } from './ringpe_models';
+import type { Database } from './campusone_models';
 
 export interface DatabaseHandle {
   readonly db: Kysely<Database>;
-  /** The CUG database beside the RingPe one (`ringpe` → `ringpe_cug`). */
+  /** The CUG database beside the CampusOne one (`campusone` → `campusone_cug`). */
   readonly cugDatabase: string;
   ping(timeoutMs: number): Promise<void>;
   close(): Promise<void>;

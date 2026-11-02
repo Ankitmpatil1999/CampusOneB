@@ -3,7 +3,7 @@
  * access token and PIN; all pay one merchant's static QR. Prepare the payers and tokens with the same
  * steps as payments-burst.load.spec.ts and pass them in a JSON file:
  *
- *   k6 run -e BASE=https://staging.example -e PAYERS=payers.json -e QR="ringpe://pay/s/…" \
+ *   k6 run -e BASE=https://staging.example -e PAYERS=payers.json -e QR="campusone://pay/s/…" \
  *     tests/load/payments-burst.k6.js
  *
  * payers.json: [{ "token": "<access token>", "pin": "4826" }, …]

@@ -85,7 +85,7 @@ export const SAAS_MESSAGES = [
   n(
     'SAS.REQUEST_PENDING',
     409,
-    'A plan change request is already with RingPe. Withdraw it to send another.',
+    'A plan change request is already with CampusOne. Withdraw it to send another.',
     ['FR-SAS-07', 'prototype c.subscription'],
   ),
   n('SAS.GSTIN_FORMAT', 422, 'Enter the 15-character GSTIN, for example 29ABCDE1234F1Z5', [
@@ -115,13 +115,13 @@ export const SAAS_MESSAGES = [
   n(
     'SAS.SIGNUP_NO_ACCOUNT',
     404,
-    'No RingPe account uses this number. The administrator signs up with their own RingPe account — create one in the RingPe app first; it takes two minutes.',
+    'No CampusOne account uses this number. The administrator signs up with their own CampusOne account — create one in the CampusOne app first; it takes two minutes.',
     ['FR-SAS-06', '4.10'],
   ),
   n(
     'SAS.SIGNUP_ACCOUNT_IN_USE',
     409,
-    "This RingPe account is used in RingPe's back office, so it can't administer an institution. Sign up with another account.",
+    "This CampusOne account is used in CampusOne's back office, so it can't administer an institution. Sign up with another account.",
     ['FR-SAS-06', 'client 2026-10-27 (an institution account may sign up another institution)'],
   ),
   n('SAS.SIGNUP_EXPIRED', 401, 'This sign-up has expired. Verify the mobile number again.', [
@@ -133,7 +133,7 @@ export const SAAS_MESSAGES = [
     "Accept the subscription and data-processing terms, and confirm you're authorised to register the institution.",
     ['FR-SAS-06'],
   ),
-  n('SAS.STEP_BY_RINGPE', 409, 'RingPe completes this step for you.', ['FR-SAS-10']),
+  n('SAS.STEP_BY_CAMPUSONE', 409, 'CampusOne completes this step for you.', ['FR-SAS-10']),
   n(
     'SAS.EXPORT_RUNNING',
     409,
@@ -147,7 +147,7 @@ export const SAAS_MESSAGES = [
     ['FR-SAS-04', 'OQ-30'],
     ['invoices'],
   ),
-  n('SAS.CANCEL_PENDING', 409, 'A cancellation request is already waiting for RingPe.', [
+  n('SAS.CANCEL_PENDING', 409, 'A cancellation request is already waiting for CampusOne.', [
     'FR-SAS-04',
   ]),
   n(
@@ -166,7 +166,7 @@ export const SAAS_MESSAGES = [
   n(
     'SAS.DETAILS_CHANGE_PENDING',
     409,
-    'A change to the institution details is already waiting for RingPe.',
+    'A change to the institution details is already waiting for CampusOne.',
     ['FR-INS-03'],
   ),
 ] as const satisfies readonly MessageDefinition[];

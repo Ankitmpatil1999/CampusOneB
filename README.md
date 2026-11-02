@@ -1,4 +1,4 @@
-# RingPe_Backend_API — the API and the worker
+# CampusOne_Backend_API — the API and the worker
 
 One code base, two processes (ADR-0002):
 
@@ -23,7 +23,7 @@ Every setting is documented in [.env.example](.env.example).
 
 ## Layout
 
-The folders follow the reference projects (`ClubPass_Backend_API`, `RingPe_Wallet_API`): one folder per layer, one file per module in each layer.
+The folders follow the reference projects (`ClubPass_Backend_API`, `CampusOne_Wallet_API`): one folder per layer, one file per module in each layer.
 
 | Folder | Contents |
 | --- | --- |
@@ -33,7 +33,7 @@ The folders follow the reference projects (`ClubPass_Backend_API`, `RingPe_Walle
 | `controllers/` | `<module>.controller.ts` — HTTP in, HTTP out; `logger.ts` (request, response, database, app, audit, security and job streams) |
 | `services/` | `<module>.service.ts` — the business rules |
 | `repositories/` | `<module>.repository.ts` — SQL through Kysely, always scoped by `institution_id` |
-| `models/` | Database connection (`database.ts`) and the table types (`ringpe_models/`) |
+| `models/` | Database connection (`database.ts`) and the table types (`campusone_models/`) |
 | `schemas/` | `<module>.schema.ts` — zod request/response DTOs (also generate the OpenAPI document) |
 | `middlewares/` | Correlation id, request/response logs, security headers, CORS, body limits, rate limits, authentication, authorisation, error handler |
 | `integrations/` | Bank, gateway, SMS, e-mail, WhatsApp, push, antivirus adapters (from Phase 2) |
@@ -61,7 +61,7 @@ The folders follow the reference projects (`ClubPass_Backend_API`, `RingPe_Walle
 | Shared files (see below) | `npm run shared:check` · `npm run shared:sync` |
 | Local keys (first time; existing files are kept) | `npm run keys:generate` |
 | Local services (needs Docker) | `docker compose -f infra/docker-compose.yml up -d` |
-| Docker image | `docker build -t ringpe-backend-api .` |
+| Docker image | `docker build -t campusone-backend-api .` |
 
 ## Files shared with the web and mobile apps
 
@@ -69,8 +69,8 @@ The three projects are independent, like the reference projects, but a few rules
 
 | Master | Copies |
 | --- | --- |
-| `utils/money.ts`, `utils/format.ts`, `utils/translate.ts` | `RingPe_Web_App/src/components/Utils/`, `RingPe_Mobile_App/src/utils/` |
+| `utils/money.ts`, `utils/format.ts`, `utils/translate.ts` | `CampusOne_Web_App/src/components/Utils/`, `CampusOne_Mobile_App/src/utils/` |
 | `utils/messages.en.ts` (generated from `config/registers`) | same |
-| `RingPe_Web_App/src/theme/tokens.ts` (design tokens) | `RingPe_Mobile_App/src/theme/` |
+| `CampusOne_Web_App/src/theme/tokens.ts` (design tokens) | `CampusOne_Mobile_App/src/theme/` |
 
 Edit the master, then run `npm run shared:sync`. `npm run shared:check` (run in CI) fails when a copy has drifted.

@@ -15,7 +15,7 @@
  *   teacher is a free period); a section with any refused row is skipped whole, never half-written.
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database, TeacherAssignmentKind } from '../models/ringpe_models';
+import type { Database, TeacherAssignmentKind } from '../models/campusone_models';
 import { CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { detectDelimiter, parseCsv, toCsv } from '../utils/csv';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

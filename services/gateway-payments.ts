@@ -3,7 +3,7 @@
  * from a payment link or QR code, a fee instalment. One choice of gateway and one check of what the
  * gateway reports, for both.
  *
- * - The school's own default gateway takes the payment; without one, RingPe's gateway when the
+ * - The school's own default gateway takes the payment; without one, CampusOne's gateway when the
  *   platform allows it (pg.platformFallback); in test mode always the test gateway.
  * - A payment keeps the gateway it was taken with: its signature, capture and webhook are that
  *   gateway's.
@@ -16,15 +16,15 @@ import { CustomAPIError } from '../utils/CustomAPIError';
 import type { PaymentGatewaysService } from './payment-gateways.service';
 
 export interface GatewayDeps {
-  /** RingPe's own gateway (PAYMENT_GATEWAY_MODE), or the test checkout. */
+  /** CampusOne's own gateway (PAYMENT_GATEWAY_MODE), or the test checkout. */
   readonly gateway: PaymentGateway;
   /** Each school's own gateways. */
   readonly gateways?: PaymentGatewaysService | undefined;
-  /** pg.platformFallback: 1 lets a school without a gateway use RingPe's. */
+  /** pg.platformFallback: 1 lets a school without a gateway use CampusOne's. */
   readonly platformFallback: () => Promise<number>;
 }
 
-/** The gateway a new payment of the school is taken with; `gatewayId` null is RingPe's own. */
+/** The gateway a new payment of the school is taken with; `gatewayId` null is CampusOne's own. */
 export async function chooseGateway(
   deps: GatewayDeps,
   institutionId: string,

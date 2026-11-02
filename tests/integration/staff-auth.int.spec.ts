@@ -107,7 +107,7 @@ describe.skipIf(!adminUrl)('staff sign-in on real MySQL', () => {
   }
 
   async function operator(role = 'PLATFORM_ADMIN') {
-    const email = `ops.${randomInt(0, 1e9)}@ringpe.example`;
+    const email = `ops.${randomInt(0, 1e9)}@campusone.example`;
     const a = await account(email);
     await t.db
       .insertInto('operator_accounts')
@@ -161,7 +161,7 @@ describe.skipIf(!adminUrl)('staff sign-in on real MySQL', () => {
     const refreshed = await request(app)
       .post('/api/v1/auth/token/refresh')
       .set('Cookie', cookies)
-      .set('X-RingPe-Surface', 'console')
+      .set('X-CampusOne-Surface', 'console')
       .set('X-CSRF-Token', csrf)
       .send({});
     expect(refreshed.status).toBe(200);
@@ -178,7 +178,7 @@ describe.skipIf(!adminUrl)('staff sign-in on real MySQL', () => {
     const late = await request(app)
       .post('/api/v1/auth/token/refresh')
       .set('Cookie', cookies)
-      .set('X-RingPe-Surface', 'console')
+      .set('X-CampusOne-Surface', 'console')
       .set('X-CSRF-Token', csrf)
       .send({});
     expect(late.status).toBe(401);
@@ -188,7 +188,7 @@ describe.skipIf(!adminUrl)('staff sign-in on real MySQL', () => {
     const next = await request(app)
       .post('/api/v1/auth/token/refresh')
       .set('Cookie', [at, rt, cookies.find((c) => c.startsWith('__Host-rp_console_csrf='))!])
-      .set('X-RingPe-Surface', 'console')
+      .set('X-CampusOne-Surface', 'console')
       .set('X-CSRF-Token', csrf)
       .send({});
     expect(next.status).toBe(200);

@@ -7,7 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { newPublicIdPair } from '../utils/idGenerator';
 import { opsMetrics } from '../utils/metrics';
 import type { JobItem } from '../services/subscription.service';
@@ -71,7 +71,7 @@ export class JobRunner {
       scopeInstitutionId?: string | null;
     },
   ): Promise<RunOutcome | null> {
-    const lock = `ringpe:job:${job.id}`;
+    const lock = `campusone:job:${job.id}`;
     return this.deps.db.connection().execute(async (conn) => {
       const got = await sql<{ ok: number | null }>`SELECT GET_LOCK(${lock}, 0) AS ok`.execute(conn);
       if (Number(got.rows[0]?.ok) !== 1) return null;

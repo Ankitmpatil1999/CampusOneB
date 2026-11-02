@@ -20,7 +20,7 @@
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { JobContext } from '../schedulers';
-import type { Database, SettlementStatus } from '../models/ringpe_models';
+import type { Database, SettlementStatus } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
   CustomAPIError,

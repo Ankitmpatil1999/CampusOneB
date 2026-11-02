@@ -279,7 +279,7 @@ export const PAYMENT_MESSAGES = [
     'MSG-PAY-058',
     'QR code not found',
     404,
-    "We don't recognise this code. Ask the counter to show their RingPe QR.",
+    "We don't recognise this code. Ask the counter to show their CampusOne QR.",
     ['9.2', '9.6', 'MSG-PAY-149', 'MSG-PAY-150', 'RNG-GOV-006'],
   ),
   r(

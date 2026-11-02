@@ -76,14 +76,14 @@ export const ROLE_MESSAGES = [
   n(
     'IDN.ACCOUNT_EMAIL_UNKNOWN',
     404,
-    'No RingPe account uses this e-mail. The person signs up first, then gets the role.',
+    'No CampusOne account uses this e-mail. The person signs up first, then gets the role.',
     ['6.28'],
   ),
   n('IDN.ROLE_DISABLED', 409, 'This role is disabled. Enable it first.', ['6.28']),
   n(
     'IDN.ROLE_NOT_ASSIGNABLE',
     409,
-    "This role can't be given or taken away here. RingPe assigns the Institution Administrator role, and students have no console roles.",
+    "This role can't be given or taken away here. CampusOne assigns the Institution Administrator role, and students have no console roles.",
     ['6.28', 'FR-IDN-10', 'OI-IDN-27'],
   ),
   n(

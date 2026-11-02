@@ -20,7 +20,7 @@ import { sql, type Kysely, type Transaction } from 'kysely';
 import { eventSwitches } from './comm-events.service';
 import { LIMITS, type LimitDefinition } from '../config/registers';
 import type { MessageSender } from '../integrations/sms.provider';
-import type { AnnouncementSource, CommChannel, Database } from '../models/ringpe_models';
+import type { AnnouncementSource, CommChannel, Database } from '../models/campusone_models';
 import type { JobContext } from '../schedulers';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';

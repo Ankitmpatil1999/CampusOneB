@@ -1,6 +1,6 @@
 /**
  * A school's corporate codes and the classes each one serves (INS-043…048; client 2026-10-13/14):
- * the Institution Administrator in the console (task "corpcodes"), and the RingPe back office for
+ * the Institution Administrator in the console (task "corpcodes"), and the CampusOne back office for
  * any school (inst.register, as the bank arrangement).
  */
 import { Router, type Request, type RequestHandler } from 'express';
@@ -9,7 +9,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   corporateCodeCreateSchema,
   corporateCodeListSchema,

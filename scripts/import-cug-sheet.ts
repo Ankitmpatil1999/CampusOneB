@@ -2,9 +2,9 @@
  * Applies a school's student sheet from the earlier CUG application ("unified admission upload": one
  * row per student) to the students `import-cug-students.ts` carried over (client 2026-10-23: "in that
  * sections are there please change accordingly"; fill in the rest — "no need to keep the student
- * Aadhaar and PAN card in RingPe"):
+ * Aadhaar and PAN card in CampusOne"):
  *
- *   npm run import:cug-sheet -- --db ringpe_live --org 21 --sheet "C:\path\students.xlsx" \
+ *   npm run import:cug-sheet -- --db campusone_live --org 21 --sheet "C:\path\students.xlsx" \
  *     --out "C:\private\folder" [--dry-run]
  *
  * Each row is matched to one student, in this order (a student is matched once):
@@ -38,7 +38,7 @@ import { createPool } from 'mysql2';
 import { createConnection, type RowDataPacket } from 'mysql2/promise';
 import { cugDatabaseOf } from '../db/cug-tables';
 import { CugSchemaPlugin } from '../models/cug-schema-plugin';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { recordAudit } from '../services/audit.service';
 import { sameName } from '../services/members.service';
 import { istBusinessDate } from '../utils/format';
@@ -65,8 +65,8 @@ const fail = (message: string): never => {
   console.error(`import-cug-sheet: ${message}`);
   process.exit(2);
 };
-const target = opt('db') ?? fail('--db <name> is required (the RingPe database)');
-const source = opt('source') ?? 'ringpe_cug_db_prod';
+const target = opt('db') ?? fail('--db <name> is required (the CampusOne database)');
+const source = opt('source') ?? 'campusone_cug_db_prod';
 const orgId = Number(opt('org') ?? fail('--org <earlier organisation id> is required'));
 const sheetPath = opt('sheet') ?? fail('--sheet <the students .xlsx> is required');
 const outDir = opt('out');
@@ -632,7 +632,7 @@ async function main() {
           // The parents. The child's own parent of that relation (a re-run), or a brother's or
           // sister's, is this one, however the sheet spells the name; else the adult already on the
           // mobile with that name. A parent is never dropped: without a usable mobile of their own
-          // (none given, or it belongs to another adult here — RingPe keeps one person per mobile)
+          // (none given, or it belongs to another adult here — CampusOne keeps one person per mobile)
           // they are added with the mobile left empty and listed, to be filled in the console.
           const family = students
             .filter(

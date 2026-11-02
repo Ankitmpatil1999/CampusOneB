@@ -26,7 +26,7 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
   const post = (path: string, auth: Auth, body: object = {}) =>
     request(f.app).post(`/api/v1${path}`).set(auth).set('Idempotency-Key', randomUUID()).send(body);
   const get = (path: string, auth: Auth = con) =>
-    request(f.app).get(`/api/v1${path}`).set(auth).set('X-RingPe-Surface', 'console');
+    request(f.app).get(`/api/v1${path}`).set(auth).set('X-CampusOne-Surface', 'console');
   const setting = async (key: string, value: number) => {
     const s = (await request(f.app).get('/api/v1/ops/settings').set(f.ops)).body.items.find(
       (x: { key: string }) => x.key === key,
@@ -221,7 +221,7 @@ describe.skipIf(!adminUrl)('communication report on real MySQL', () => {
         await request(f.app)
           .get(`/api/v1/exports/${x.body.exportId}`)
           .set(f.ops)
-          .set('X-RingPe-Surface', 'ops')
+          .set('X-CampusOne-Surface', 'ops')
       ).status,
     ).toBe(404);
     expect((await get(`/exports/${randomUUID()}`)).body.code).toBe('RPT.EXPORT_NOT_FOUND');

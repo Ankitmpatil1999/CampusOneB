@@ -15,7 +15,7 @@
  * - Everything here reads; nothing changes a balance.
  */
 import { sql, type Kysely } from 'kysely';
-import type { Database, LedgerAccountKind, PaymentAttemptStatus } from '../models/ringpe_models';
+import type { Database, LedgerAccountKind, PaymentAttemptStatus } from '../models/campusone_models';
 import { NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { toCsv } from '../utils/csv';
 import { toMoneyDto } from '../utils/money';

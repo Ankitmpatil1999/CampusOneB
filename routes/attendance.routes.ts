@@ -11,7 +11,7 @@ import {
   teacherAccess,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { AttendanceAdminService } from '../services/attendance-admin.service';
 import type { AttendanceService } from '../services/attendance.service';
 import type { TerminalsService } from '../services/terminals.service';
@@ -339,7 +339,7 @@ doc({
   method: 'post',
   path: '/api/v1/teacher/attendance/card-taps',
   summary:
-    'A student taps their card on the teacher’s own USB reader (web console, RingPe Card Reader): today, any time; DAILY — a student who missed the gate, in a class the teacher teaches (class or subject teacher; default the class teacher’s section), recorded Present for the day (a recorded Absent becomes Present); PERIOD — a student of the teacher’s period running now, Present or Late; already recorded is answered ALREADY',
+    'A student taps their card on the teacher’s own USB reader (web console, CampusOne Card Reader): today, any time; DAILY — a student who missed the gate, in a class the teacher teaches (class or subject teacher; default the class teacher’s section), recorded Present for the day (a recorded Absent becomes Present); PERIOD — a student of the teacher’s period running now, Present or Late; already recorded is answered ALREADY',
   auth: 'member|teaching.attendance',
   idempotent: 'required',
   request: teacherTapSchema,
@@ -381,7 +381,7 @@ doc({
   method: 'post',
   path: '/api/v1/console/attendance/staff/card-taps',
   summary:
-    'A staff member taps their card on the front desk’s USB reader (RingPe Card Reader): the first tap of the day checks them in (Present up to the late cut-off, Late after), the next checks them out (Present after the half-day time, Half day before); a later tap answers COMPLETE. A day marked Absent without a check-in is checked in. Students are refused (ATT.NOT_STAFF)',
+    'A staff member taps their card on the front desk’s USB reader (CampusOne Card Reader): the first tap of the day checks them in (Present up to the late cut-off, Late after), the next checks them out (Present after the half-day time, Half day before); a later tap answers COMPLETE. A day marked Absent without a check-in is checked in. Students are refused (ATT.NOT_STAFF)',
   auth: 'attendance.mark',
   idempotent: 'required',
   request: deskTapSchema,

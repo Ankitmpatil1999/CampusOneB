@@ -13,7 +13,7 @@
  *   recorded and kept. Families are told of each new placement.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, RolloverOutcome } from '../models/ringpe_models';
+import type { Database, RolloverOutcome } from '../models/campusone_models';
 import {
   CustomAPIError,
   NotFoundError,

@@ -2,8 +2,8 @@
  * Paying a merchant from the app and collecting at the counter (SRS 9.2–9.4, 9.6, 9.11; PAY-001/002,
  * PAY-009…011; prototype m.scan, m.pay, m.mer.collect, m.mer.nfc).
  *
- * - The payer scans a RingPe code: a merchant's static QR (`ringpe://pay/s/…`) or a counter's
- *   dynamic request (`ringpe://pay/d/…`). `resolve` shows who is being paid and, for a request, the
+ * - The payer scans a CampusOne code: a merchant's static QR (`campusone://pay/s/…`) or a counter's
+ *   dynamic request (`campusone://pay/d/…`). `resolve` shows who is being paid and, for a request, the
  *   amount and its expiry; another institution's code is "not recognised" (RNG-GOV-006).
  * - `pay` hands the payment to the engine with the session's institution and active profile (never
  *   ids from the request) and the PIN; the engine applies the §9.11 order.
@@ -23,7 +23,7 @@ import {
   stagesFor,
   type PaymentStage,
 } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError, NotFoundError } from '../utils/CustomAPIError';
 import { formatInr } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

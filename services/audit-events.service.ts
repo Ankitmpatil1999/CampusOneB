@@ -4,7 +4,7 @@
  * session's institution. Personal numbers are never in the trail (services record masks only).
  */
 import type { Kysely } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { NotFoundError } from '../utils/CustomAPIError';
 import { idCursor } from '../utils/cursor';
@@ -80,7 +80,7 @@ export class AuditEventsService {
           type: r.actor_type,
           name:
             titleCase([r.first_name, r.last_name].filter(Boolean).join(' ')) ||
-            (r.actor_type === 'system' ? 'System' : 'RingPe'),
+            (r.actor_type === 'system' ? 'System' : 'CampusOne'),
         },
         at: new Date(r.occurred_at).toISOString(),
         before: parse(r.before_state),

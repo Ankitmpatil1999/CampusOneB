@@ -18,7 +18,7 @@ import type { StaffAuthService } from '../services/staff-auth.service';
 import type { RolesService } from '../services/roles.service';
 import type { JobsService } from '../services/jobs.service';
 import type { Kysely } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { FieldCipher } from '../utils/fieldEncryption';
 import { authRoutes } from './auth.routes';
 import { fileRoutes } from './file.routes';

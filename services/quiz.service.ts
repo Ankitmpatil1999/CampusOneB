@@ -22,7 +22,7 @@
 import { randomInt } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { parseCsv } from '../utils/csv';
 import { istBusinessDate } from '../utils/format';

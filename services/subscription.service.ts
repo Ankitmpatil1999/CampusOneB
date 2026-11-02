@@ -6,7 +6,7 @@
  * - A plan change in a trial applies at once. In a paid period an upgrade applies now with a
  *   prorated invoice for the days left to renewal, or at renewal; a move to a lower-priced plan waits
  *   for renewal. Features outside the new plan are switched off when it applies.
- * - The Institution Administrator sees the plan, usage and invoices (c.subscription), asks RingPe
+ * - The Institution Administrator sees the plan, usage and invoices (c.subscription), asks CampusOne
  *   for another plan and reports a bank transfer; a platform administrator applies or declines the
  *   request and confirms the transfer (SAS-032).
  * - The billing run (job `subscription-billing`, daily): renewals roll over (applying a change
@@ -26,7 +26,7 @@ import {
 } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { MessageSender } from '../integrations/sms.provider';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { billingRepository } from '../repositories/billing.repository';
 import { institutionsRepository as instRepo } from '../repositories/institutions.repository';
 import { plansRepository, type PlanTerms } from '../repositories/plans.repository';
@@ -303,7 +303,7 @@ export class SubscriptionService {
     await this.tell(
       out.inst.id,
       'subscription.plan_changed',
-      `RingPe: ${out.inst.name} moves from ${out.from.name} to ${out.to.name} ${when}. Reason: ${reason}`,
+      `CampusOne: ${out.inst.name} moves from ${out.from.name} to ${out.to.name} ${when}. Reason: ${reason}`,
     );
     if (out.invoice) {
       await this.deps.billing.notifyIssued(
@@ -393,7 +393,7 @@ export class SubscriptionService {
     await this.tell(
       out.institutionId,
       'subscription.request_declined',
-      `RingPe declined your request to move to ${out.plan}. Reason: ${reason}`,
+      `CampusOne declined your request to move to ${out.plan}. Reason: ${reason}`,
       true,
     );
     return { status: 'DECLINED' as const };
@@ -498,7 +498,7 @@ export class SubscriptionService {
   }
 
   // --- SAS-037 ------------------------------------------------------------------------------------
-  /** The Institution Administrator asks RingPe for another plan. */
+  /** The Institution Administrator asks CampusOne for another plan. */
   async requestChange(
     p: Principal,
     input: { planId: string; timing: 'NOW' | 'RENEWAL'; note?: string | null | undefined },
@@ -769,8 +769,8 @@ export class SubscriptionService {
             inv.institution_id,
             k === 'GRACE' ? 'billing.grace_reminder' : 'billing.overdue_notice',
             k === 'GRACE'
-              ? `Reminder: RingPe invoice ${inv.invoice_no} for ${inv.institution_name} (${total}) is overdue. Please pay by ${formatDate(grace)}; after the grace period ${inv.institution_name} may be suspended until it is paid.`
-              : `RingPe invoice ${inv.invoice_no} for ${inv.institution_name} (${total}) is unpaid after the grace period. RingPe may suspend ${inv.institution_name}: members can't sign in, pay or be paid until it is paid.`,
+              ? `Reminder: CampusOne invoice ${inv.invoice_no} for ${inv.institution_name} (${total}) is overdue. Please pay by ${formatDate(grace)}; after the grace period ${inv.institution_name} may be suspended until it is paid.`
+              : `CampusOne invoice ${inv.invoice_no} for ${inv.institution_name} (${total}) is unpaid after the grace period. CampusOne may suspend ${inv.institution_name}: members can't sign in, pay or be paid until it is paid.`,
             true,
           );
         }

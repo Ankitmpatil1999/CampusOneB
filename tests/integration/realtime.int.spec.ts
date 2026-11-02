@@ -13,7 +13,7 @@ import { notify } from '../../services/notifications.service';
 import { startRealtime, type RealtimeHandle } from '../../services/realtime.service';
 import { uuidToBin } from '../../utils/idGenerator';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 let panSeq = randomInt(0, 5_000);
 
 describe.skipIf(!adminUrl)('realtime channel on real MySQL', () => {

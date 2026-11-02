@@ -13,7 +13,7 @@ import { FILE_PURPOSES, MIME, type FilePurposeKey } from '../config/file-purpose
 import type { Loggers } from '../controllers/logger';
 import type { AntivirusScanner } from '../integrations/antivirus.provider';
 import type { StorageProvider } from '../integrations/storage.provider';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { fileRepository, institutionLookup } from '../repositories/file.repository';
 import { CustomAPIError, NotFoundError } from '../utils/CustomAPIError';
 import type { FieldCipher } from '../utils/fieldEncryption';

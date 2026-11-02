@@ -3,7 +3,7 @@
  * Every invoice belongs to one institution; one invoice per institution, trigger and period.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, InvoiceStatusCode, InvoiceTrigger } from '../models/ringpe_models';
+import type { Database, InvoiceStatusCode, InvoiceTrigger } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -266,7 +266,7 @@ export const billingRepository = {
     return Number(r.numUpdatedRows) === 1;
   },
 
-  /** RingPe's invoice and bank details (one row). */
+  /** CampusOne's invoice and bank details (one row). */
   async profile(db: Db) {
     return db
       .selectFrom('platform_billing_profile')

@@ -1,4 +1,4 @@
--- 0081_staff_app_and_push.sql — forward-only migration (D-16). The RingPe app for school staff
+-- 0081_staff_app_and_push.sql — forward-only migration (D-16). The CampusOne app for school staff
 -- (client 2026-10-19: Accounts, Co-ordinator, Counsellor) and its push notifications:
 --
 -- * sessions.staff_app: a console session of the staff app, beside the web console's. Signing in on

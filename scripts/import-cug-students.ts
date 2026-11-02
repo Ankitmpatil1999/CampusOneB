@@ -1,12 +1,12 @@
 /**
  * Carries a school's students, its merchants and its feature switches over from the earlier CUG
  * application (client 2026-10-23: "please migrate the other details also"), after
- * `import-cug-staff.ts` made the school and its staff in the RingPe database:
+ * `import-cug-staff.ts` made the school and its staff in the CampusOne database:
  *
- *   npm run import:cug-students -- --db ringpe_live --org 21 --out "C:\private\folder" [--dry-run]
+ *   npm run import:cug-students -- --db campusone_live --org 21 --out "C:\private\folder" [--dry-run]
  *     [--as-student <earlier user ids>]   (students the earlier application had under another type)
  *
- * The earlier database (`--source`, default ringpe_cug_db_prod, same server) is only read; the
+ * The earlier database (`--source`, default campusone_cug_db_prod, same server) is only read; the
  * connection is DB_MIGRATOR_URL's server and login with the database name replaced. Nothing is sent
  * to anyone. Re-running adds only what is missing (matched by wallet number).
  *
@@ -18,10 +18,10 @@
  *   kept on the other as the field "Admission no. (earlier application)", listed for the school;
  * - **one sign-in per family mobile** with a temporary password changed at first sign-in (the
  *   earlier application kept the family's mobile on each child; no parent names): brothers and sisters
- *   share it, as a child without a phone sits under the family's mobile in RingPe. A mobile that is a
+ *   share it, as a child without a phone sits under the family's mobile in CampusOne. A mobile that is a
  *   staff member's here joins that sign-in. Parents are added later in the console;
  * - **the feature switches as the earlier application had them** (transfers and events off there);
- *   features new in RingPe (transport, quizzes) are left as they are.
+ *   features new in CampusOne (transport, quizzes) are left as they are.
  * As for the staff: the earlier wallet and allowance numbers, the NFC card with the earlier card
  * value (migration 0089), a balance through the ledger (bank pool → wallet), the attendance history,
  * blood group, year of association and the earlier class as fields. The merchant keeps its wallet
@@ -38,7 +38,7 @@ import { createPool } from 'mysql2';
 import { createConnection, type RowDataPacket } from 'mysql2/promise';
 import { cugDatabaseOf } from '../db/cug-tables';
 import { CugSchemaPlugin } from '../models/cug-schema-plugin';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { recordAudit } from '../services/audit.service';
 import { LedgerService } from '../services/ledger.service';
 import { newPublicIdPair } from '../utils/idGenerator';
@@ -68,8 +68,8 @@ const fail = (message: string): never => {
   console.error(`import-cug-students: ${message}`);
   process.exit(2);
 };
-const target = opt('db') ?? fail('--db <name> is required (the RingPe database to fill)');
-const source = opt('source') ?? 'ringpe_cug_db_prod';
+const target = opt('db') ?? fail('--db <name> is required (the CampusOne database to fill)');
+const source = opt('source') ?? 'campusone_cug_db_prod';
 const orgId = Number(opt('org') ?? fail('--org <earlier organisation id> is required'));
 const outDir = opt('out');
 const dryRun = argv.includes('--dry-run');

@@ -4,7 +4,7 @@
  * console session belongs to.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { CfEntityCode, CfTypeCode, Database, UserTypeCategory } from '../models/ringpe_models';
+import type { CfEntityCode, CfTypeCode, Database, UserTypeCategory } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

@@ -13,7 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, TeacherAssignmentKind } from '../models/ringpe_models';
+import type { Database, TeacherAssignmentKind } from '../models/campusone_models';
 import {
   CustomAPIError,
   NotFoundError,

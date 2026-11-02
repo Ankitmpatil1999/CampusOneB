@@ -2,7 +2,7 @@
  * Sends the school tables to the CUG database (client 2026-10-21; db/cug-tables.ts). Every Kysely
  * query keeps writing plain table names; this plugin puts `<cug>.` before each CUG table — in
  * FROM, JOIN, INTO, UPDATE, DELETE and `table.column` references — and the same in raw `sql`
- * fragments, after FROM, JOIN, INTO, UPDATE or TABLE. RingPe tables stay as written (the
+ * fragments, after FROM, JOIN, INTO, UPDATE or TABLE. CampusOne tables stay as written (the
  * connection's own database). A common table expression with a CUG table's name is left alone.
  */
 import {

@@ -1,5 +1,5 @@
 /**
- * The e-mail every RingPe message is sent in (client 2026-10-16): the subject as a heading, the text
+ * The e-mail every CampusOne message is sent in (client 2026-10-16): the subject as a heading, the text
  * (links made clickable), the school's name and a closing line, in the prototype's colours. Plain
  * text goes with it for mail apps that don't show HTML. Every value is escaped: names and bodies are
  * typed by people.
@@ -57,28 +57,28 @@ const SUBJECTS: Readonly<Record<string, string>> = {
   'admission.rejected': 'About your admission application',
   'admission.submitted': 'We have received your admission application',
   announcement: 'Announcement',
-  'billing.invoice_issued': 'Your RingPe invoice',
+  'billing.invoice_issued': 'Your CampusOne invoice',
   'fee.payLink': 'Your school fee payment link',
-  'institution.lifecycle': 'Your institution on RingPe',
-  'institution.registered': 'Welcome to RingPe',
-  'merchant.qr_codes': 'Your RingPe QR codes',
-  'staff.onboarded': 'Welcome to RingPe',
+  'institution.lifecycle': 'Your institution on CampusOne',
+  'institution.registered': 'Welcome to CampusOne',
+  'merchant.qr_codes': 'Your CampusOne QR codes',
+  'staff.onboarded': 'Welcome to CampusOne',
 };
 
 export function subjectFor(purpose: string, given?: string | null) {
   if (given?.trim()) return given.trim().slice(0, 200);
-  if (purpose.startsWith('otp.')) return 'Your RingPe one-time code';
-  if (purpose.startsWith('password_reset.')) return 'Reset your RingPe password';
-  return SUBJECTS[purpose] ?? 'A message from RingPe';
+  if (purpose.startsWith('otp.')) return 'Your CampusOne one-time code';
+  if (purpose.startsWith('password_reset.')) return 'Reset your CampusOne password';
+  return SUBJECTS[purpose] ?? 'A message from CampusOne';
 }
 
 /** The inline logo's content id (the e-mail carries the picture: a LAN address can't be fetched). */
-export const LOGO_CID = 'school-logo@ringpe';
+export const LOGO_CID = 'school-logo@campusone';
 
 export function emailHtml(m: {
   subject: string;
   text: string;
-  /** The school's name (else RingPe's): the heading band and the sign-off. */
+  /** The school's name (else CampusOne's): the heading band and the sign-off. */
   sender: string;
   highlight?: readonly (string | null | undefined)[];
   /** The school's logo goes with the e-mail as an inline picture. */
@@ -102,7 +102,7 @@ export function emailHtml(m: {
 ${paragraphs(m.text, highlighter(m.highlight ?? []))}
 </td></tr>
 <tr><td style="padding:14px 24px 20px;border-top:1px solid #eef1f6;font-size:12px;line-height:1.5;color:#6b7385">
-Sent by ${esc(m.sender)}. This is an automatic message; you can see it in the RingPe app too.
+Sent by ${esc(m.sender)}. This is an automatic message; you can see it in the CampusOne app too.
 </td></tr>
 </table>
 </td></tr></table>

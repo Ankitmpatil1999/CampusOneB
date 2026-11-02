@@ -17,7 +17,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { newQrToken, qrPayload, type MessageKey } from '../config/registers';
-import type { Database, MerchantQrKind } from '../models/ringpe_models';
+import type { Database, MerchantQrKind } from '../models/campusone_models';
 import { accountRepository } from '../repositories/account.repository';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { membersRepository } from '../repositories/members.repository';
@@ -791,9 +791,9 @@ export class MerchantsService {
       to,
       purpose: 'merchant.qr_codes',
       text: [
-        'Your RingPe QR codes:',
+        'Your CampusOne QR codes:',
         ...lines,
-        'Open the RingPe app (My QR codes) or ask the school office to print the cards.',
+        'Open the CampusOne app (My QR codes) or ask the school office to print the cards.',
       ].join('\n'),
     });
     return codes.length;

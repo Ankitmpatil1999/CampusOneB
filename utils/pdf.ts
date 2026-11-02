@@ -222,7 +222,7 @@ export class PdfDocument {
       }
     }
     const info = objects.length + 1;
-    add(`<< /Title (${this.title.replace(/[()\\]/g, '')}) /Producer (RingPe) >>`);
+    add(`<< /Title (${this.title.replace(/[()\\]/g, '')}) /Producer (CampusOne) >>`);
 
     const parts: Buffer[] = [Buffer.from('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n', 'latin1')];
     let length = parts[0]!.length;

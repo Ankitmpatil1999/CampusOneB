@@ -3,7 +3,7 @@
  * CR-06, CR-08, ADR-0015): a request waits for another Institution Administrator, the maker can't
  * decide it, remarks are mandatory, the effect is applied in the same transaction, a refused effect
  * leaves the request pending with the reason, the checkers and the maker are notified, a member's
- * own correction goes to their school (or to RingPe without one), and another school sees nothing.
+ * own correction goes to their school (or to CampusOne without one), and another school sees nothing.
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import request from 'supertest';
@@ -17,7 +17,7 @@ import { hashSecret } from '../../utils/password';
 /** PANs are unique per platform: a counter keeps sign-ups in one file from colliding. */
 let panSeq = randomInt(0, 5_000);
 const uniquePan = () => `ABCDE${String(++panSeq % 10_000).padStart(4, '0')}F`;
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 
@@ -229,7 +229,7 @@ describe.skipIf(!adminUrl)('approvals and notifications on real MySQL', () => {
     const r = await request(app)
       .post('/api/v1/files')
       .set(auth)
-      .set('X-RingPe-Surface', auth['Cookie'] ? 'console' : 'member')
+      .set('X-CampusOne-Surface', auth['Cookie'] ? 'console' : 'member')
       .field('purpose', 'evidence')
       .attach('file', PDF, 'certificate.pdf');
     expect(r.status).toBe(201);
@@ -406,7 +406,7 @@ describe.skipIf(!adminUrl)('approvals and notifications on real MySQL', () => {
     ).toMatchObject({ before: { name: 'Kavyaa' }, after: { name: 'Kavya Rao' } });
   });
 
-  it("sends a member's own correction to their school, or to RingPe without one", async () => {
+  it("sends a member's own correction to their school, or to CampusOne without one", async () => {
     async function member(mob: string) {
       const start = await request(app)
         .post('/api/v1/auth/member/signup/otp')

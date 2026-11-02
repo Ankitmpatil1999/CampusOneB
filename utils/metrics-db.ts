@@ -5,7 +5,7 @@
  */
 import { sql, type Kysely } from 'kysely';
 import { Gauge } from 'prom-client';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { Metrics } from './metrics';
 
 export function registerDatabaseGauges(metrics: Metrics, db: Kysely<Database>): void {

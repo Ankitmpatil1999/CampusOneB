@@ -1,9 +1,9 @@
 {
-  "title": "RingPe — service health",
-  "uid": "ringpe-health",
+  "title": "CampusOne — service health",
+  "uid": "campusone-health",
   "description": "Phase 9.5: API latency and errors, payment refusals by check, jobs, messages, outbox, runtime. Alerts: infra/monitoring/alerts.yml; runbooks: docs/runbooks/README.md.",
   "tags": [
-    "ringpe"
+    "campusone"
   ],
   "timezone": "Asia/Kolkata",
   "schemaVersion": 39,
@@ -59,7 +59,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(ringpe_http_request_duration_seconds_count[5m]))"
+          "expr": "sum(rate(campusone_http_request_duration_seconds_count[5m]))"
         }
       ]
     },
@@ -86,7 +86,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(ringpe_http_errors_total[5m])) / clamp_min(sum(rate(ringpe_http_request_duration_seconds_count[5m])), 1)"
+          "expr": "sum(rate(campusone_http_errors_total[5m])) / clamp_min(sum(rate(campusone_http_request_duration_seconds_count[5m])), 1)"
         }
       ]
     },
@@ -113,7 +113,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(ringpe_http_request_duration_seconds_bucket{method=\"GET\"}[5m])))"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(campusone_http_request_duration_seconds_bucket{method=\"GET\"}[5m])))"
         }
       ]
     },
@@ -140,7 +140,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(ringpe_outbox_oldest_pending_seconds)"
+          "expr": "max(campusone_outbox_oldest_pending_seconds)"
         }
       ]
     },
@@ -167,17 +167,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(ringpe_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(campusone_http_request_duration_seconds_bucket[5m])))",
           "legendFormat": "p50"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(ringpe_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(campusone_http_request_duration_seconds_bucket[5m])))",
           "legendFormat": "p95"
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(ringpe_http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(campusone_http_request_duration_seconds_bucket[5m])))",
           "legendFormat": "p99"
         }
       ]
@@ -205,7 +205,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(ringpe_http_request_duration_seconds_bucket[5m]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(campusone_http_request_duration_seconds_bucket[5m]))))",
           "legendFormat": "{{route}}"
         }
       ]
@@ -233,7 +233,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (route) (rate(ringpe_http_errors_total[5m]))",
+          "expr": "sum by (route) (rate(campusone_http_errors_total[5m]))",
           "legendFormat": "{{route}}"
         }
       ]
@@ -261,7 +261,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (limiter) (rate(ringpe_rate_limited_total[5m]))",
+          "expr": "sum by (limiter) (rate(campusone_rate_limited_total[5m]))",
           "legendFormat": "{{limiter}}"
         }
       ]
@@ -301,7 +301,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (check) (increase(ringpe_payment_refusals_total[15m]))",
+          "expr": "sum by (check) (increase(campusone_payment_refusals_total[15m]))",
           "legendFormat": "{{check}}"
         }
       ]
@@ -329,7 +329,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(ringpe_http_request_duration_seconds_bucket{method=\"POST\", route=~\".*(pay|payment|transfer|collect).*\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(campusone_http_request_duration_seconds_bucket{method=\"POST\", route=~\".*(pay|payment|transfer|collect).*\"}[5m])))",
           "legendFormat": "p95"
         }
       ]
@@ -369,7 +369,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (job, status) (increase(ringpe_job_runs_total[1h]))",
+          "expr": "sum by (job, status) (increase(campusone_job_runs_total[1h]))",
           "legendFormat": "{{job}} {{status}}"
         }
       ]
@@ -397,7 +397,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, job) (rate(ringpe_job_run_duration_seconds_bucket[1h])))",
+          "expr": "histogram_quantile(0.95, sum by (le, job) (rate(campusone_job_run_duration_seconds_bucket[1h])))",
           "legendFormat": "{{job}}"
         }
       ]
@@ -425,7 +425,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (channel, outcome) (increase(ringpe_comm_messages_total[15m]))",
+          "expr": "sum by (channel, outcome) (increase(campusone_comm_messages_total[15m]))",
           "legendFormat": "{{channel}} {{outcome}}"
         }
       ]
@@ -453,12 +453,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(ringpe_outbox_oldest_pending_seconds)",
+          "expr": "max(campusone_outbox_oldest_pending_seconds)",
           "legendFormat": "oldest pending (s)"
         },
         {
           "refId": "B",
-          "expr": "max(ringpe_outbox_dead_events)",
+          "expr": "max(campusone_outbox_dead_events)",
           "legendFormat": "dead events"
         }
       ]
@@ -498,7 +498,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(ringpe_db_query_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(campusone_db_query_duration_seconds_bucket[5m])))",
           "legendFormat": "p95"
         }
       ]
@@ -526,7 +526,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "ringpe_nodejs_eventloop_lag_p99_seconds",
+          "expr": "campusone_nodejs_eventloop_lag_p99_seconds",
           "legendFormat": "{{instance}}"
         }
       ]
@@ -554,7 +554,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "ringpe_process_resident_memory_bytes",
+          "expr": "campusone_process_resident_memory_bytes",
           "legendFormat": "{{instance}} {{job}}"
         }
       ]
@@ -582,7 +582,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(ringpe_process_cpu_seconds_total[5m])",
+          "expr": "rate(campusone_process_cpu_seconds_total[5m])",
           "legendFormat": "{{instance}} {{job}}"
         }
       ]

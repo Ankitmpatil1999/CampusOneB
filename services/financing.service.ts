@@ -16,7 +16,7 @@ import { sql, type Kysely } from 'kysely';
 // FINANCING-OFF (client 2026-10-22): its setting is out of the register (limits.ts).
 import { FINANCING_OFF_LIMITS as LIMITS } from '../config/registers/limits';
 import type { FinancingPartner } from '../integrations/financing.provider';
-import type { Database, FinancingStatus } from '../models/ringpe_models';
+import type { Database, FinancingStatus } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';

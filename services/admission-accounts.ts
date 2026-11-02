@@ -1,5 +1,5 @@
 /**
- * RingPe accounts for the people on an admission (client 2026-10-23). The student, the father, the
+ * CampusOne accounts for the people on an admission (client 2026-10-23). The student, the father, the
  * mother, the guardian and the local guardian each get one as soon as the form has their mobile
  * number — when it is submitted, or a submitted one changes — so nobody signs up themselves:
  *
@@ -18,7 +18,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { AdmissionAccountPerson, Database } from '../models/ringpe_models';
+import type { AdmissionAccountPerson, Database } from '../models/campusone_models';
 import { accountRepository } from '../repositories/account.repository';
 import { membersRepository } from '../repositories/members.repository';
 import { lastFour, normaliseForIndex, type FieldCipher } from '../utils/fieldEncryption';
@@ -189,7 +189,7 @@ export async function syncAdmissionAccounts(
   }
   for (const p of a.people) {
     const mobile = p.mobile?.trim() ?? '';
-    // A RingPe account is keyed on an Indian mobile number.
+    // A CampusOne account is keyed on an Indian mobile number.
     if (!PATTERNS.mobile.test(mobile)) continue;
     try {
       const link = links.find((l) => l.person === p.person);

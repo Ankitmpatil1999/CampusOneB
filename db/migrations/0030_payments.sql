@@ -9,7 +9,7 @@
 -- - A static QR code carries an opaque random token (printed on the counter card, so not a secret:
 --   the payer still confirms with the PIN). A code is generated once per merchant and kind
 --   (prototype c.merchants) and is Active or Inactive (OI-PAY-01: an Inactive code refuses
---   payments). A lost code is re-issued by the RingPe operator (OQ-17), kept in `reissued_from_id`.
+--   payments). A lost code is re-issued by the CampusOne operator (OQ-17), kept in `reissued_from_id`.
 -- - A payment request (dynamic QR or NFC) is single-use and expires after `pay.request.ttlSeconds`
 --   (120 s). Expiry is derived from `expires_at`, never stored (27.2); CANCELLED is RC-28.
 -- - `payment_attempts` is the engine record (27.2 "Payment (engine record)"): written `PENDING`

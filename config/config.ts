@@ -73,7 +73,7 @@ export const envSchema = z
     CERT_PASSPHRASE: z.string().optional(),
     // With USE_HTTPS: a plain-HTTP port that only redirects to the HTTPS address (e.g. 80).
     HTTP_REDIRECT_PORT: z.coerce.number().int().min(1).max(65535).optional(),
-    // The built web application (RingPe_Web_App: npm run build → dist/browser). Set, the API
+    // The built web application (CampusOne_Web_App: npm run build → dist/browser). Set, the API
     // serves it on the same address, so the console, terminals and API share one HTTPS origin.
     WEB_ROOT: z.string().trim().optional(),
 
@@ -90,7 +90,7 @@ export const envSchema = z
       .regex(/^rediss?:\/\/[^\s]+$/, 'must be a redis:// or rediss:// URL')
       .optional(),
 
-    AUTH_ISSUER: z.string().default('ringpe'),
+    AUTH_ISSUER: z.string().default('campusone'),
     // ES256 private keys (JWK set; the first key signs, the rest still verify during rotation).
     // The back office has its own keys and audience (ADR-0011). Local: `npm run keys:generate`.
     AUTH_SIGNING_KEYS_FILE: z.string().optional(),
@@ -152,7 +152,7 @@ export const envSchema = z
     EMAIL_USER: z.string().trim().max(200).optional(),
     EMAIL_PASS: z.string().max(200).optional(),
     EMAIL_FROM: z.string().trim().max(200).optional(),
-    EMAIL_FROM_NAME: z.string().trim().min(1).max(100).default('RingPe'),
+    EMAIL_FROM_NAME: z.string().trim().min(1).max(100).default('CampusOne'),
     EMAIL_TLS_VERIFY: bool(true),
     // Phone pushes (client 2026-10-19; integrations/push.provider.ts): `fcm` = Firebase Cloud
     // Messaging with the project's service-account key file (kept out of the repository, like the

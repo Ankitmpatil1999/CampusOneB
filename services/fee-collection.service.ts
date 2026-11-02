@@ -15,7 +15,7 @@
  */
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import type { Database, FeeRecordStatus } from '../models/ringpe_models';
+import type { Database, FeeRecordStatus } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';

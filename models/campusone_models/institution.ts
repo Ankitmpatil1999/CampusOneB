@@ -271,7 +271,7 @@ export interface InvoicesTable {
   updated_at: Timestamp;
 }
 
-/** RingPe's invoice and bank details (one row, migration 0019; example values until Q25/Q26). */
+/** CampusOne's invoice and bank details (one row, migration 0019; example values until Q25/Q26). */
 export interface PlatformBillingProfileTable {
   id: number;
   legal_name: string;

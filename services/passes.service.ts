@@ -15,7 +15,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS, PASS_TYPES } from '../config/registers';
-import type { Database, PassStatus } from '../models/ringpe_models';
+import type { Database, PassStatus } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import type { JobContext } from '../schedulers';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
@@ -40,7 +40,7 @@ const masked = (first: string | null, last: string | null) =>
     .filter(Boolean)
     .join(' ');
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-const PASS_PAYLOAD = /^ringpe:\/\/pass\/([A-Z2-7]{26})$/;
+const PASS_PAYLOAD = /^campusone:\/\/pass\/([A-Z2-7]{26})$/;
 const hashToken = (token: string) => createHash('sha256').update(token).digest();
 /** Who receives passes (students and visitors) and who scans them (staff). */
 const HOLDER_CATEGORIES = new Set(['STUDENT', 'OTHER']);
@@ -442,7 +442,7 @@ export class PassesService {
     return {
       authorisedUntil: until.toISOString(),
       minutes,
-      qrToken: `ringpe://pass/${token}`,
+      qrToken: `campusone://pass/${token}`,
     };
   }
 

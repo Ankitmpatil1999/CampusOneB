@@ -3,7 +3,7 @@
  * and grants, operator accounts, the append-only change record.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, RoleScope } from '../models/ringpe_models';
+import type { Database, RoleScope } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

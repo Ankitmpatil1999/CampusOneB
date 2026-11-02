@@ -5,7 +5,7 @@ import type { Loggers } from '../controllers/logger';
 import { portalController } from '../controllers/portal.controller';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { invoiceSchema, invoicesSchema } from '../schemas/billing.schema';
 import { challengeSchema } from '../schemas/member-auth.schema';
 import {
@@ -61,7 +61,7 @@ doc({
   method: 'post',
   path: `${p}/signup/otp`,
   summary:
-    "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a RingPe account may sign up here (newAccount; client 2026-10-06), and so may an account that already belongs to an institution (client 2026-10-27); a back-office account is refused",
+    "Sign-up step 1: the administrator's mobile; a 4-digit code by SMS. A number without a CampusOne account may sign up here (newAccount; client 2026-10-06), and so may an account that already belongs to an institution (client 2026-10-27); a back-office account is refused",
   auth: 'public',
   request: signupOtpSchema,
   responses: { 202: { description: 'Code sent', schema: challengeSchema } },
@@ -80,7 +80,7 @@ doc({
   method: 'post',
   path: `${p}/signup/account`,
   summary:
-    "Sign-up for a number without an account: the administrator's RingPe account (name, e-mail, password) for the verified mobile (client 2026-10-06); e-mail must be unused",
+    "Sign-up for a number without an account: the administrator's CampusOne account (name, e-mail, password) for the verified mobile (client 2026-10-06); e-mail must be unused",
   auth: 'public (sign-up token)',
   request: signupAccountSchema,
   responses: { 201: { description: 'Account created', schema: signupVerifiedSchema } },
@@ -206,7 +206,7 @@ doc({
   method: 'post',
   path: `${p}/invoices/{invoiceId}/payments`,
   summary:
-    'Pay an invoice: a bank transfer is reported (UTR, date) and RingPe confirms it; online payment arrives with the gateway (Q17)',
+    'Pay an invoice: a bank transfer is reported (UTR, date) and CampusOne confirms it; online payment arrives with the gateway (Q17)',
   auth: 'portal',
   request: portalPaymentSchema,
   responses: { 200: { description: 'Invoice', schema: invoiceSchema } },
@@ -241,7 +241,7 @@ doc({
   method: 'post',
   path: `${p}/institution-details/change-requests`,
   summary:
-    'Ask RingPe to change the name, address or board; RingPe checks name and address stay unique, then applies it (platform approvals)',
+    'Ask CampusOne to change the name, address or board; CampusOne checks name and address stay unique, then applies it (platform approvals)',
   auth: 'portal',
   request: detailsChangeSchema,
   responses: { 202: { description: 'Sent', schema: detailsChangeResultSchema } },
@@ -285,7 +285,7 @@ doc({
   method: 'post',
   path: `${p}/cancellation-requests`,
   summary:
-    'Ask to cancel (end of cycle, as soon as possible or a date); unpaid invoices first; RingPe confirms with the lifecycle action Cancel or declines',
+    'Ask to cancel (end of cycle, as soon as possible or a date); unpaid invoices first; CampusOne confirms with the lifecycle action Cancel or declines',
   auth: 'portal',
   request: cancellationRequestSchema,
   responses: { 202: { description: 'Requested', schema: cancellationCreatedSchema } },

@@ -1,14 +1,14 @@
 /**
- * The two databases (client 2026-10-21: "separate the RingPe database and the CUG database", as the
+ * The two databases (client 2026-10-21: "separate the CampusOne database and the CUG database", as the
  * earlier application had them; migration 0081). Both live on the same MySQL server, so one
  * connection, one transaction and the foreign keys still span them — nothing the application does
  * changes:
  *
- * - **RingPe** (the database in DATABASE_URL, e.g. `ringpe`): the platform — accounts, sign-in and
+ * - **CampusOne** (the database in DATABASE_URL, e.g. `campusone`): the platform — accounts, sign-in and
  *   sessions, personal details, languages and translations, reference data, roles and permissions,
- *   operators, plans and RingPe's billing of schools, platform settings, partner API clients, jobs,
+ *   operators, plans and CampusOne's billing of schools, platform settings, partner API clients, jobs,
  *   files, and the shared logs and outboxes (audit, requests, communication, notifications).
- * - **CUG** (`<RingPe database>_cug`, e.g. `ringpe_cug`): the schools — every table listed here.
+ * - **CUG** (`<CampusOne database>_cug`, e.g. `campusone_cug`): the schools — every table listed here.
  *
  * The application keeps writing plain table names: `CugSchemaPlugin` (models/cug-schema-plugin.ts)
  * puts `<cug>.` before every table of this list, in Kysely queries and in raw `sql` text alike.
@@ -199,8 +199,8 @@ const CUG = new Set(CUG_TABLES);
 
 export const isCugTable = (name: string) => CUG.has(name);
 
-/** The CUG database that goes with a RingPe database (`ringpe` → `ringpe_cug`). */
-export const cugDatabaseOf = (ringpeDatabase: string) => `${ringpeDatabase}_cug`;
+/** The CUG database that goes with a CampusOne database (`campusone` → `campusone_cug`). */
+export const cugDatabaseOf = (campusoneDatabase: string) => `${campusoneDatabase}_cug`;
 
 /** The database named in a mysql:// URL. */
 export function databaseOfUrl(url: string): string {

@@ -29,7 +29,7 @@ interface Operation {
 
 const doc = parse(
   readFileSync(join(import.meta.dirname, '..', '..', 'config', 'openapi.yaml'), 'utf8'),
-) as { paths: Record<string, Record<string, { operationId: string; 'x-ringpe-auth': string }>> };
+) as { paths: Record<string, Record<string, { operationId: string; 'x-campusone-auth': string }>> };
 
 const operations: Operation[] = Object.entries(doc.paths).flatMap(([path, ops]) =>
   Object.entries(ops)
@@ -38,7 +38,7 @@ const operations: Operation[] = Object.entries(doc.paths).flatMap(([path, ops]) 
       method: method as Operation['method'],
       path,
       id: op.operationId,
-      auth: op['x-ringpe-auth'],
+      auth: op['x-campusone-auth'],
     })),
 );
 

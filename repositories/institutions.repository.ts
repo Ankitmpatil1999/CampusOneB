@@ -6,7 +6,7 @@
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { ChannelKey } from '../config/registers';
-import type { Database, InstitutionStatusCode } from '../models/ringpe_models';
+import type { Database, InstitutionStatusCode } from '../models/campusone_models';
 
 type SubscriptionStatusCode = 'TRIAL' | 'ACTIVE' | 'GRACE' | 'SUSPENDED' | 'CANCELLED';
 
@@ -556,7 +556,7 @@ export const institutionsRepository = {
   // --- people ---------------------------------------------------------------------------------------
   /**
    * The registered administrator: the account holding the Institution Administrator role, or —
-   * until that person creates their RingPe account (client 2026-10-06) — the profile waiting for
+   * until that person creates their CampusOne account (client 2026-10-06) — the profile waiting for
    * it, with the e-mail it was registered for (`pending`).
    */
   async administrator(db: Db, institutionId: string) {
@@ -590,7 +590,7 @@ export const institutionsRepository = {
 
   /**
    * The oldest administrator profile waiting for an account with this e-mail (an institution the
-   * back office registered before its administrator had a RingPe account).
+   * back office registered before its administrator had a CampusOne account).
    */
   async pendingAdministrator(db: Db, email: string) {
     return this.pendingAdministrators(db, email).executeTakeFirst();

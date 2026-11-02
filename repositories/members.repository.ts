@@ -4,7 +4,7 @@
  * and the account they are linked to. Every query is scoped to one institution.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { uuidToBin } from '../utils/idGenerator';
 
 type Db = Kysely<Database> | Transaction<Database>;

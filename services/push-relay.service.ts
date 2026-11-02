@@ -16,7 +16,7 @@ import { sql, type Kysely } from 'kysely';
 import { renderMessage, type MessageKey } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { PushSender } from '../integrations/push.provider';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { notificationsRepository } from '../repositories/notifications.repository';
 import { binToUuid } from '../utils/idGenerator';
 import { translate } from '../utils/translate';

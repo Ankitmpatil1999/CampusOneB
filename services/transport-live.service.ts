@@ -26,7 +26,7 @@ import {
   type MapsProvider,
   type MapsRouter,
 } from '../integrations/maps.provider';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';

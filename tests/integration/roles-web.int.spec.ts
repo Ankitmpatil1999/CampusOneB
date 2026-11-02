@@ -39,7 +39,7 @@ describe.skipIf(!adminUrl)('the principal, merchants and vendor merchants on the
       .select('email')
       .where('id', '=', String(p.account_id))
       .executeTakeFirstOrThrow();
-    return { ...(await f.signedIn('console', acc.email!)), 'X-RingPe-Surface': 'console' };
+    return { ...(await f.signedIn('console', acc.email!)), 'X-CampusOne-Surface': 'console' };
   };
 
   beforeAll(async () => {
@@ -331,7 +331,7 @@ describe.skipIf(!adminUrl)('the principal, merchants and vendor merchants on the
     expect(d.body).toMatchObject({
       memberNo: expect.stringMatching(/-\d{5}$/),
       status: 'ACTIVE',
-      ringPeAccount: true,
+      campusOneAccount: true,
       consoleRoles: [],
       coordinatorOf: [],
       timetable: { periodsAWeek: 0, lessons: [] },
@@ -419,7 +419,7 @@ describe.skipIf(!adminUrl)('the principal, merchants and vendor merchants on the
     expect(assets.status, JSON.stringify(assets.body)).toBe(200);
     expect(assets.body.items).toEqual([]);
     // The administrator's console session holds no counter grant.
-    expect((await get('/merchant/home', { ...con, 'X-RingPe-Surface': 'console' })).status).toBe(
+    expect((await get('/merchant/home', { ...con, 'X-CampusOne-Surface': 'console' })).status).toBe(
       403,
     );
   });

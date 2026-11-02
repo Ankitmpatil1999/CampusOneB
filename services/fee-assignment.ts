@@ -13,7 +13,7 @@
  * year, fee_assignments.live_key).
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { istBusinessDate } from '../utils/format';
 import { binToUuid, newPublicIdPair } from '../utils/idGenerator';
 import { recordAudit } from './audit.service';

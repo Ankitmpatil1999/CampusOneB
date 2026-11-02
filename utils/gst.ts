@@ -1,5 +1,5 @@
 /**
- * GST helpers for RingPe's invoices: formats and the place of supply. The recipient's state is
+ * GST helpers for CampusOne's invoices: formats and the place of supply. The recipient's state is
  * taken from the institution's PIN code (postal circles follow states, with the exceptions listed
  * below); when the PIN code is missing the state is unknown and the invoice charges IGST. A
  * school's own GSTIN, once collected, takes precedence (its first two digits are the state code).

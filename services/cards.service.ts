@@ -14,7 +14,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { CardIssueReason, Database } from '../models/ringpe_models';
+import type { CardIssueReason, Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { idCursor } from '../utils/cursor';
@@ -29,11 +29,11 @@ import { usesProfile } from './member-roles';
 /**
  * The value read off a card carried over from the earlier application (client 2026-10-23): that
  * application wrote an encrypted token — base64 beginning "U2FsdGVkX1" ("Salted__") — instead of
- * RingPe's plain one. Up to 128 characters.
+ * CampusOne's plain one. Up to 128 characters.
  */
 export const LEGACY_CARD_VALUE = /^U2FsdGVkX1[A-Za-z0-9+/]{30,116}={0,2}$/;
 
-/** The SHA-256 a carried-over card is found by (migration 0089), or null for a RingPe token. */
+/** The SHA-256 a carried-over card is found by (migration 0089), or null for a CampusOne token. */
 export function legacyCardHash(value: string): Buffer | null {
   const v = value.trim();
   return LEGACY_CARD_VALUE.test(v) ? createHash('sha256').update(v, 'utf8').digest() : null;
@@ -158,7 +158,7 @@ export class CardsService {
 
   // --- ATT-027 (console with a desktop NFC reader, client 2026-10-08) ------------------------------
   /**
-   * The console of the RingPe desktop app writes the card on its USB reader: the same rules as the
+   * The console of the CampusOne desktop app writes the card on its USB reader: the same rules as the
    * card-issue reader (one active card; a replacement needs the console's re-issue first).
    */
   async writeFromConsole(p: Principal, input: { memberId: string; hardwareUid: string }) {

@@ -369,7 +369,7 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
   });
 
   it('keeps the earlier application’s Axis client working: imported with its secret’s bcrypt hash', async () => {
-    // As the bank holds it (client 2026-10-14): a client id and a secret RingPe only knows as a hash.
+    // As the bank holds it (client 2026-10-14): a client id and a secret CampusOne only knows as a hash.
     const legacyId = `AXISBANKEC_${randomInt(0, 1e8).toString(16).toUpperCase()}`;
     const legacySecret = 'legacy-axis-secret-value';
     const hash = bcrypt.hashSync(legacySecret, 4);
@@ -426,7 +426,7 @@ describe.skipIf(!adminUrl)('Axis Bank Power E-coll on real MySQL', () => {
     });
     expect((await f.balance(wallet)) - before).toBe(25_000);
 
-    // Rotated: a RingPe secret; the hash still works during the overlap.
+    // Rotated: a CampusOne secret; the hash still works during the overlap.
     const rotated = await request(f.app)
       .post(`/api/v1/ops/api-clients/${imported.body.id}/secret-rotations`)
       .set(f.ops)

@@ -6,7 +6,7 @@
 import { sql, type Kysely, type Transaction } from 'kysely';
 import type { MessageSender } from '../integrations/sms.provider';
 import { opsMetrics } from '../utils/metrics';
-import type { CommChannel, CommKind, CommOutcome, Database } from '../models/ringpe_models';
+import type { CommChannel, CommKind, CommOutcome, Database } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

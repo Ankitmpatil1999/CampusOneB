@@ -26,7 +26,7 @@ import { hashSecret } from '../../utils/password';
 /** PANs are unique per platform: a counter keeps sign-ups in one file from colliding. */
 let panSeq = randomInt(0, 5_000);
 const uniquePan = () => `ABCDE${String(++panSeq % 10_000).padStart(4, '0')}F`;
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const PIN = '4826';
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 const inr = (amount: string) => ({ amount, currency: 'INR' });
@@ -575,7 +575,7 @@ describe.skipIf(!adminUrl)('payments, merchants and QR on real MySQL', () => {
     expect(g5.body).toMatchObject({ code: 'PAY.PAYEE_WALLET_INACTIVE', check: 'G5' });
     expect(await attempts(p2.rowId)).toHaveLength(0);
 
-    // Not a RingPe code, or another institution's code: not recognised.
+    // Not a CampusOne code, or another institution's code: not recognised.
     expect(
       (
         await request(app)
@@ -584,7 +584,7 @@ describe.skipIf(!adminUrl)('payments, merchants and QR on real MySQL', () => {
           .send({ qrPayload: 'upi://pay?pa=x' })
       ).status,
     ).toBe(404);
-    expect((await payStatic(p2, `ringpe://pay/s/${'A'.repeat(26)}`, '5.00')).body.code).toBe(
+    expect((await payStatic(p2, `campusone://pay/s/${'A'.repeat(26)}`, '5.00')).body.code).toBe(
       'PAY.QR_UNKNOWN',
     );
   });
@@ -612,7 +612,7 @@ describe.skipIf(!adminUrl)('payments, merchants and QR on real MySQL', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ kind: 'DYNAMIC_QR', amount: inr('45.00') });
     expect(req.status).toBe(201);
-    expect(req.body.qrPayload).toMatch(/^ringpe:\/\/pay\/d\/[A-Z2-7]{26}$/);
+    expect(req.body.qrPayload).toMatch(/^campusone:\/\/pay\/d\/[A-Z2-7]{26}$/);
     expect(req.body.ttlSeconds).toBe(120);
 
     const a = await payer('Anil', 10_000);

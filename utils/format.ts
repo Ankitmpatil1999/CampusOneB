@@ -1,7 +1,7 @@
 /**
- * Shared file. The master is RingPe_Backend_API/utils/format.ts; identical copies live in
- * RingPe_Web_App/src/components/Utils/ and RingPe_Mobile_App/src/utils/. Edit the master,
- * then run `npm run shared:sync` in RingPe_Backend_API (`npm run shared:check` fails on drift).
+ * Shared file. The master is CampusOne_Backend_API/utils/format.ts; identical copies live in
+ * CampusOne_Web_App/src/components/Utils/ and CampusOne_Mobile_App/src/utils/. Edit the master,
+ * then run `npm run shared:sync` in CampusOne_Backend_API (`npm run shared:check` fails on drift).
  *
  * Indian display formatting (brief §7.8): ₹1,24,560.00 · 30 Sep 2026 · 12:40 PM.
  * Computed without Intl so server, Angular and Hermes (React Native) print identically.

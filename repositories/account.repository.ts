@@ -3,7 +3,7 @@
  * 6.15, 6.16). Parameterised SQL only; state changes are guarded updates.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 export type CredentialKind = 'PASSWORD' | 'TPIN' | 'SECURITY_ANSWER';

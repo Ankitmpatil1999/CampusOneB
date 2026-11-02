@@ -14,7 +14,7 @@
  */
 import type { Kysely, Transaction } from 'kysely';
 import { LIMITS, renderMessage, type MessageKey } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { academicsRepository } from '../repositories/academics.repository';
 import { userTypesRepository } from '../repositories/institution-setup.repository';
 import { membersRepository as repo, KIND_CATEGORIES } from '../repositories/members.repository';
@@ -101,7 +101,7 @@ const STAFF_COLUMNS = [
 
 /** A role as written in a sheet: its name or code, case, spaces and punctuation aside. */
 const roleKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-/** The roles a staff member can be given at onboarding: not RingPe's, not a merchant's. */
+/** The roles a staff member can be given at onboarding: not CampusOne's, not a merchant's. */
 const NOT_FOR_STAFF = new Set([ADMIN, 'MERCHANT', 'VENDOR_MERCHANT']);
 
 const GENDERS: Readonly<Record<string, 'MALE' | 'FEMALE' | 'OTHER'>> = {
@@ -228,7 +228,7 @@ export class MemberUploadsService {
           : '',
     );
     return {
-      fileName: kind === 'STAFF' ? 'ringpe-staff-template.csv' : 'ringpe-members-template.csv',
+      fileName: kind === 'STAFF' ? 'campusone-staff-template.csv' : 'campusone-members-template.csv',
       csv: toCsv([this.columns(kind, all), [...example, ...cf]]),
     };
   }
@@ -440,7 +440,7 @@ export class MemberUploadsService {
         err(columnOf(e.field, form), e.code as MessageKey, e.params);
       }
       if (checked.state) {
-        // The parents who get a RingPe account with the student, as on an admission.
+        // The parents who get a CampusOne account with the student, as on an admission.
         const guardians = this.deps.admissions.guardiansOf(checked.state.data.parents);
         if (guardians.length && !parentType) err('Primary contact', 'ADM.PARENT_TYPE_MISSING');
         const who = { FATHER: 'Father', MOTHER: 'Mother', GUARDIAN: 'Guardian' } as const;

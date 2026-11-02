@@ -1,6 +1,6 @@
 /** API-level replay protection records (migration 0004, brief §7.4). */
 import { sql, type Kysely } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 export interface IdempotencyKeyRef {
   readonly scopeKey: string;

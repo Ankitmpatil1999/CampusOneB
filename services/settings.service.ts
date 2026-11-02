@@ -8,7 +8,7 @@
  */
 import type { Kysely } from 'kysely';
 import { allLimits, type LimitDefinition } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { settingsRepository } from '../repositories/settings.repository';
 import { recordAudit } from './audit.service';
 import { CustomAPIError, NotFoundError, PreconditionFailedError } from '../utils/CustomAPIError';

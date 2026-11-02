@@ -14,7 +14,7 @@
  */
 import { sql, type Kysely } from 'kysely';
 import { englishBundle } from '../config/registers';
-import type { Database, MessagingChannel } from '../models/ringpe_models';
+import type { Database, MessagingChannel } from '../models/campusone_models';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';

@@ -17,7 +17,7 @@
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
-import type { Database, StaffLeaveType } from '../models/ringpe_models';
+import type { Database, StaffLeaveType } from '../models/campusone_models';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { formatDate, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

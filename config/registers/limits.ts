@@ -1010,7 +1010,7 @@ export const LIMITS = {
     scope: 'P',
     basis: 'adopted',
     refs: [
-      "client 2026-10-09: schools add their own gateways; without one, RingPe's own gateway (1) or none (0)",
+      "client 2026-10-09: schools add their own gateways; without one, CampusOne's own gateway (1) or none (0)",
     ],
   }),
 

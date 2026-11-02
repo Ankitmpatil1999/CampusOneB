@@ -4,7 +4,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   cardSchema,
   cardsQuerySchema,
@@ -159,7 +159,7 @@ crd({
   method: 'post',
   path: '/api/v1/console/cards',
   summary:
-    "Issue a member's card from the console of the RingPe desktop app, which writes the token on its USB NFC reader (client 2026-10-08): the card-issue reader's rules — one active card; a replacement needs a re-issue first",
+    "Issue a member's card from the console of the CampusOne desktop app, which writes the token on its USB NFC reader (client 2026-10-08): the card-issue reader's rules — one active card; a replacement needs a re-issue first",
   auth: 'cards.edit',
   request: cardWriteSchema,
   responses: { 201: { description: 'Issued', schema: cardWrittenSchema } },

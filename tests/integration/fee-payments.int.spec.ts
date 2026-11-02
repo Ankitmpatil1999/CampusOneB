@@ -523,7 +523,7 @@ describe.skipIf(!adminUrl)('collect fee: cash, a QR code or a payment link', () 
       verifyWebhook: (raw, sig) =>
         sig === createHmac('sha256', HOOK_SECRET).update(raw).digest('hex'),
     };
-    // RingPe's own gateway in live mode serves a school without one of its own.
+    // CampusOne's own gateway in live mode serves a school without one of its own.
     const live = await buildHttpApp(f.t, { overrides: { gateway }, security: f.h.security });
     const term4 = await raise(asha, '2500.00', 'Term 4');
     const qr = await request(live.app)

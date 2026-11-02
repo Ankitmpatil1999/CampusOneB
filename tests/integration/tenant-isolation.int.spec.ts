@@ -18,7 +18,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { binToUuid, newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 
@@ -838,7 +838,7 @@ describe.skipIf(!adminUrl)(
       const ev = await request(app)
         .post('/api/v1/files')
         .set(b.con)
-        .set('X-RingPe-Surface', 'console')
+        .set('X-CampusOne-Surface', 'console')
         .field('purpose', 'evidence')
         .attach('file', PDF, 'certificate.pdf');
       expect(ev.status).toBe(201);
@@ -1002,7 +1002,7 @@ describe.skipIf(!adminUrl)(
       const file = await request(app)
         .get(`/api/v1/files/${evidenceB}/url`)
         .set(a.con)
-        .set('X-RingPe-Surface', 'console');
+        .set('X-CampusOne-Surface', 'console');
       expect(file.status).toBe(404);
       const row = await t.db
         .selectFrom('member_profiles')

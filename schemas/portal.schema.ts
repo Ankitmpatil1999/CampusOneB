@@ -70,7 +70,7 @@ const code = z
   .string({ message: 'VALIDATION.REQUIRED' })
   .regex(/^\d{4,8}$/, { message: 'AUTH.OTP_INVALID' });
 
-/** SAS-051: the administrator's RingPe account made on the customer site. */
+/** SAS-051: the administrator's CampusOne account made on the customer site. */
 export const signupAccountSchema = z
   .strictObject({
     signupToken,
@@ -101,7 +101,7 @@ export const signupVerifiedSchema = z
   .object({
     signupToken: z.string(),
     expiresAt: z.string(),
-    newAccount: z.boolean().describe('A number without a RingPe account: create it next (SAS-051)'),
+    newAccount: z.boolean().describe('A number without a CampusOne account: create it next (SAS-051)'),
     account: z
       .object({ name: z.string(), email: z.string().nullable(), mobile: z.string() })
       .nullable(),
@@ -159,7 +159,7 @@ export const onboardingSchema = z
         key: z.string(),
         label: z.string(),
         required: z.boolean(),
-        byRingPe: z.boolean(),
+        byCampusOne: z.boolean(),
         done: z.boolean(),
         doneAt: z.string().nullable(),
         summary: z.string(),

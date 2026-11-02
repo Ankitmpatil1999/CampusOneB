@@ -15,7 +15,7 @@ import { emit, rooms } from '../utils/outbox';
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { BANK_RESPONSES, renderMessage } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { JobContext } from '../schedulers';
 import { CustomAPIError, NotFoundError } from '../utils/CustomAPIError';
 import { idCursor } from '../utils/cursor';

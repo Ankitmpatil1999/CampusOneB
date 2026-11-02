@@ -12,7 +12,7 @@
  * cut-off, the half-day hours and the auto-absent cut-off).
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { CheckinStatus, DailyStatus, Database } from '../models/ringpe_models';
+import type { CheckinStatus, DailyStatus, Database } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

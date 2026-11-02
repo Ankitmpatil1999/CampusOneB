@@ -7,7 +7,7 @@ import { NEW, type StatusDomain } from './types';
 
 export type CancellationRequestStatus = 'PENDING' | 'CONFIRMED' | 'DECLINED' | 'WITHDRAWN';
 
-/** RC-27: a cancellation request waits for RingPe; the institution may withdraw it meanwhile. */
+/** RC-27: a cancellation request waits for CampusOne; the institution may withdraw it meanwhile. */
 export const CANCELLATION_REQUEST: StatusDomain<CancellationRequestStatus> = {
   domain: 'cancellation_request',
   srsDomain: null,
@@ -48,8 +48,8 @@ export const CANCELLATION_REQUEST: StatusDomain<CancellationRequestStatus> = {
   ],
   transitions: [
     { from: NEW, to: 'PENDING', operation: 'the administrator asks to cancel (portal)' },
-    { from: 'PENDING', to: 'CONFIRMED', operation: 'RingPe cancels the institution' },
-    { from: 'PENDING', to: 'DECLINED', operation: 'RingPe declines, with a reason' },
+    { from: 'PENDING', to: 'CONFIRMED', operation: 'CampusOne cancels the institution' },
+    { from: 'PENDING', to: 'DECLINED', operation: 'CampusOne declines, with a reason' },
     { from: 'PENDING', to: 'WITHDRAWN', operation: 'the administrator withdraws it' },
   ],
 };

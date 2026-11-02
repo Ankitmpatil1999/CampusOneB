@@ -36,7 +36,7 @@ CREATE TABLE institution_payment_gateways (
   CONSTRAINT fk_institution_payment_gateways__inst FOREIGN KEY (institution_id) REFERENCES institutions (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- The gateway a payment was taken with (NULL: RingPe's own gateway, or the test checkout).
+-- The gateway a payment was taken with (NULL: CampusOne's own gateway, or the test checkout).
 ALTER TABLE admission_payments
   ADD COLUMN gateway_id BIGINT UNSIGNED NULL AFTER gateway_payment_id,
   ADD CONSTRAINT fk_admission_payments__gateway FOREIGN KEY (gateway_id) REFERENCES institution_payment_gateways (id);

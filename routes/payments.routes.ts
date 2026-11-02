@@ -9,7 +9,7 @@ import {
   requireTenant,
 } from '../middlewares/auth.middleware';
 import { idempotency, IDEMPOTENCY_HEADER } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   channelsSchema,
   collectionsQuerySchema,
@@ -61,7 +61,7 @@ pay({
   method: 'post',
   path: '/api/v1/me/payments/resolve',
   summary:
-    "Decode a scanned RingPe code: the merchant, the kind, a request's amount and expiry, and the processing stages; another institution's code is not recognised",
+    "Decode a scanned CampusOne code: the merchant, the kind, a request's amount and expiry, and the processing stages; another institution's code is not recognised",
   auth: 'member',
   request: resolveSchema,
   responses: { 200: { description: 'Resolved', schema: resolvedSchema } },

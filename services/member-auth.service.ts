@@ -13,7 +13,7 @@ import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { GENDERS, LIMITS, idNumberPattern } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { accessRepository } from '../repositories/access.repository';
 import { accountRepository, referenceRepository } from '../repositories/account.repository';
 import { membersRepository } from '../repositories/members.repository';

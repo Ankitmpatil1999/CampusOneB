@@ -11,7 +11,7 @@ import type { FieldCipher } from './fieldEncryption';
 export const COOKIE_SURFACES = ['console', 'ops', 'portal', 'member'] as const;
 export type CookieSurface = (typeof COOKIE_SURFACES)[number];
 
-export const SURFACE_HEADER = 'X-RingPe-Surface';
+export const SURFACE_HEADER = 'X-CampusOne-Surface';
 export const CSRF_HEADER = 'X-CSRF-Token';
 
 /**
@@ -38,7 +38,7 @@ const isCookieSurface = (v: unknown): v is CookieSurface =>
 
 /**
  * Which surface's cookies a request uses: the area prefix of the path (`/api/v1/console/…`),
- * otherwise the `X-RingPe-Surface` header the web app sends on shared routes (refresh, sign-out).
+ * otherwise the `X-CampusOne-Surface` header the web app sends on shared routes (refresh, sign-out).
  */
 export function cookieSurfaceOf(req: Request): CookieSurface | undefined {
   const m = /^\/api\/v1\/(console|ops|portal)(\/|$)/.exec(req.originalUrl);

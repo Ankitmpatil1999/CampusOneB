@@ -10,7 +10,7 @@
  */
 import type { Kysely, Transaction } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { JobContext } from '../schedulers';
 import { formatDate, formatInr, istBusinessDate } from '../utils/format';
 import { notify } from './notifications.service';

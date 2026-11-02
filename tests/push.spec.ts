@@ -11,8 +11,8 @@ import { capturingLoggers } from './helpers';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const account: FcmServiceAccount = {
-  project_id: 'ringpe-test',
-  client_email: 'push@ringpe-test.iam.gserviceaccount.com',
+  project_id: 'campusone-test',
+  client_email: 'push@campusone-test.iam.gserviceaccount.com',
   private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   private_key_id: 'key-1',
 };
@@ -59,7 +59,7 @@ describe('Firebase push sender', () => {
       scope: 'https://www.googleapis.com/auth/firebase.messaging',
     });
 
-    expect(send!.url).toBe('https://fcm.googleapis.com/v1/projects/ringpe-test/messages:send');
+    expect(send!.url).toBe('https://fcm.googleapis.com/v1/projects/campusone-test/messages:send');
     expect((send!.init.headers as Record<string, string>).authorization).toBe('Bearer ya29.token');
     expect(JSON.parse(String(send!.init.body))).toEqual({
       message: {
@@ -69,8 +69,8 @@ describe('Firebase push sender', () => {
         android: {
           priority: 'HIGH',
           notification: expect.objectContaining({
-            channel_id: 'ringpe_notifications',
-            tag: `ringpe:${message.notificationId}`,
+            channel_id: 'campusone_notifications',
+            tag: `campusone:${message.notificationId}`,
             notification_count: 3,
             visibility: 'PRIVATE',
             notification_priority: 'PRIORITY_HIGH',

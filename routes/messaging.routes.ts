@@ -5,7 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { memberOrConsole } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { DM_GROUPS, type MessagingService } from '../services/messaging.service';
 import { AuthenticationError } from '../utils/CustomAPIError';
 

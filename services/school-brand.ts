@@ -1,10 +1,10 @@
 /**
- * A school's own e-mail identity (client 2026-10-26: "replace RingPe with the institution's name and
+ * A school's own e-mail identity (client 2026-10-26: "replace CampusOne with the institution's name and
  * show its logo"): the school as the sender's name and the heading, replies to its office address,
  * and its logo inside the e-mail. Best effort: a school without a usable logo still sends, by name.
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { logoFileOf } from './institution-logo';
 
 type Db = Kysely<Database> | Transaction<Database>;

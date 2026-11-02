@@ -157,7 +157,7 @@ describe.skipIf(!adminUrl)('notification e-mails and settings on real MySQL', ()
       subject: `Fee of ₹1,500.00 assigned to Kiran Rao for ${year.label}`,
       fromName: expect.stringMatching(/^Notices School/),
     });
-    expect(mail!.text).toContain('Open the RingPe app');
+    expect(mail!.text).toContain('Open the CampusOne app');
     expect(await outbox()).toHaveLength(0);
     const logged = await f.t.db
       .selectFrom('comm_log')
@@ -195,7 +195,7 @@ describe.skipIf(!adminUrl)('notification e-mails and settings on real MySQL', ()
     // The parent has no account yet: sign up with the mobile the school holds (never a password).
     const mail = (await outbox('CLASS')).at(-1)!;
     expect(mail.body).toContain(`Grade 6 A · ${year.label}`);
-    expect(mail.body).toContain('Open the RingPe app and tap "Sign up".');
+    expect(mail.body).toContain('Open the CampusOne app and tap "Sign up".');
     expect(mail.body).toContain(
       `Mobile number: ${guardianMobile.slice(0, 5)} ${guardianMobile.slice(5)} — a one-time code is sent to it.`,
     );

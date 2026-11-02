@@ -11,7 +11,7 @@ import {
   requireTenant,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { CrossInstitutionService } from '../services/cross-institution.service';
 import type { QuizService } from '../services/quiz.service';
 import { AuthenticationError, ValidationError } from '../utils/CustomAPIError';

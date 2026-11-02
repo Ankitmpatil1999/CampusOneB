@@ -6,7 +6,7 @@ import { singleFileUpload, uploadErrors } from '../controllers/file.controller';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { CalendarService } from '../services/calendar.service';
 import type { CurriculumService } from '../services/curriculum.service';
 import type { EnrolmentsService } from '../services/enrolments.service';

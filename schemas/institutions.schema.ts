@@ -53,7 +53,7 @@ export const registerSchema = z
     primaryContact: contact('PRIMARY'),
     secondaryContact: contact('SECONDARY').optional(),
     adminEmail: email('INS.ADMIN_EMAIL_FORMAT').describe(
-      'The administrator: an existing RingPe account in no institution, or a new e-mail (client 2026-10-06/07)',
+      'The administrator: an existing CampusOne account in no institution, or a new e-mail (client 2026-10-06/07)',
     ),
     adminName: z
       .string()
@@ -80,7 +80,7 @@ export const registeredSchema = z
     administrator: z.object({
       email: z.string(),
       pending: z.boolean().describe('Waits for the account to be made on the customer site'),
-      accountCreated: z.boolean().describe('A new RingPe account was made for the e-mail'),
+      accountCreated: z.boolean().describe('A new CampusOne account was made for the e-mail'),
       temporaryPassword: z
         .string()
         .optional()

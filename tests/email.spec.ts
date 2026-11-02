@@ -1,5 +1,5 @@
 /**
- * E-mail (client 2026-10-16): the SMTP sender in the RingPe layout, its subjects, its configuration,
+ * E-mail (client 2026-10-16): the SMTP sender in the CampusOne layout, its subjects, its configuration,
  * and the notification events every in-app notice belongs to.
  */
 import { describe, expect, it } from 'vitest';
@@ -16,12 +16,12 @@ const smtp = {
   user: 'noreply@school.example.in',
   pass: 'secret-pass',
   from: 'noreply@school.example.in',
-  fromName: 'RingPe',
+  fromName: 'CampusOne',
   tlsVerify: true,
 };
 
 describe('SMTP sender', () => {
-  it('sends HTML in the RingPe layout with the text beside it, from the school, and logs no content', async () => {
+  it('sends HTML in the CampusOne layout with the text beside it, from the school, and logs no content', async () => {
     const sent: Record<string, unknown>[] = [];
     const { loggers, lines } = capturingLoggers();
     const sender = smtpSender(smtp, loggers, {
@@ -34,7 +34,7 @@ describe('SMTP sender', () => {
       to: 'parent@example.in',
       purpose: 'fee.payLink',
       subject: 'Term 1 fee for Aarav',
-      text: 'Pay here: https://ringpe.example.in/fees/pay/x <b>bold</b>',
+      text: 'Pay here: https://campusone.example.in/fees/pay/x <b>bold</b>',
       fromName: 'Tunga "Valley" Public School',
       replyTo: 'office@tvps.example.in',
     });
@@ -47,7 +47,7 @@ describe('SMTP sender', () => {
     expect(m['text']).toContain('<b>bold</b>');
     const html = String(m['html']);
     expect(html).toContain('&lt;b&gt;bold&lt;/b&gt;');
-    expect(html).toContain('<a href="https://ringpe.example.in/fees/pay/x"');
+    expect(html).toContain('<a href="https://campusone.example.in/fees/pay/x"');
     expect(html).toContain('Tunga Valley Public School');
     await new Promise((r) => setTimeout(r, 50));
     expect(JSON.stringify(lines)).not.toContain('parent@example.in');
@@ -95,9 +95,9 @@ describe('SMTP sender', () => {
     expect(html).toContain(
       '<a href="https://x.example.in/pay/SRGS/2026/000029" style="color:#1f5eff;word-break:break-all">https://x.example.in/pay/SRGS/2026/000029</a>',
     );
-    // The school signs it, not RingPe; without a logo there is no picture.
+    // The school signs it, not CampusOne; without a logo there is no picture.
     expect(html).toContain('Sent by Sri Rama Grammar School. This is an automatic message');
-    expect(html).not.toContain('through RingPe');
+    expect(html).not.toContain('through CampusOne');
     expect(html).not.toContain('cid:');
   });
 
@@ -125,12 +125,12 @@ describe('SMTP sender', () => {
         filename: 'logo.png',
         content: png,
         contentType: 'image/png',
-        cid: 'school-logo@ringpe',
+        cid: 'school-logo@campusone',
         contentDisposition: 'inline',
       },
     ]);
     const html = String(m['html']);
-    expect(html).toContain('<img src="cid:school-logo@ringpe"');
+    expect(html).toContain('<img src="cid:school-logo@campusone"');
     expect(html).toContain('Sri Rama Grammar School');
     expect(html).toMatch(/<strong style="[^"]*">A\/1<\/strong>/);
   });
@@ -154,15 +154,15 @@ describe('SMTP sender', () => {
       'Sports day on Friday',
       'We have received your admission application',
     ]);
-    expect(sent[1]!['from']).toEqual({ name: 'RingPe', address: smtp.from });
+    expect(sent[1]!['from']).toEqual({ name: 'CampusOne', address: smtp.from });
   });
 
   it('gives a subject by purpose when none is given', () => {
-    expect(subjectFor('otp.signup')).toBe('Your RingPe one-time code');
-    expect(subjectFor('password_reset.console')).toBe('Reset your RingPe password');
-    expect(subjectFor('staff.onboarded')).toBe('Welcome to RingPe');
+    expect(subjectFor('otp.signup')).toBe('Your CampusOne one-time code');
+    expect(subjectFor('password_reset.console')).toBe('Reset your CampusOne password');
+    expect(subjectFor('staff.onboarded')).toBe('Welcome to CampusOne');
     expect(subjectFor('fee.payLink')).toBe('Your school fee payment link');
-    expect(subjectFor('something.new')).toBe('A message from RingPe');
+    expect(subjectFor('something.new')).toBe('A message from CampusOne');
     expect(subjectFor('x', '  Given  ')).toBe('Given');
     expect(emailHtml({ subject: '<s>', text: 'a', sender: 'S' })).toContain('&lt;s&gt;');
   });
@@ -190,7 +190,7 @@ describe('SMTP sender', () => {
       port: 587,
       secure: false,
       from: 'noreply@school.example.in',
-      fromName: 'RingPe',
+      fromName: 'CampusOne',
       tlsVerify: true,
     });
     // The sender is made without connecting (nodemailer connects on the first message).

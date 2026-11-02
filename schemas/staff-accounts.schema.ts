@@ -18,7 +18,7 @@ export const consoleRolesSchema = z
         readOnly: z.boolean(),
         assignable: z
           .boolean()
-          .describe('False for the Institution Administrator (RingPe gives it)'),
+          .describe('False for the Institution Administrator (CampusOne gives it)'),
         tasks: z.array(z.string()),
         subTasks: z.array(z.string()),
       }),

@@ -10,7 +10,7 @@ import {
   requireTenant,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { AssetsService } from '../services/assets.service';
 import { AuthenticationError } from '../utils/CustomAPIError';
 import { expectedVersion, setEtag } from '../utils/etag';

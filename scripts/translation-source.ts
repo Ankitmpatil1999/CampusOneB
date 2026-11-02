@@ -17,12 +17,12 @@ import { englishBundle } from '../config/registers';
 
 const ROOT = join(import.meta.dirname, '..');
 const SNAPSHOT = join(ROOT, 'db', 'translations', 'source.en.json');
-const MOBILE_STRINGS = join(ROOT, '..', 'RingPe_Mobile_App', 'src', 'utils', 'strings.en.ts');
+const MOBILE_STRINGS = join(ROOT, '..', 'CampusOne_Mobile_App', 'src', 'utils', 'strings.en.ts');
 /** The web's translated pages (Phase 10): `ui.web.*`. */
 const WEB_STRINGS = join(
   ROOT,
   '..',
-  'RingPe_Web_App',
+  'CampusOne_Web_App',
   'src',
   'components',
   'Utils',
@@ -30,7 +30,7 @@ const WEB_STRINGS = join(
 );
 
 /** The English of the web pages written in English (ADR-0018): key → text, from `npm run ui-text`. */
-const WEB_PAGES = join(ROOT, '..', 'RingPe_Web_App', 'public', 'i18n', 'ui-text.en.json');
+const WEB_PAGES = join(ROOT, '..', 'CampusOne_Web_App', 'public', 'i18n', 'ui-text.en.json');
 
 async function english(): Promise<Record<string, string>> {
   const all: Record<string, string> = { ...englishBundle() };

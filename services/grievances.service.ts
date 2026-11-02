@@ -17,7 +17,7 @@
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { PAYMENT_ATTEMPT } from '../config/registers';
 import { checkTransition, LIMITS, TICKET, type MessageKey } from '../config/registers';
-import type { Database, TicketChannel, TicketKind, TicketStatus } from '../models/ringpe_models';
+import type { Database, TicketChannel, TicketKind, TicketStatus } from '../models/campusone_models';
 import {
   CustomAPIError,
   NotFoundError,
@@ -579,9 +579,9 @@ export class GrievancesService {
         e.actor_type === 'MEMBER'
           ? 'You'
           : e.actor_type === 'SYSTEM'
-            ? 'RingPe'
+            ? 'CampusOne'
             : nameOf(e.first_name, e.last_name) ||
-              (e.actor_type === 'OPERATOR' ? 'RingPe support' : 'School office'),
+              (e.actor_type === 'OPERATOR' ? 'CampusOne support' : 'School office'),
       byType: e.actor_type,
       approved: e.approval_id !== null,
       at: iso(e.at),

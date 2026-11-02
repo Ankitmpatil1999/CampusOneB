@@ -9,7 +9,7 @@ import type { Express } from 'express';
 import { adminUrl, createTestDatabase, type TestDatabase } from './db';
 import { buildHttpApp, codeOf } from './http-app';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const CONSENT = '2026.10';
 const TERMS = '2026.10';
 
@@ -554,13 +554,13 @@ describe.skipIf(!adminUrl)('member sign-up, sign-in and recovery on real MySQL',
     const p1 = pkce();
     const start = await request(app)
       .post('/api/v1/auth/member/social/google/start')
-      .send({ redirectUri: 'in.ringpe.app://social', codeChallenge: p1.challenge });
+      .send({ redirectUri: 'in.campusone.app://social', codeChallenge: p1.challenge });
     expect(start.status).toBe(200);
     expect(start.body.mode).toBe('test');
     expect(start.body.authorizationUrl).toContain('state=');
     const unknown = await request(app)
       .post('/api/v1/auth/member/social/facebook/start')
-      .send({ redirectUri: 'in.ringpe.app://social', codeChallenge: p1.challenge });
+      .send({ redirectUri: 'in.campusone.app://social', codeChallenge: p1.challenge });
     expect(unknown.body.code).toBe('IDN.PROVIDER_DISABLED');
 
     // A wrong verifier is refused; the right one returns a sign-up ticket for a new identity.
@@ -628,7 +628,7 @@ describe.skipIf(!adminUrl)('member sign-up, sign-in and recovery on real MySQL',
     const p2 = pkce();
     const again = await request(app)
       .post('/api/v1/auth/member/social/google/start')
-      .send({ redirectUri: 'in.ringpe.app://social', codeChallenge: p2.challenge });
+      .send({ redirectUri: 'in.campusone.app://social', codeChallenge: p2.challenge });
     const signedIn = await request(app)
       .post('/api/v1/auth/member/social/google/callback')
       .send({
@@ -643,7 +643,7 @@ describe.skipIf(!adminUrl)('member sign-up, sign-in and recovery on real MySQL',
     const p3 = pkce();
     const third = await request(app)
       .post('/api/v1/auth/member/social/google/start')
-      .send({ redirectUri: 'in.ringpe.app://social', codeChallenge: p3.challenge });
+      .send({ redirectUri: 'in.campusone.app://social', codeChallenge: p3.challenge });
     const newPhone = await request(app)
       .post('/api/v1/auth/member/social/google/callback')
       .send({

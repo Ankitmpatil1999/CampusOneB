@@ -1,6 +1,6 @@
 /** File metadata (migration 0004 `files`). The bytes live in the storage provider. */
 import type { Kysely } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 export const fileRepository = {
   async insert(

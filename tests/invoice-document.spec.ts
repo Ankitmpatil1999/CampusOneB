@@ -72,12 +72,12 @@ describe('PdfDocument', () => {
 describe('renderInvoicePdf', () => {
   const data: InvoiceDocumentData = {
     profile: {
-      legalName: 'RingPe Technologies Private Limited (example)',
+      legalName: 'CampusOne Technologies Private Limited (example)',
       gstin: '29AAACR0000A1Z5',
       address: 'Example address, MG Road, Bengaluru, Karnataka 560001',
       stateCode: '29',
       sacCode: '998314',
-      payeeName: 'RingPe Technologies',
+      payeeName: 'CampusOne Technologies',
       payeeBank: 'Example Bank',
       payeeAccountNo: '000000000000',
       payeeIfsc: 'EXMP0000001',
@@ -114,7 +114,7 @@ describe('renderInvoicePdf', () => {
 
   it('prints the sample marker, the CGST/SGST split, the total in words and the bank details', () => {
     const pdf = renderInvoicePdf(data).toString('latin1');
-    expect(pdf).toContain('SAMPLE - example RingPe details');
+    expect(pdf).toContain('SAMPLE - example CampusOne details');
     expect(pdf).toContain('(CGST @ 9%) Tj');
     expect(pdf).toContain('(SGST @ 9%) Tj');
     expect(pdf).toContain('(Rs. 2,12,400.00) Tj');

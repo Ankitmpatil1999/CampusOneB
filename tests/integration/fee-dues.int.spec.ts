@@ -227,8 +227,8 @@ describe.skipIf(!adminUrl)('members’ dues and fee financing on real MySQL', ()
       const r = request(f.app)
         [method](path)
         .set('Authorization', `Bearer ${tok.body.access_token as string}`)
-        .set('X-RingPe-Timestamp', String(ts))
-        .set('X-RingPe-Signature', `v1=${sig}`);
+        .set('X-CampusOne-Timestamp', String(ts))
+        .set('X-CampusOne-Signature', `v1=${sig}`);
       return body ? r.set('Content-Type', 'application/json').send(raw) : r;
     };
     const fees = await signed('get', `/api/v1/partners/financing/students/${partnerRef}/fees`);
@@ -276,7 +276,7 @@ describe.skipIf(!adminUrl)('members’ dues and fee financing on real MySQL', ()
       'FEE.FINANCED',
     );
 
-    // The partner pays the school: the records are paid, no money moves in RingPe.
+    // The partner pays the school: the records are paid, no money moves in CampusOne.
     const paid = await signed('post', '/api/v1/partners/financing/webhooks', {
       eventId: 'PAY-0001',
       partnerRef,
@@ -301,8 +301,8 @@ describe.skipIf(!adminUrl)('members’ dues and fee financing on real MySQL', ()
     const bad = await request(f.app)
       .post('/api/v1/partners/financing/webhooks')
       .set('Authorization', `Bearer ${tok.body.access_token as string}`)
-      .set('X-RingPe-Timestamp', String(Math.floor(Date.now() / 1000)))
-      .set('X-RingPe-Signature', `v1=${'0'.repeat(64)}`)
+      .set('X-CampusOne-Timestamp', String(Math.floor(Date.now() / 1000)))
+      .set('X-CampusOne-Signature', `v1=${'0'.repeat(64)}`)
       .send({ ...approve, eventId: randomUUID() });
     expect(bad.status).toBe(401);
   });

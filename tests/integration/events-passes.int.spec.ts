@@ -220,7 +220,7 @@ describe.skipIf(!adminUrl)('events and entry passes on real MySQL', () => {
     expect(auth.status).toBe(201);
     expect(auth.body).toMatchObject({
       minutes: 5,
-      qrToken: expect.stringMatching(/^ringpe:\/\/pass\/[A-Z2-7]{26}$/),
+      qrToken: expect.stringMatching(/^campusone:\/\/pass\/[A-Z2-7]{26}$/),
     });
 
     const scan = (who: { auth: Auth }, token: string) =>

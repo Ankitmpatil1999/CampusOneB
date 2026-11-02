@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import type { RequestHandler } from 'express';
 import type { Kysely } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   idempotencyRepository,
   type IdempotencyKeyRef,

@@ -97,7 +97,7 @@ export const INSTITUTION_MESSAGES = [
     'RNG-ONB-033',
     'FR-INS-01',
   ]),
-  k('INS.ADMIN_EMAIL_UNKNOWN', 'MSG-ONB-68', 'Admin email not registered in RingPe', 422, [
+  k('INS.ADMIN_EMAIL_UNKNOWN', 'MSG-ONB-68', 'Admin email not registered in CampusOne', 422, [
     'RNG-ONB-034',
   ]),
   k('INS.ADMIN_IN_INSTITUTION', 'MSG-ONB-69', 'User already mapped to a CUG organization', 409, [
@@ -107,19 +107,19 @@ export const INSTITUTION_MESSAGES = [
   n(
     'INS.ADMIN_ACCOUNT_INACTIVE',
     409,
-    'The RingPe account with this e-mail is not active. Use another e-mail, or reactivate the account first.',
+    'The CampusOne account with this e-mail is not active. Use another e-mail, or reactivate the account first.',
     ['RNG-ONB-034', 'client 2026-10-07: an unknown e-mail is never refused'],
   ),
   n(
     'INS.ADMIN_MOBILE_TAKEN',
     409,
-    "This mobile number already has a RingPe account. Use that account's e-mail as the administrator's e-mail, or another mobile number.",
+    "This mobile number already has a CampusOne account. Use that account's e-mail as the administrator's e-mail, or another mobile number.",
     ['RNG-ONB-034', 'BR-01', 'client 2026-10-07'],
   ),
   n(
     'INS.ADMIN_IS_OPERATOR',
     409,
-    'This account holds a RingPe operator role. An institution administrator needs an account without one (OI-GOV-01).',
+    'This account holds a CampusOne operator role. An institution administrator needs an account without one (OI-GOV-01).',
     ['OI-GOV-01', 'RNG-IDN-043'],
   ),
   {

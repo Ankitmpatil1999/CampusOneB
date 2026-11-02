@@ -5,7 +5,7 @@ import type { Loggers } from '../controllers/logger';
 import { plansController } from '../controllers/plans.controller';
 import { authorize, requireSurface } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { planSchema } from '../schemas/institutions.schema';
 import { planChangedSchema, planInputSchema, plansListSchema } from '../schemas/plans.schema';
 import type { PlansService } from '../services/plans.service';

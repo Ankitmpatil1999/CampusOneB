@@ -9,7 +9,7 @@
 --   carries the whole link (a signed token makes it some 350 characters), so a notice's text may be
 --   longer than 300 characters.
 --
--- School tables are in the CUG database ({{CUG}}, ADR-0019); notifications stay in RingPe.
+-- School tables are in the CUG database ({{CUG}}, ADR-0019); notifications stay in CampusOne.
 
 ALTER TABLE {{CUG}}.fee_payment_requests
   MODIFY channel ENUM('LINK','QR','DESK') NOT NULL;

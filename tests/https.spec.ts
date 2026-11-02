@@ -14,7 +14,7 @@ import { inlineScriptHashes } from '../middlewares/web-app.middleware';
 import { createApiServer, createRedirectServer } from '../utils/https-server';
 import { buildTestApp } from './helpers';
 
-const base = { DATABASE_URL: 'mysql://app:s3cret-pw@localhost:3306/ringpe' };
+const base = { DATABASE_URL: 'mysql://app:s3cret-pw@localhost:3306/campusone' };
 const problems = (env: Record<string, string>) => {
   try {
     loadConfig({ ...base, ...env });
@@ -82,7 +82,7 @@ describe('HTTPS settings', () => {
       CERT_PASSPHRASE: 'pass-phrase',
       HTTP_PORT: '443',
       HTTP_REDIRECT_PORT: '80',
-      WEB_ROOT: '../RingPe_Web_App/dist/browser',
+      WEB_ROOT: '../CampusOne_Web_App/dist/browser',
     });
     expect(c.tls).toEqual({
       keyPath: 'keys/tls/server.key',
@@ -90,7 +90,7 @@ describe('HTTPS settings', () => {
       passphrase: 'pass-phrase',
       redirectPort: 80,
     });
-    expect(c.http.webRoot).toBe('../RingPe_Web_App/dist/browser');
+    expect(c.http.webRoot).toBe('../CampusOne_Web_App/dist/browser');
   });
 
   it('names an unreadable key file without its content', () => {
@@ -128,7 +128,7 @@ describe('the web application on the same address (WEB_ROOT)', () => {
   const loader = "document.querySelectorAll('link').forEach(function(l){l.media='all'})";
   let dir = '';
   beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), 'ringpe-web-'));
+    dir = mkdtempSync(join(tmpdir(), 'campusone-web-'));
     writeFileSync(
       join(dir, 'index.html'),
       `<!doctype html><html><head><base href="/"><script>${loader}</script></head><body><rp-root></rp-root><script src="main-ABCD1234.js" type="module"></script></body></html>`,
@@ -186,7 +186,7 @@ describe('the web application on the same address (WEB_ROOT)', () => {
 
   // 2026-10-13: a rebuilt web app kept being served its old page until the API was restarted.
   it('serves the page of the latest build without a restart', async () => {
-    const own = mkdtempSync(join(tmpdir(), 'ringpe-web-'));
+    const own = mkdtempSync(join(tmpdir(), 'campusone-web-'));
     try {
       const index = join(own, 'index.html');
       const page = (main: string, script: string) =>

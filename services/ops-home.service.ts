@@ -6,7 +6,7 @@
  */
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { JOB_CATALOGUE } from '../schedulers/catalogue';
 import { recordAudit } from './audit.service';
 import { toMoneyDto } from '../utils/money';

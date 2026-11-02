@@ -65,7 +65,7 @@ export const SHEET_COLUMNS: readonly SheetColumn[] = [
   req('Date of birth', 'student.dob', '2014-05-21'),
   col('Aadhaar number', 'student.aadhaar'),
   col('PAN', 'student.pan'),
-  // The student's own contact (client 2026-10-23): a mobile gives the student a RingPe account.
+  // The student's own contact (client 2026-10-23): a mobile gives the student a CampusOne account.
   col('Student contact number', 'student.mobile'),
   col('Student e-mail', 'student.email'),
   col('Category', 'student.category', 'General'),

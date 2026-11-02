@@ -8,13 +8,13 @@
  *   Classes whose module isn't built yet carry a note instead of rows. Personal numbers (PAN,
  *   identity documents, bank accounts) are never exported. The format is an example default until
  *   the client decides OI-SAS-05 (CSV in a ZIP, as the prototype offers first).
- * - A cancellation request waits for RingPe, who confirms it with the lifecycle action Cancel or
+ * - A cancellation request waits for CampusOne, who confirms it with the lifecycle action Cancel or
  *   declines it; the institution may withdraw it meanwhile. Unpaid invoices must be paid first.
  *   Deletion after cancellation waits for the retention decision (OQ-30): nothing is deleted.
  */
 import type { Kysely } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository as repo } from '../repositories/institutions.repository';
 import { recordAudit } from './audit.service';
 import type { FileService } from './file.service';
@@ -168,7 +168,7 @@ export class PortalDataService {
     try {
       const { files, counts } = await this.archive(row.id, classes);
       const at = this.now();
-      const name = `ringpe-export-${row.short_name.toLowerCase()}-${istBusinessDate(at)}.zip`;
+      const name = `campusone-export-${row.short_name.toLowerCase()}-${istBusinessDate(at)}.zip`;
       const stored = await this.deps.files.storeGenerated({
         institutionId: row.id,
         purpose: 'export',
@@ -403,7 +403,7 @@ export class PortalDataService {
       name: 'README.txt',
       data: Buffer.from(
         [
-          'RingPe data export',
+          'CampusOne data export',
           `Classes: ${classes.join(', ')}`,
           'CSV files are UTF-8 with a byte-order mark (Excel: open directly).',
           'Personal numbers (PAN, identity documents, bank accounts) are never exported.',

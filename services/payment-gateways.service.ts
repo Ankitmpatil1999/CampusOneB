@@ -19,7 +19,7 @@ import type { Loggers } from '../controllers/logger';
 import { LIMITS, PAYMENT_GATEWAY_PROVIDERS, type MessageKey } from '../config/registers';
 import type { PaymentGateway } from '../integrations/payment-gateway.provider';
 import { createRazorpayGateway, type RazorpayConfig } from '../integrations/razorpay.gateway';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import type { FieldCipher } from '../utils/fieldEncryption';
@@ -70,7 +70,7 @@ export class PaymentGatewaysService {
       /** The web address that forwards /api to the API (the webhook address shown). */
       readonly webUrl: string;
       readonly factory?: SchoolGatewayFactory;
-      /** RingPe's own Razorpay account is configured (live mode with keys). */
+      /** CampusOne's own Razorpay account is configured (live mode with keys). */
       readonly platformLive?: boolean;
       readonly settings?: { values(): Promise<SettingValues> };
       readonly now?: () => Date;
@@ -210,7 +210,7 @@ export class PaymentGatewaysService {
       providers: PAYMENT_GATEWAY_PROVIDERS.map((x) => ({ code: x.code, name: x.name })),
       items: rows.map((r) => this.dto(r)),
       // Razorpay by default (client 2026-10-09): until the school adds its own, new payments are
-      // taken with RingPe's Razorpay account (setting pg.platformFallback).
+      // taken with CampusOne's Razorpay account (setting pg.platformFallback).
       platform: {
         provider: 'Razorpay',
         inUse: !hasDefault && fallbackOn && Boolean(this.deps.platformLive),

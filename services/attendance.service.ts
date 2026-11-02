@@ -23,7 +23,7 @@ import { sql, type Kysely, type Transaction } from 'kysely';
 import { LIMITS, type LimitDefinition } from '../config/registers';
 import { KIND_CATEGORIES } from '../repositories/members.repository';
 import type { CardsService } from './cards.service';
-import type { CheckinStatus, Database, DailyStatus } from '../models/ringpe_models';
+import type { CheckinStatus, Database, DailyStatus } from '../models/campusone_models';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';
 import { formatDate, formatTime, istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
@@ -338,7 +338,7 @@ export class AttendanceService {
   // --- ATT-028: the teacher's own card reader on the web (client 2026-10-13) --------------------------
   /**
    * A student taps their card on the teacher's USB reader (the web console's Attendance page with
-   * RingPe Card Reader): today only, for a student of the class — the class teacher's daily
+   * CampusOne Card Reader): today only, for a student of the class — the class teacher's daily
    * register — or of the teacher's period running now (from 10 minutes before it starts until it
    * ends, as at a classroom reader). Recorded as a card tap (method NFC, no terminal, the teacher
    * as the actor). A student already recorded is answered as such, not refused; a recorded Absent
@@ -2133,7 +2133,7 @@ export class AttendanceService {
   }
 
   /**
-   * ATT-030: a staff member taps their card on the front desk's USB reader (RingPe Card Reader): the
+   * ATT-030: a staff member taps their card on the front desk's USB reader (CampusOne Card Reader): the
    * first tap of the day checks them in, the next checks them out; a tap after that says the day is
    * complete. Students are refused (they tap at the gate or in class).
    */

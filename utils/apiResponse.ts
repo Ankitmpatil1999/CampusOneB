@@ -19,7 +19,7 @@ export const fieldErrorSchema = z.object({
 
 export const problemSchema = z
   .object({
-    type: z.string().describe('URN identifying the problem type (urn:ringpe:problem:<code>)'),
+    type: z.string().describe('URN identifying the problem type (urn:campusone:problem:<code>)'),
     title: z.string(),
     status: z.number().int(),
     code: z.string().describe('Message register key, e.g. VALIDATION.FAILED'),
@@ -73,7 +73,7 @@ export function buildProblem(args: {
   const definition = getMessage(args.code);
   const detail = renderMessage(args.code, args.params);
   const problem: Problem = {
-    type: `urn:ringpe:problem:${args.code.toLowerCase()}`,
+    type: `urn:campusone:problem:${args.code.toLowerCase()}`,
     title: definition.en.includes('{') ? detail : definition.en,
     status: args.status,
     code: args.code,

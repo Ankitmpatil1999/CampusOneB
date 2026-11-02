@@ -42,7 +42,7 @@ export function qrCardPdf(card: {
   const pdf = new PdfDocument(`${card.merchant} — ${card.kindLabel} QR`);
   const width = pdf.width;
   pdf.rect(0, 0, width, 120, { fill: BRAND });
-  pdf.text(40, 50, 'RingPe', { size: 26, bold: true, color: [255, 255, 255] });
+  pdf.text(40, 50, 'CampusOne', { size: 26, bold: true, color: [255, 255, 255] });
   pdf.text(40, 82, card.institution, { size: 13, color: [255, 255, 255] });
   pdf.text(40, 170, card.merchant, { size: 22, bold: true, color: INK });
   pdf.text(40, 198, `${card.kindLabel} QR · ${card.code}`, { size: 12, color: MUTED });
@@ -57,7 +57,7 @@ export function qrCardPdf(card: {
       if (dark) pdf.rect(left + c * cell, top + r * cell, cell + 0.2, cell + 0.2, { fill: INK });
     }),
   );
-  pdf.text(40, top + size + 70, 'Scan with the RingPe app to pay from your campus wallet.', {
+  pdf.text(40, top + size + 70, 'Scan with the CampusOne app to pay from your campus wallet.', {
     size: 12,
     color: INK,
   });

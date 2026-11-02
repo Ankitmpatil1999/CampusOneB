@@ -5,7 +5,7 @@
  * guarded update.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, PlanChangeRequestStatus } from '../models/ringpe_models';
+import type { Database, PlanChangeRequestStatus } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

@@ -7,7 +7,7 @@ import type { Kysely } from 'kysely';
 import type { Config } from './config';
 import type { Security } from './security';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { ApiServices } from '../routes';
 import { createScanner, type AntivirusScanner } from '../integrations/antivirus.provider';
 import { createEmailSender } from '../integrations/email.provider';

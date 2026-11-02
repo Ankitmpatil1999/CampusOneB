@@ -9,7 +9,7 @@
  *   the other movement types are a register addition (Q21, client standing approval 2026-10-03).
  */
 import { randomBytes } from 'node:crypto';
-import type { LedgerTxnType } from '../../models/ringpe_models';
+import type { LedgerTxnType } from '../../models/campusone_models';
 
 export interface PaymentChannelDefinition {
   readonly code: string;
@@ -99,12 +99,12 @@ export function newReference(type: LedgerTxnType, at: Date): string {
 }
 
 /**
- * QR payloads (9.2, 9.3). A RingPe link so a phone camera opens the app; the code is an opaque random
+ * QR payloads (9.2, 9.3). A CampusOne link so a phone camera opens the app; the code is an opaque random
  * token (26 characters, base32) — a static merchant code (`s`) or a dynamic request (`d`). The token
  * identifies the payee only; the payer confirms with the PIN.
  */
 export const QR_TOKEN_PATTERN = /^[A-Z2-7]{26}$/;
-export const QR_PAYLOAD_PATTERN = /^ringpe:\/\/pay\/([sd])\/([A-Z2-7]{26})$/;
+export const QR_PAYLOAD_PATTERN = /^campusone:\/\/pay\/([sd])\/([A-Z2-7]{26})$/;
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 /** A new 26-character token (130 bits). */
@@ -115,9 +115,9 @@ export function newQrToken(): string {
   return out;
 }
 
-export const qrPayload = (kind: 's' | 'd', token: string) => `ringpe://pay/${kind}/${token}`;
+export const qrPayload = (kind: 's' | 'd', token: string) => `campusone://pay/${kind}/${token}`;
 
-/** The kind and token of a scanned payload, or null when it isn't a RingPe payment code. */
+/** The kind and token of a scanned payload, or null when it isn't a CampusOne payment code. */
 export function parseQrPayload(payload: string): { kind: 's' | 'd'; token: string } | null {
   const m = QR_PAYLOAD_PATTERN.exec(payload.trim());
   return m ? { kind: m[1] as 's' | 'd', token: m[2]! } : null;

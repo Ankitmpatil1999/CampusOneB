@@ -16,7 +16,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 
 describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
@@ -831,7 +831,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
         .set(a.con)
         .set('Idempotency-Key', randomUUID())
         .send(b);
-    // RingPe gives the Institution Administrator role; the Principal role is the principal's.
+    // CampusOne gives the Institution Administrator role; the Principal role is the principal's.
     expect((await post(body(id('INSTITUTION_ADMIN')))).body.code).toBe('IDN.ROLE_NOT_ASSIGNABLE');
     expect((await post(body(id('PRINCIPAL')))).body.code).toBe('IDN.ROLE_WRONG_PROFILE');
     const b = body(id('TEACHER'));
@@ -1130,7 +1130,7 @@ describe.skipIf(!adminUrl)('members in the console on real MySQL', () => {
       .where('application_id', '=', meera.id)
       .execute();
     expect(refs).toEqual([{ name: 'Anitha Bhat' }]);
-    // The parents have RingPe profiles at the school, as on an admission.
+    // The parents have CampusOne profiles at the school, as on an admission.
     const parents = await t.db
       .selectFrom('member_profiles as m')
       .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')

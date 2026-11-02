@@ -4,7 +4,7 @@
  * version 0 inserts the first record, a later save updates `WHERE row_version = ?`.
  */
 import { sql, type Insertable, type Kysely, type Transaction } from 'kysely';
-import type { AccountPiiField, Database } from '../models/ringpe_models';
+import type { AccountPiiField, Database } from '../models/campusone_models';
 import { PreconditionFailedError } from '../utils/CustomAPIError';
 
 type Db = Kysely<Database> | Transaction<Database>;

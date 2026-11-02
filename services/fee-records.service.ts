@@ -17,7 +17,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { notifyFeeAssigned } from './fee-notices.service';
 import { sql } from 'kysely';
-import type { Database, FeeRecordStatus } from '../models/ringpe_models';
+import type { Database, FeeRecordStatus } from '../models/campusone_models';
 import { academicsRepository } from '../repositories/academics.repository';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError, ValidationError } from '../utils/CustomAPIError';

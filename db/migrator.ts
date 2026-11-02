@@ -38,7 +38,7 @@ export interface MigrationExecutor {
 }
 
 const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/;
-export const MIGRATION_LOCK = 'ringpe.schema_migrations';
+export const MIGRATION_LOCK = 'campusone.schema_migrations';
 
 export function checksumOf(sql: string): string {
   // Line endings are normalised so a Windows checkout produces the same checksum (.gitattributes).
@@ -164,7 +164,7 @@ export async function migrate(
     );
     const done: string[] = [];
     // `{{CUG}}` in a migration is the CUG database beside this one (db/cug-tables.ts, client
-    // 2026-10-21): `ringpe` → `ringpe_cug`. It is filled in as the file runs (its checksum is the file's).
+    // 2026-10-21): `campusone` → `campusone_cug`. It is filled in as the file runs (its checksum is the file's).
     let cug: string | null = null;
     const cugOf = async () => {
       if (cug === null) {

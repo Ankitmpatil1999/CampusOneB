@@ -5,7 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { memberOrConsole, requireSurface, teacherAccess } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { CalendarService } from '../services/calendar.service';
 import type { ClassroomService } from '../services/classroom.service';
 import type { HomeworkService } from '../services/homework.service';

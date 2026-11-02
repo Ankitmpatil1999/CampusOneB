@@ -20,7 +20,7 @@
  *   (transport-fees.service.ts, client 2026-10-21), in the same transaction.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, CrewRole, RouteType, TripDirection } from '../models/ringpe_models';
+import type { Database, CrewRole, RouteType, TripDirection } from '../models/campusone_models';
 import {
   CustomAPIError,
   NotFoundError,

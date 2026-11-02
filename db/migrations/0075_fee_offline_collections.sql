@@ -27,7 +27,7 @@ CREATE TABLE fee_payment_requests (
   status              ENUM('OPEN','PAID','CANCELLED') NOT NULL DEFAULT 'OPEN',
   sent_mobile         VARCHAR(20)      NULL,
   sent_email          VARCHAR(254)     NULL,
-  gateway_id          BIGINT UNSIGNED  NULL,                          -- NULL: RingPe's own gateway
+  gateway_id          BIGINT UNSIGNED  NULL,                          -- NULL: CampusOne's own gateway
   gateway_order_id    VARCHAR(64)      NULL,
   gateway_payment_id  VARCHAR(64)      NULL,
   collection_id       BIGINT UNSIGNED  NULL,

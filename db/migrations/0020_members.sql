@@ -92,7 +92,7 @@ CREATE TABLE guardianships (
   CONSTRAINT ck_guardianships__not_self CHECK (guardian_profile_id <> ward_profile_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Member details captured at onboarding. A profile without a RingPe account yet keeps the contact
+-- Member details captured at onboarding. A profile without a CampusOne account yet keeps the contact
 -- mobile; the profile links when that mobile signs up (BR-01, BR-02).
 ALTER TABLE member_profiles
   ADD COLUMN member_seq        INT UNSIGNED NULL AFTER user_type_id,      -- shown as <short name>-00001

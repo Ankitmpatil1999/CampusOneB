@@ -14,7 +14,7 @@
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import type { MessageKey } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import type { JobContext } from '../schedulers';
 import {

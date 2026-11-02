@@ -2,7 +2,7 @@
  * Axis Bank Power E-coll (BNK-001…003; client 2026-10-12). Mounted before the /api/v1 router because
  * the bank reads its own answer format: a refused address, token or scope is answered as the earlier
  * application answered it ({Stts_flg: "N", Err_cd: "001", …}), never as a problem document. The token
- * is still RingPe's partner token (ES256, ended on revocation), and the client is a Partner API client
+ * is still CampusOne's partner token (ES256, ended on revocation), and the client is a Partner API client
  * from the back office with its address allow-list.
  *
  * Paths: /api/v1/partners/axis/bank/… and, for the base address the bank already holds, /cug/bank/….

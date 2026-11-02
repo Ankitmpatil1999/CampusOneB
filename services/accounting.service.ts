@@ -14,7 +14,7 @@
 import { sql, type Kysely } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { AccountingPackage } from '../integrations/accounting.provider';
-import type { AccountingEvent, Database, VoucherStatus } from '../models/ringpe_models';
+import type { AccountingEvent, Database, VoucherStatus } from '../models/campusone_models';
 import type { JobContext } from '../schedulers';
 import {
   CustomAPIError,

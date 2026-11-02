@@ -15,7 +15,7 @@ import { sql, type Kysely } from 'kysely';
 import { LIMITS } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { MessageSender } from '../integrations/sms.provider';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { binToUuid } from '../utils/idGenerator';
 import { logCommSafely, maskEmail, type CommLogRow } from './comm-log.service';
 import { brandFields, schoolBrand, type LogoFiles, type SchoolBrand } from './school-brand';
@@ -121,7 +121,7 @@ export class EmailRelay {
           to,
           purpose: `notification.${r.event_key.toLowerCase()}`,
           subject: r.subject,
-          text: `${r.body}\n\nOpen the RingPe app to see more.`,
+          text: `${r.body}\n\nOpen the CampusOne app to see more.`,
           ...brandFields(school),
           log: false,
         });

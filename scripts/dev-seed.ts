@@ -24,7 +24,7 @@ import { hashSecret } from '../utils/password';
 import { Kysely, MysqlDialect } from 'kysely';
 import { createPool } from 'mysql2';
 import { newQrToken } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { LedgerService } from '../services/ledger.service';
 import { merchantCode } from '../services/merchants.service';
 import { createFinancingPartner } from '../integrations/financing.provider';
@@ -51,7 +51,7 @@ if (!url) {
   process.exit(2);
 }
 const staffPassword = process.env['DEV_STAFF_PASSWORD'] || 'Tvps@2026';
-const opsPassword = process.env['DEV_OPS_PASSWORD'] || 'Ringpe@2026';
+const opsPassword = process.env['DEV_OPS_PASSWORD'] || 'CampusOne@2026';
 const memberPassword = process.env['DEV_MEMBER_PASSWORD'] || 'Member@2026';
 const MEMBER_MOBILE = '9886110000';
 const MERCHANT_MOBILE = '9886110001';
@@ -161,42 +161,42 @@ const OPERATORS = [
   {
     first: 'Arjun',
     last: 'Mehta',
-    email: 'arjun@ringpe.example',
+    email: 'arjun@campusone.example',
     mobile: '9845011301',
     role: 'PLATFORM_ADMIN',
   },
   {
     first: 'Priya',
     last: 'Sharma',
-    email: 'priya@ringpe.example',
+    email: 'priya@campusone.example',
     mobile: '9845011302',
     role: 'SETTLEMENT_MAKER',
   },
   {
     first: 'Rahul',
     last: 'Verma',
-    email: 'rahul@ringpe.example',
+    email: 'rahul@campusone.example',
     mobile: '9845011303',
     role: 'SETTLEMENT_CHECKER',
   },
   {
     first: 'Ananya',
     last: 'Iyer',
-    email: 'ananya@ringpe.example',
+    email: 'ananya@campusone.example',
     mobile: '9845011304',
     role: 'RECON_OFFICER',
   },
   {
     first: 'Imran',
     last: 'Sheikh',
-    email: 'imran@ringpe.example',
+    email: 'imran@campusone.example',
     mobile: '9845011305',
     role: 'LOG_ANALYST',
   },
   {
     first: 'Joseph',
     last: "D'Souza",
-    email: 'joseph@ringpe.example',
+    email: 'joseph@campusone.example',
     mobile: '9845011306',
     role: 'SUPPORT_OFFICER',
   },
@@ -997,7 +997,7 @@ async function billingSetup(tvpsId: string) {
 }
 
 /**
- * Approvals (2.6): a parent with a RingPe account asks for a date-of-birth correction with a
+ * Approvals (2.6): a parent with a CampusOne account asks for a date-of-birth correction with a
  * certificate attached; it waits in TVPS's queue and the administrator's bell shows it. Created once.
  */
 async function approvalsSetup(tvpsId: string) {

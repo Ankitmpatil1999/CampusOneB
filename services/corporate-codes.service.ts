@@ -5,7 +5,7 @@
  * the school's default for everyone a class mapping doesn't cover. The VAN is put together from them
  * (services/vans.ts).
  *
- * - The Institution Administrator manages them in the console (task "corpcodes"); the RingPe back
+ * - The Institution Administrator manages them in the console (task "corpcodes"); the CampusOne back
  *   office for any school (sub-task inst.register, as the bank arrangement).
  * - The first code becomes the default; another can be made the default; the default can't be
  *   disabled or un-set (another code is made the default instead).
@@ -16,7 +16,7 @@
  */
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
   CustomAPIError,

@@ -21,7 +21,7 @@ import {
   type CfEntity,
   type CfType,
 } from '../config/registers';
-import type { Database, UserTypeCategory } from '../models/ringpe_models';
+import type { Database, UserTypeCategory } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
   customFieldsRepository as fields,

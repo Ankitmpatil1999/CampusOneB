@@ -5,7 +5,7 @@ import type { Loggers } from '../controllers/logger';
 import { rolesController } from '../controllers/roles.controller';
 import { authorize, requireSurface } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   accountChangeSchema,
   accountSavedSchema,
@@ -77,7 +77,7 @@ defineRoute({
   method: 'post',
   path: '/api/v1/ops/accounts',
   summary:
-    'Assign an operator role to an existing RingPe account by e-mail (never an institution account, OI-GOV-01)',
+    'Assign an operator role to an existing CampusOne account by e-mail (never an institution account, OI-GOV-01)',
   tags,
   auth: 'roles.edit',
   request: assignSchema,

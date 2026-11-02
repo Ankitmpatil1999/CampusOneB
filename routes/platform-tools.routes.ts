@@ -5,7 +5,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { PlatformToolsService } from '../services/platform-tools.service';
 import { AuthenticationError } from '../utils/CustomAPIError';
 import { expectedVersion, setEtag } from '../utils/etag';

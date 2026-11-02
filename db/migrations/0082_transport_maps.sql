@@ -12,7 +12,7 @@
 --   fee_records gets source TRANSPORT, the charge and the month a due covers.
 -- - Sub-task transport.fees, granted to the Institution Administrator only (reserved).
 --
--- School tables are in the CUG database ({{CUG}}, ADR-0019); tasks and roles stay in RingPe.
+-- School tables are in the CUG database ({{CUG}}, ADR-0019); tasks and roles stay in CampusOne.
 
 CREATE TABLE {{CUG}}.transport_trip_positions (
   id                  BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,

@@ -47,7 +47,7 @@ describe('health (PLT-001…004)', () => {
     expect(detail.body).toMatchObject({ version: '1.2.3', commit: 'abc123' });
     const metrics = await request(inside.app).get('/metrics');
     expect(metrics.status).toBe(200);
-    expect(metrics.text).toContain('ringpe_http_request_duration_seconds');
+    expect(metrics.text).toContain('campusone_http_request_duration_seconds');
   });
 });
 
@@ -80,8 +80,8 @@ describe('cross-cutting middleware', () => {
 
   it('allows listed CORS origins only', async () => {
     const { app } = await buildTestApp();
-    const ok = await request(app).get('/health/live').set('Origin', 'https://console.ringpe.test');
-    expect(ok.headers['access-control-allow-origin']).toBe('https://console.ringpe.test');
+    const ok = await request(app).get('/health/live').set('Origin', 'https://console.campusone.test');
+    expect(ok.headers['access-control-allow-origin']).toBe('https://console.campusone.test');
     expect(ok.headers['access-control-allow-credentials']).toBe('true');
     const bad = await request(app).get('/health/live').set('Origin', 'https://evil.example');
     expect(bad.headers['access-control-allow-origin']).toBeUndefined();
@@ -95,7 +95,7 @@ describe('errors as problem+json (RFC 9457)', () => {
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.body).toMatchObject({
-      type: 'urn:ringpe:problem:gen.route_not_found',
+      type: 'urn:campusone:problem:gen.route_not_found',
       status: 404,
       code: 'GEN.ROUTE_NOT_FOUND',
       detail: 'This address does not exist.',

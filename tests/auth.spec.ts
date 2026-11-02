@@ -115,7 +115,7 @@ describe('authentication and authorisation skeleton', () => {
     const token = await keys.sign({ sid: 's1', ins: INSTITUTION, st: ['members.view'] });
     const res = await request(app)
       .get('/api/v1/probe/members')
-      .set('X-RingPe-Surface', 'console')
+      .set('X-CampusOne-Surface', 'console')
       .set('Cookie', `__Host-rp_console_at=${token}`);
     expect(res.status).toBe(200);
   });
@@ -137,7 +137,7 @@ describe('authentication and authorisation skeleton', () => {
     const token = await keys.sign({ sid: 's1', ins: INSTITUTION, st: ['members.view'] });
     const res = await request(app)
       .get('/api/v1/probe/members')
-      .set('X-RingPe-Surface', 'portal')
+      .set('X-CampusOne-Surface', 'portal')
       .set('Cookie', `__Host-rp_portal_at=${token}`);
     expect(res.status).toBe(401);
   });

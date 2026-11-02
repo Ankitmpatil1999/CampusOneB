@@ -9,7 +9,7 @@
  *   carrying the scopes, lifetime `auth.partner.tokenMinutes`. A new token ends the client's
  *   earlier live tokens (27.2). Every request is logged, issued or refused with the reason.
  * - A signed call: a token with the scope, an active client, an allowed address, a timestamp within
- *   `int.signature.skewSeconds` and `X-RingPe-Signature: v1=<hex HMAC-SHA256(secret,
+ *   `int.signature.skewSeconds` and `X-CampusOne-Signature: v1=<hex HMAC-SHA256(secret,
  *   "<timestamp>.<raw body>")>`. Each request id is accepted once: a repeat with the same body
  *   returns the first response, a different body is refused (replay-safe, exactly once).
  *
@@ -23,7 +23,7 @@ import type { Request } from 'express';
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { INSTITUTION_SCOPES, LIMITS, PARTNER_SCOPES, type PartnerScope } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   AuthenticationError,
   CustomAPIError,
@@ -42,8 +42,8 @@ import type { FieldError } from '../utils/validators';
 import { recordAudit } from './audit.service';
 import { defaultValues, type SettingValues, type SettingsService } from './settings.service';
 
-export const SIGNATURE_HEADER = 'X-RingPe-Signature';
-export const TIMESTAMP_HEADER = 'X-RingPe-Timestamp';
+export const SIGNATURE_HEADER = 'X-CampusOne-Signature';
+export const TIMESTAMP_HEADER = 'X-CampusOne-Timestamp';
 
 const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
 const iso = (d: Date | string | null) => (d ? new Date(d).toISOString() : null);
@@ -265,7 +265,7 @@ export class PartnersService {
   /**
    * A client created elsewhere — the earlier application's Axis Bank client (client 2026-10-14) —
    * imported with its client id and its secret's bcrypt hash, so the credentials the bank already
-   * holds keep working. RingPe never sees the secret: the token call checks it against the hash.
+   * holds keep working. CampusOne never sees the secret: the token call checks it against the hash.
    */
   async importClient(
     p: Principal,
@@ -551,7 +551,7 @@ export class PartnersService {
   }
 
   /**
-   * An imported client's secret against its bcrypt hash: the current secret while it has no RingPe
+   * An imported client's secret against its bcrypt hash: the current secret while it has no CampusOne
    * secret, otherwise only during a rotation's overlap.
    */
   private async hashAccepts(

@@ -16,7 +16,7 @@ import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { Server } from 'socket.io';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { cookieNames, COOKIE_SURFACES, type CookieSurface } from '../utils/cookies';
 import { isUuid, uuidToBin } from '../utils/idGenerator';
 import { rooms } from '../utils/outbox';

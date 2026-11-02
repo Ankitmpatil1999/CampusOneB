@@ -24,7 +24,7 @@ import type {
   ReconMismatchStatus,
   ReconResolution,
   ReconStatementKind,
-} from '../models/ringpe_models';
+} from '../models/campusone_models';
 import {
   CustomAPIError,
   NotFoundError,

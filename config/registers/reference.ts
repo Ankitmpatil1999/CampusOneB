@@ -164,7 +164,7 @@ export interface ConsentDocument {
 
 /** The prototype's "Terms of use" text (client 2026-10-02: use the prototype's texts). */
 const TERMS_OF_USE_2026_10 = [
-  'RingPe provides campus wallets and school services on behalf of your institution. Your mobile number identifies your account; your school decides which features you can use.',
+  'CampusOne provides campus wallets and school services on behalf of your institution. Your mobile number identifies your account; your school decides which features you can use.',
   'We process your personal details to verify your identity, keep your money safe and meet the law in India. We never sell your data.',
   'Consent you give here is recorded with the date and the version of these terms.',
 ].join('\n\n');
@@ -175,7 +175,7 @@ export const CONSENT_DOCUMENTS: readonly ConsentDocument[] = [
     kind: 'CONSENT',
     version: '2026.10-draft1',
     title: 'Consent to share your details',
-    body: 'I agree to share my details — name, mobile number, date of birth, e-mail, PAN and identity document — with RingPe and with the institutions I am linked to, so that my RingPe account and wallet can be opened and run. [Draft text: the final wording will be supplied by RingPe.]',
+    body: 'I agree to share my details — name, mobile number, date of birth, e-mail, PAN and identity document — with CampusOne and with the institutions I am linked to, so that my CampusOne account and wallet can be opened and run. [Draft text: the final wording will be supplied by CampusOne.]',
     draft: true,
     active: false,
   },
@@ -183,7 +183,7 @@ export const CONSENT_DOCUMENTS: readonly ConsentDocument[] = [
     kind: 'TERMS',
     version: '2026.10-draft1',
     title: 'Terms and conditions',
-    body: 'By creating a RingPe account I accept the RingPe terms and conditions and privacy policy. [Draft text: the final terms will be supplied by RingPe.]',
+    body: 'By creating a CampusOne account I accept the CampusOne terms and conditions and privacy policy. [Draft text: the final terms will be supplied by CampusOne.]',
     draft: true,
     active: false,
   },

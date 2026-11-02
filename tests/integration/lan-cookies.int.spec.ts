@@ -117,7 +117,7 @@ describe.skipIf(!adminUrl)('console sessions on a plain-HTTP LAN server', () => 
       const r = request(h.app)
         .put('/api/v1/me/language')
         .set('Cookie', cookies)
-        .set('X-RingPe-Surface', 'console');
+        .set('X-CampusOne-Surface', 'console');
       return (header ? r.set('X-CSRF-Token', header) : r).send({ lang: 'kn' });
     };
     expect((await lang()).status).toBe(403);

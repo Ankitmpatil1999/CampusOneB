@@ -13,7 +13,7 @@ const env = {
   HTTP_PORT: String(port),
   HTTP_HOST: '127.0.0.1',
   LOG_LEVEL: 'warn',
-  DATABASE_URL: process.env.DATABASE_URL ?? 'mysql://smoke:smoke@127.0.0.1:3306/ringpe_smoke',
+  DATABASE_URL: process.env.DATABASE_URL ?? 'mysql://smoke:smoke@127.0.0.1:3306/campusone_smoke',
   HEALTH_CHECK_TIMEOUT_MS: '1500',
 };
 const child = spawn(process.execPath, ['dist/server.js'], {
@@ -86,9 +86,9 @@ try {
     check(
       'GET /metrics → request, payment-refusal and outbox metrics',
       metrics.status === 200 &&
-        metrics.body.includes('ringpe_http_request_duration_seconds') &&
-        metrics.body.includes('ringpe_payment_refusals_total') &&
-        /ringpe_outbox_oldest_pending_seconds \d/.test(metrics.body),
+        metrics.body.includes('campusone_http_request_duration_seconds') &&
+        metrics.body.includes('campusone_payment_refusals_total') &&
+        /campusone_outbox_oldest_pending_seconds \d/.test(metrics.body),
     );
   }
   const missing = await get('/api/v1/nothing-here');

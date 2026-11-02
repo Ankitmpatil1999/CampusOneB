@@ -1,4 +1,4 @@
--- RingPe RingPe database triggers: 17 triggers, generated from a migrated database by
+-- CampusOne CampusOne database triggers: 17 triggers, generated from a migrated database by
 -- scripts/export-triggers.ts. Do not edit by hand; the migrations (db/migrations) are the source.
 --
 -- Before running:
@@ -7,7 +7,7 @@
 --   * with binary logging on and a user without SUPER, set once as an administrator:
 --       SET GLOBAL log_bin_trust_function_creators = 1;
 --
--- Run (MySQL client):  mysql -u <user> -p <RingPe database, e.g. ringpe> < create-triggers.sql
+-- Run (MySQL client):  mysql -u <user> -p <CampusOne database, e.g. campusone> < create-triggers.sql
 -- MySQL Workbench:     open this file with that database selected and run it all (Ctrl+Shift+Enter).
 
 SET NAMES utf8mb4;

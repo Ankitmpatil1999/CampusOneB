@@ -10,7 +10,7 @@ import {
   requireTenant,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { TransportFeesService } from '../services/transport-fees.service';
 import type { TransportLiveService } from '../services/transport-live.service';
 import type { TransportService } from '../services/transport.service';

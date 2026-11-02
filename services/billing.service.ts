@@ -9,7 +9,7 @@ import type { Kysely } from 'kysely';
 import { INVOICE, LIMITS } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
 import type { MessageSender } from '../integrations/sms.provider';
-import type { Database, InvoiceStatusCode, InvoiceTrigger } from '../models/ringpe_models';
+import type { Database, InvoiceStatusCode, InvoiceTrigger } from '../models/campusone_models';
 import { billingRepository as repo } from '../repositories/billing.repository';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { plansRepository, type PlanTerms } from '../repositories/plans.repository';
@@ -234,7 +234,7 @@ export class BillingService {
     );
   }
 
-  // --- SAS-040 / SAS-041: RingPe's invoice and bank details -----------------------------------------
+  // --- SAS-040 / SAS-041: CampusOne's invoice and bank details -----------------------------------------
   async profile() {
     const p = await repo.profile(this.deps.db);
     if (!p) throw new NotFoundError();
@@ -551,7 +551,7 @@ export class BillingService {
       .send({
         to: primary.email,
         purpose: 'billing.invoice_issued',
-        text: `RingPe invoice ${invoiceNo} for ${inst.name}: ${formatInr(totalPaise)} (GST included), due on ${formatDate(dueOn)}.`,
+        text: `CampusOne invoice ${invoiceNo} for ${inst.name}: ${formatInr(totalPaise)} (GST included), due on ${formatDate(dueOn)}.`,
       })
       .catch((e: unknown) =>
         this.deps.loggers.app.warn('billing.invoice_email_failed', { error: String(e) }),

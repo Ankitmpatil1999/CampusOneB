@@ -5,7 +5,7 @@ import { billingController } from '../controllers/billing.controller';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   billingProfileInputSchema,
   billingProfileSchema,
@@ -56,7 +56,7 @@ defineRoute({
   method: 'get',
   path: '/api/v1/ops/billing-profile',
   summary:
-    "RingPe's invoice and bank details (legal name, GSTIN, address, SAC, payee account); example values until the client supplies them",
+    "CampusOne's invoice and bank details (legal name, GSTIN, address, SAC, payee account); example values until the client supplies them",
   tags,
   auth: 'home.view',
   responses: { 200: { description: 'Profile', schema: billingProfileSchema } },

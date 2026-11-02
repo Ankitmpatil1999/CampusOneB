@@ -14,7 +14,7 @@
  *   until one is chosen, Q17); the number is encrypted with a blind index (ADR-0012).
  *
  * - A correction goes to the member's school (its Institution Administrator decides it in the
- *   console approvals); an account without an institution profile goes to RingPe's back office.
+ *   console approvals); an account without an institution profile goes to CampusOne's back office.
  *
  * Not yet here, by phase: the transaction-PIN gate of RNG-IDN-112 arrives with the PIN (Phase 3).
  */
@@ -26,7 +26,7 @@ import {
   type MessageKey,
 } from '../config/registers';
 import type { BankVerifier } from '../integrations/bank-verify.provider';
-import type { AccountPiiField, Database } from '../models/ringpe_models';
+import type { AccountPiiField, Database } from '../models/campusone_models';
 import { accountRepository, referenceRepository } from '../repositories/account.repository';
 import { fileRepository } from '../repositories/file.repository';
 import { personalRepository } from '../repositories/personal.repository';
@@ -483,7 +483,7 @@ export class PersonalDetailsService {
       await this.deps.db.transaction().execute(async (trx) => {
         // The member's school decides (prototype m.kyc: "the school approves it") — the session's
         // own when the account belongs to several (client 2026-10-27); an account without an
-        // institution profile goes to RingPe's back office.
+        // institution profile goes to CampusOne's back office.
         const session = p.institutionId && isUuid(p.institutionId) ? p.institutionId : null;
         let q = trx
           .selectFrom('member_profiles as m')

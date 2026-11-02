@@ -5,7 +5,7 @@
  * when the logo is replaced, so it can be.
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { binToUuid, uuidToBin } from '../utils/idGenerator';
 
 type Db = Kysely<Database> | Transaction<Database>;

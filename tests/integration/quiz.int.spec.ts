@@ -24,7 +24,7 @@ describe.skipIf(!adminUrl)('financial literacy quiz on real MySQL', () => {
   const post = (path: string, auth: Auth, body: object = {}) =>
     request(f.app).post(`/api/v1${path}`).set(auth).set('Idempotency-Key', randomUUID()).send(body);
   const get = (path: string, auth: Auth) => request(f.app).get(`/api/v1${path}`).set(auth);
-  const ops = (path: string) => get(path, f.ops).set('X-RingPe-Surface', 'ops');
+  const ops = (path: string) => get(path, f.ops).set('X-CampusOne-Surface', 'ops');
   const correctOf = async (questionId: string) =>
     (
       await f.t.db
@@ -289,7 +289,7 @@ describe.skipIf(!adminUrl)('financial literacy quiz on real MySQL', () => {
 
   it('reports participation to the console and is switched off by the school', async () => {
     const r = await get('/console/quiz/participation', f.school.con).set(
-      'X-RingPe-Surface',
+      'X-CampusOne-Surface',
       'console',
     );
     expect(r.status, JSON.stringify(r.body)).toBe(200);
@@ -320,7 +320,7 @@ describe.skipIf(!adminUrl)('financial literacy quiz on real MySQL', () => {
       .execute();
     const support = await f.signedIn('ops', acct.email);
     const refused = await get('/ops/quiz/leaderboard?reason=Just%20looking%20around', support).set(
-      'X-RingPe-Surface',
+      'X-CampusOne-Surface',
       'ops',
     );
     expect(refused.status).toBe(403);

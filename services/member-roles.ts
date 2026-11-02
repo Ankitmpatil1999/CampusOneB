@@ -9,7 +9,7 @@ import type {
   MemberProfilesTable,
   PlatformAccountsTable,
   UserTypeCategory,
-} from '../models/ringpe_models';
+} from '../models/campusone_models';
 import { CustomAPIError, NotFoundError } from '../utils/CustomAPIError';
 import { isUuid, uuidToBin } from '../utils/idGenerator';
 import type { Principal } from '../utils/principal';

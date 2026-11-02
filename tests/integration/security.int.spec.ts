@@ -648,13 +648,13 @@ describe.skipIf(!adminUrl)('Phase 2.1 building blocks on real MySQL', () => {
       const cookies = `${names.refresh}=${w.refreshToken}; ${names.csrf}=${csrf}`;
       const noCsrf = await request(app)
         .post('/api/v1/auth/token/refresh')
-        .set('X-RingPe-Surface', 'console')
+        .set('X-CampusOne-Surface', 'console')
         .set('Cookie', cookies)
         .send({});
       expect(noCsrf.status).toBe(403);
       const web = await request(app)
         .post('/api/v1/auth/token/refresh')
-        .set('X-RingPe-Surface', 'console')
+        .set('X-CampusOne-Surface', 'console')
         .set('X-CSRF-Token', csrf)
         .set('Cookie', cookies)
         .send({});

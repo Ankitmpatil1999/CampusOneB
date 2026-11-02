@@ -18,7 +18,7 @@ describe.skipIf(!adminUrl)('console reporting on real MySQL', () => {
   const post = (path: string, auth: Auth, body: object = {}) =>
     request(f.app).post(`/api/v1${path}`).set(auth).set('Idempotency-Key', randomUUID()).send(body);
   const get = (path: string, auth: Auth = con) =>
-    request(f.app).get(`/api/v1${path}`).set(auth).set('X-RingPe-Surface', 'console');
+    request(f.app).get(`/api/v1${path}`).set(auth).set('X-CampusOne-Surface', 'console');
 
   beforeAll(async () => {
     f = await schoolFixture('Reports School');

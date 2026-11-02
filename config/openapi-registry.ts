@@ -116,7 +116,7 @@ export function buildOpenApiDocument(info: { version: string }): Record<string, 
       operationId: r.operationSuffix ? `${r.id}-${r.operationSuffix}` : r.id,
       summary: r.summary,
       tags: r.tags,
-      'x-ringpe-auth': r.auth,
+      'x-campusone-auth': r.auth,
       responses,
     };
     if (r.auth !== 'public' && r.auth !== 'internal')
@@ -168,7 +168,7 @@ export function buildOpenApiDocument(info: { version: string }): Record<string, 
   return {
     openapi: '3.1.1',
     info: {
-      title: 'RingPe API',
+      title: 'CampusOne API',
       version: info.version,
       description:
         'Campus wallets, payments and school management. Errors use RFC 9457 problem+json; money is a decimal string with "currency": "INR".',

@@ -7,7 +7,7 @@
  */
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import type { CfEntityCode, Database } from '../models/ringpe_models';
+import type { CfEntityCode, Database } from '../models/campusone_models';
 import { CustomAPIError } from '../utils/CustomAPIError';
 import { PATTERNS, type FieldError } from '../utils/validators';
 import { binToUuid } from '../utils/idGenerator';

@@ -10,7 +10,7 @@ import {
   requireTenant,
 } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { singleFileUpload, uploadErrors } from '../controllers/file.controller';
 import { FeeCollectionService } from '../services/fee-collection.service';
 import type { FeePaymentsService } from '../services/fee-payments.service';
@@ -882,7 +882,7 @@ export const feeCashSchema = z
       .max(30, { message: 'VALIDATION.FORMAT' })
       .regex(/^[A-Za-z0-9/-]*$/, { message: 'VALIDATION.FORMAT' })
       .nullish()
-      .describe('The counterfoil book’s number, unique in the school; empty: RingPe numbers it'),
+      .describe('The counterfoil book’s number, unique in the school; empty: CampusOne numbers it'),
     paidBy: z
       .string({ message: 'VALIDATION.REQUIRED' })
       .trim()
@@ -958,7 +958,7 @@ fee({
   method: 'post',
   path: '/api/v1/console/fee-records/{recordId}/cash',
   summary:
-    'Collect an instalment’s outstanding amount (with any late fine) in cash, recorded as the admission fee’s (client 2026-10-22): the day received (not in the future), who paid and the counterfoil’s receipt number (unique; empty: RingPe numbers it — 409 FEE.RECEIPT_TAKEN when used); the record is paid; any auto-debit waiting and the record’s open payment links end',
+    'Collect an instalment’s outstanding amount (with any late fine) in cash, recorded as the admission fee’s (client 2026-10-22): the day received (not in the future), who paid and the counterfoil’s receipt number (unique; empty: CampusOne numbers it — 409 FEE.RECEIPT_TAKEN when used); the record is paid; any auto-debit waiting and the record’s open payment links end',
   auth: 'fees.collect',
   idempotent: 'required',
   request: feeCashSchema,
@@ -984,7 +984,7 @@ fee({
   method: 'post',
   path: '/api/v1/console/fee-records/{recordId}/payment-requests',
   summary:
-    'A payment link (channel LINK: sent to the student and every parent — by SMS and e-mail through the school’s channels, and in the app to those with a RingPe account; client 2026-10-22) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days (one day)',
+    'A payment link (channel LINK: sent to the student and every parent — by SMS and e-mail through the school’s channels, and in the app to those with a CampusOne account; client 2026-10-22) or a QR code (channel QR: an SVG of the same link) for an instalment’s outstanding amount; the family pays on the school’s payment page through the school’s gateway. Valid fee.payLink.days (one day)',
   auth: 'fees.collect',
   idempotent: 'required',
   request: feePayRequestSchema,
@@ -1003,7 +1003,7 @@ fee({
             .object({
               mobiles: z.array(z.string()),
               emails: z.array(z.string()),
-              inApp: z.number().int().describe('RingPe accounts notified in the app'),
+              inApp: z.number().int().describe('CampusOne accounts notified in the app'),
             })
             .optional()
             .describe('Where the link was sent (masked); an empty list: not sent that way'),

@@ -11,7 +11,7 @@
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { COMM_EVENTS, commEvent, type CommEventKey } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
   CustomAPIError,

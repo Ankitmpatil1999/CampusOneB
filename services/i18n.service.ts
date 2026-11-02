@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import type { Kysely } from 'kysely';
 import { englishBundle } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 export interface LanguageBundle {
   readonly etag: string;

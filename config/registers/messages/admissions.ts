@@ -334,7 +334,7 @@ export const ADMISSION_MESSAGES = [
   n(
     'ADM.CONSENT_REQUIRED',
     422,
-    'Agree that the information collected will be used to register your account in RingPe.',
+    'Agree that the information collected will be used to register your account in CampusOne.',
     ['19.2', 'client 2026-10-12'],
   ),
   n(

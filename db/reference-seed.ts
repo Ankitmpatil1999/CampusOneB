@@ -111,10 +111,10 @@ export function renderReferenceSeedSql(): string {
     `INSERT INTO plan_version_modules (plan_version_id, module_key) SELECT v.id, m.k FROM plan_versions v JOIN plans p ON p.id = v.plan_id JOIN (${union(p.modules.map((m) => `SELECT ${q(m)} AS k`))}) m WHERE p.code = ${q(p.code)} AND v.version = 1 AND NOT EXISTS (SELECT 1 FROM plan_version_modules x WHERE x.plan_version_id = v.id) ON DUPLICATE KEY UPDATE plan_version_modules.module_key = plan_version_modules.module_key;`,
     `UPDATE plans p JOIN plan_versions v ON v.plan_id = p.id AND v.version = 1 SET p.current_version_id = v.id WHERE p.code = ${q(p.code)} AND p.current_version_id IS NULL;`,
   ]);
-  // RingPe's invoice and bank details: example values until the client supplies them (Q25, Q26;
+  // CampusOne's invoice and bank details: example values until the client supplies them (Q25, Q26;
   // client 2026-10-03 "take as example"). Written once; operators' edits are never overwritten.
   const billingProfile = [
-    `INSERT INTO platform_billing_profile (id, legal_name, gstin, address, state_code, sac_code, payee_name, payee_bank, payee_account_no, payee_ifsc, is_example) VALUES (1, 'RingPe Technologies Private Limited (example)', '29AAACR0000A1Z5', 'Example address, 2nd Floor, MG Road, Bengaluru, Karnataka 560001', '29', '998314', 'RingPe Technologies Private Limited (example)', 'Example Bank', '000000000000', 'EXMP0000001', TRUE) ON DUPLICATE KEY UPDATE platform_billing_profile.id = platform_billing_profile.id;`,
+    `INSERT INTO platform_billing_profile (id, legal_name, gstin, address, state_code, sac_code, payee_name, payee_bank, payee_account_no, payee_ifsc, is_example) VALUES (1, 'CampusOne Technologies Private Limited (example)', '29AAACR0000A1Z5', 'Example address, 2nd Floor, MG Road, Bengaluru, Karnataka 560001', '29', '998314', 'CampusOne Technologies Private Limited (example)', 'Example Bank', '000000000000', 'EXMP0000001', TRUE) ON DUPLICATE KEY UPDATE platform_billing_profile.id = platform_billing_profile.id;`,
   ];
   // Machine drafts (client 2026-10-02); a reviewed or edited text (HUMAN) is kept.
   // 500 rows a statement: one statement per row made seeding take minutes.
@@ -150,7 +150,7 @@ export function renderReferenceSeedSql(): string {
     '-- plans (FR-SAS-05; prices wait for Q14 M14)',
     ...plans,
     '',
-    '-- RingPe invoice and bank details (example values until Q25/Q26 are answered)',
+    '-- CampusOne invoice and bank details (example values until Q25/Q26 are answered)',
     ...billingProfile,
     '',
     '-- machine-draft translations (client 2026-10-02; reviewed in the back office)',

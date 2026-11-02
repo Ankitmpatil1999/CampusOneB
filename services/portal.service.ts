@@ -2,9 +2,9 @@
  * The customer portal (SRS 4.10, FR-SAS-04…11, FR-INS-01…03; SAS-001…021; prototype s.*): an
  * institution signs itself up, finishes its onboarding checklist, goes live on a trial or with the
  * first invoice, changes plan, pays (bank transfer until the gateway, Q17), reads its notices and
- * asks RingPe to change its name or address.
+ * asks CampusOne to change its name or address.
  *
- * - Sign-up uses the administrator's own RingPe account (the one they use in the app), verified by
+ * - Sign-up uses the administrator's own CampusOne account (the one they use in the app), verified by
  *   a code to its mobile; it may already belong to other institutions (client 2026-10-27), but a
  *   back-office account is refused. The page is public, so nothing names another institution.
  * - The portal reuses the operator's and the console's rules: registration (INS-001), checklist
@@ -22,7 +22,7 @@ import {
   type MessageKey,
 } from '../config/registers';
 import type { Loggers } from '../controllers/logger';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository as repo } from '../repositories/institutions.repository';
 import { raiseApproval } from './approvals.service';
 import type { AcademicsService } from './academics.service';
@@ -154,7 +154,7 @@ export class PortalService {
 
   // --- SAS-002 / SAS-003 / SAS-051…053 ---------------------------------------------------------------
   /**
-   * The RingPe account of a mobile number, if any. A number without an account may sign up here
+   * The CampusOne account of a mobile number, if any. A number without an account may sign up here
    * (client 2026-10-06: the account no longer has to come from the app first), and so may one that
    * already belongs to an institution (client 2026-10-27: a person may belong to several); a
    * back-office account is refused.
@@ -173,7 +173,7 @@ export class PortalService {
     return account;
   }
 
-  /** The administrator's mobile (an existing RingPe account or a new one): a code by SMS. */
+  /** The administrator's mobile (an existing CampusOne account or a new one): a code by SMS. */
   async signupOtp(input: { mobile: string }) {
     const account = await this.signupAccount(input.mobile);
     const challenge = await this.deps.otp.issue({
@@ -251,7 +251,7 @@ export class PortalService {
   }
 
   /**
-   * SAS-051: the administrator's RingPe account made on the customer site — name, e-mail and
+   * SAS-051: the administrator's CampusOne account made on the customer site — name, e-mail and
    * password for the verified mobile (client 2026-10-06). The app's identity details stay optional.
    */
   async createAccount(input: {
@@ -530,7 +530,7 @@ export class PortalService {
       details: `${row.city}${row.board ? ` · ${row.board}` : ''}`,
       bank: row.corporate_code
         ? `Corporate code ${row.corporate_code}${row.pool_account_ref ? ` · ${row.pool_account_ref}` : ''}`
-        : 'Being set up by RingPe',
+        : 'Being set up by CampusOne',
       toggles: `${on} of ${FEATURES.length} features on`,
       usertypes: `${new Set(types.map((t) => t.id)).size} user types · ${types.filter((t) => t.dep !== null).length} departments`,
       year: year ? `${year.label}` : '',
@@ -543,7 +543,7 @@ export class PortalService {
         key: c.key,
         label: c.label,
         required: c.required,
-        byRingPe: c.key === 'bank' || c.key === 'details',
+        byCampusOne: c.key === 'bank' || c.key === 'details',
         done: Boolean(d),
         doneAt: iso(d?.done_at),
         summary: d?.note ?? summary[c.key] ?? '',
@@ -749,7 +749,7 @@ export class PortalService {
     return this.deps.billing.document(invoiceId, row.id);
   }
 
-  /** Bank transfer reported (RingPe confirms it); online payment arrives with the gateway (Q17). */
+  /** Bank transfer reported (CampusOne confirms it); online payment arrives with the gateway (Q17). */
   async pay(
     p: Principal,
     invoiceId: string,
@@ -785,7 +785,7 @@ export class PortalService {
         to: h.to_status,
         reason: h.reason,
         at: iso(h.occurred_at)!,
-        by: personName(h.first_name, h.last_name) || 'RingPe',
+        by: personName(h.first_name, h.last_name) || 'CampusOne',
       })),
     };
   }
@@ -865,7 +865,7 @@ export class PortalService {
     return this.details(p);
   }
 
-  /** Name, address or board: RingPe checks name and address stay unique, then changes them. */
+  /** Name, address or board: CampusOne checks name and address stay unique, then changes them. */
   async requestDetailsChange(
     p: Principal,
     input: { field: 'NAME' | 'ADDRESS' | 'BOARD'; value: string; reason: string },

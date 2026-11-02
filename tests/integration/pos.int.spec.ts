@@ -584,8 +584,8 @@ describe.skipIf(!adminUrl)('canteen point of sale on real MySQL', () => {
       const r = request(f.app)
         [method](path)
         .set('Authorization', `Bearer ${tok.body.access_token as string}`)
-        .set('X-RingPe-Timestamp', String(ts))
-        .set('X-RingPe-Signature', `v1=${sig}`);
+        .set('X-CampusOne-Timestamp', String(ts))
+        .set('X-CampusOne-Signature', `v1=${sig}`);
       return body ? r.set('Content-Type', 'application/json').send(raw) : r;
     };
 

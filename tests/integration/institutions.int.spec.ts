@@ -13,7 +13,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 
 describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
   let t: TestDatabase;
@@ -296,7 +296,7 @@ describe.skipIf(!adminUrl)('institutions on real MySQL', () => {
   });
 
   it('registers for an administrator without an account yet, who claims it on sign-in', async () => {
-    // Client 2026-10-06: the back office may register before the administrator's RingPe account
+    // Client 2026-10-06: the back office may register before the administrator's CampusOne account
     // exists; with the password setting off, the institution waits for the e-mail.
     await passwordShown(0);
     const email = `kavya.${randomInt(0, 1e9)}@hps.example.in`;

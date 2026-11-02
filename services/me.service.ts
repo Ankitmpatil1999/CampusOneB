@@ -7,7 +7,7 @@
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { LIMITS } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { accessRepository } from '../repositories/access.repository';
 import { accountRepository, referenceRepository } from '../repositories/account.repository';
 import { kindOf } from '../repositories/members.repository';

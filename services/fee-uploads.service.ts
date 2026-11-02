@@ -15,7 +15,7 @@
 import { sql, type Kysely } from 'kysely';
 import { notifyFeeAssigned } from './fee-notices.service';
 import { LIMITS, renderMessage, type MessageKey } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import { CustomAPIError, NotFoundError } from '../utils/CustomAPIError';
 import { parseCsv, toCsv } from '../utils/csv';
@@ -142,7 +142,7 @@ export class FeeUploadsService {
     const inst = await this.own(p);
     const y = await this.currentYear(this.deps.db, inst.id);
     return {
-      fileName: 'ringpe-fee-sheet-template.csv',
+      fileName: 'campusone-fee-sheet-template.csv',
       csv: toCsv([
         [...COLUMNS],
         [

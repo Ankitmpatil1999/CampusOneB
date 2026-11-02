@@ -1,7 +1,7 @@
 /**
  * A staff member onboarded as the console's Staff tab does (IDN-053). Single onboarding is for
  * students only (client 2026-10-19), so teachers, principals and every other role the suites need
- * come this way: the user type's first department, linked to the RingPe account of the mobile when
+ * come this way: the user type's first department, linked to the CampusOne account of the mobile when
  * there is one (else an account is made, with a temporary password).
  */
 import { randomInt, randomUUID } from 'node:crypto';

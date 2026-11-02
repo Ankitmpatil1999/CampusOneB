@@ -23,7 +23,7 @@ export interface Metrics {
 
 export function createMetrics(opts: { prefix?: string; defaultMetrics?: boolean } = {}): Metrics {
   const registry = new Registry();
-  const prefix = opts.prefix ?? 'ringpe_';
+  const prefix = opts.prefix ?? 'campusone_';
   if (opts.defaultMetrics ?? true) collectDefaultMetrics({ register: registry, prefix });
 
   const httpDuration = new Histogram({

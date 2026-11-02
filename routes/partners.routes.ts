@@ -4,7 +4,7 @@ import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import {
   apiClientCreatedSchema,
   apiClientImportSchema,
@@ -57,7 +57,7 @@ partner({
   method: 'post',
   path: '/api/v1/partners/bank/va/validate',
   summary:
-    'Sponsor bank, before crediting: is the virtual account ours and able to take money? Bearer token with va.validate, X-RingPe-Timestamp and X-RingPe-Signature (v1=HMAC-SHA256(secret, "<timestamp>.<raw body>")), allowed address; once per requestId',
+    'Sponsor bank, before crediting: is the virtual account ours and able to take money? Bearer token with va.validate, X-CampusOne-Timestamp and X-CampusOne-Signature (v1=HMAC-SHA256(secret, "<timestamp>.<raw body>")), allowed address; once per requestId',
   auth: 'partner (signed): va.validate',
   request: bankCreditSchema,
   responses: { 200: { description: 'Answer', schema: bankAnswerSchema } },

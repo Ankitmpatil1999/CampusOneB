@@ -22,7 +22,7 @@
  *   staff member pay them from the wallet in the app, or at the office in cash, as any fee.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, TransportFeeMode, TransportFeeRange } from '../models/ringpe_models';
+import type { Database, TransportFeeMode, TransportFeeRange } from '../models/campusone_models';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { formatInr, istBusinessDate } from '../utils/format';
 import { isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

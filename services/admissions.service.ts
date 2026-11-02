@@ -31,7 +31,7 @@ import type {
   AdmissionPaymentStatus,
   ApplicationStatus,
   Database,
-} from '../models/ringpe_models';
+} from '../models/campusone_models';
 import { institutionsRepository } from '../repositories/institutions.repository';
 import {
   ID_HOLDERS,
@@ -90,7 +90,7 @@ import {
   type AdmissionPerson,
   type IssuedLogin,
 } from './admission-accounts';
-import type { AdmissionAccountPerson } from '../models/ringpe_models';
+import type { AdmissionAccountPerson } from '../models/campusone_models';
 import { academicsRepository } from '../repositories/academics.repository';
 import { userTypesRepository } from '../repositories/institution-setup.repository';
 import { membersRepository } from '../repositories/members.repository';
@@ -315,19 +315,19 @@ const WHO: Record<AdmissionAccountPerson, string> = {
 };
 
 /**
- * The login details of a family's RingPe accounts (client 2026-10-23). A number already registered
- * with RingPe signs in with its existing login and creates no new account (client 2026-10-27).
+ * The login details of a family's CampusOne accounts (client 2026-10-23). A number already registered
+ * with CampusOne signs in with its existing login and creates no new account (client 2026-10-27).
  */
 export function loginText(logins: readonly IssuedLogin[]) {
   const lines = logins.map((l) =>
     l.password
       ? `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile}, one-time password ${l.password}`
-      : `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile} is already registered with RingPe — sign in with your existing login (this mobile number and your password). Please don’t create a new account.`,
+      : `• ${l.name} (${WHO[l.person]}): mobile ${l.mobile} is already registered with CampusOne — sign in with your existing login (this mobile number and your password). Please don’t create a new account.`,
   );
   return [
     logins.some((l) => l.password)
-      ? 'Your RingPe login details. Sign in to the RingPe app with the mobile number and the one-time password; you will then choose your own password (and give your PAN and Aadhaar number if we don’t have them).'
-      : 'Your RingPe login details. Sign in to the RingPe app with your existing login.',
+      ? 'Your CampusOne login details. Sign in to the CampusOne app with the mobile number and the one-time password; you will then choose your own password (and give your PAN and Aadhaar number if we don’t have them).'
+      : 'Your CampusOne login details. Sign in to the CampusOne app with your existing login.',
     '',
     ...lines,
   ].join('\n');
@@ -399,7 +399,7 @@ export class AdmissionsService {
       readonly otp: OtpService;
       readonly flows: FlowTokens;
       readonly links: AdmissionLinksService;
-      /** RingPe's own gateway (PAYMENT_GATEWAY_MODE), or the test checkout. */
+      /** CampusOne's own gateway (PAYMENT_GATEWAY_MODE), or the test checkout. */
       readonly gateway: PaymentGateway;
       /** Each school's own gateways (client 2026-10-09). */
       readonly gateways?: PaymentGatewaysService;
@@ -638,7 +638,7 @@ export class AdmissionsService {
         return adm && !adm.paid ? toMoneyDto(adm.configured) : null;
       })(),
       declaration: r.declared_at ? { at: iso(r.declared_at), by: r.declared_by } : null,
-      // The family agreed that what is collected registers their RingPe account (client 2026-10-12).
+      // The family agreed that what is collected registers their CampusOne account (client 2026-10-12).
       registrationConsentAt: iso(r.registration_consent_at),
       submittedAt: iso(r.submitted_at),
       decidedAt: iso(r.decided_at),
@@ -1301,7 +1301,7 @@ export class AdmissionsService {
     logins: readonly IssuedLogin[] = [],
   ) {
     if (event === 'SUBMITTED') {
-      // The people on the form get their RingPe accounts now (client 2026-10-23).
+      // The people on the form get their CampusOne accounts now (client 2026-10-23).
       await this.syncAccounts(institutionId, id);
       try {
         const row = await this.lockless(institutionId, id);
@@ -1414,7 +1414,7 @@ export class AdmissionsService {
 
   /**
    * The login details of an existing student's family (the existing-students upload, client
-   * 2026-10-23): no "approved" notice, the RingPe accounts only.
+   * 2026-10-23): no "approved" notice, the CampusOne accounts only.
    */
   private async sendLogins(institutionId: string, id: string, logins: readonly IssuedLogin[]) {
     if (!logins.length || !this.deps.email) return;
@@ -1432,13 +1432,13 @@ export class AdmissionsService {
         to: mail.to,
         cc: mail.cc,
         purpose: 'admission.logins',
-        text: `${inst?.name ?? 'The school'}: ${child} and the family are now on RingPe, the school's app.\n\n${loginText(logins)}`,
+        text: `${inst?.name ?? 'The school'}: ${child} and the family are now on CampusOne, the school's app.\n\n${loginText(logins)}`,
         highlight: [child, ...loginDetails(logins)],
         ...brandFields(await schoolBrand(this.deps.db, this.deps.files, institutionId)),
         log: {
           institutionId,
           kind: 'TRANSACTIONAL',
-          subject: 'Your RingPe login details',
+          subject: 'Your CampusOne login details',
           refType: 'admission_application',
           refId: id,
         },
@@ -1448,7 +1448,7 @@ export class AdmissionsService {
     }
   }
 
-  // --- RingPe accounts of the people on an application (client 2026-10-23) ----------------------------
+  // --- CampusOne accounts of the people on an application (client 2026-10-23) ----------------------------
   /** A person's Aadhaar number or PAN as the application holds it, in full; null when none. */
   private heldId(
     r: Awaited<ReturnType<AdmissionsService['lockless']>>,
@@ -1473,7 +1473,7 @@ export class AdmissionsService {
     return null;
   }
 
-  /** The people on an application with what their RingPe accounts take. */
+  /** The people on an application with what their CampusOne accounts take. */
   private peopleOf(r: Awaited<ReturnType<AdmissionsService['lockless']>>): AdmissionPerson[] {
     const d = this.dataOf(r);
     const people: AdmissionPerson[] = [
@@ -2813,7 +2813,7 @@ export class AdmissionsService {
    */
   /**
    * The gateway for a new payment: the test checkout in test mode; else the school's default
-   * gateway; else RingPe's own (setting pg.platformFallback); else none.
+   * gateway; else CampusOne's own (setting pg.platformFallback); else none.
    */
   /** The gateway a new payment of the school is taken with (gateway-payments.ts). */
   private gatewayFor(institutionId: string) {
@@ -2856,7 +2856,7 @@ export class AdmissionsService {
     signature: string | undefined;
     eventId: string | undefined;
     ip: string | undefined;
-    /** A school gateway's webhook address carries its id; none = RingPe's own gateway. */
+    /** A school gateway's webhook address carries its id; none = CampusOne's own gateway. */
     gatewayPublicId?: string | undefined;
   }) {
     let gatewayId: string | null = null;
@@ -3364,7 +3364,7 @@ export class AdmissionsService {
 
   /**
    * What an edit of an admitted record may not change (CR-06): the student's name, gender and date
-   * of birth, each person's name and mobile (a parent's mobile is their RingPe account), the primary
+   * of birth, each person's name and mobile (a parent's mobile is their CampusOne account), the primary
    * contact, and every Aadhaar and PAN number — those are fixed through a correction request. Each
    * person on the record stays on it. One with nothing stored — an older bulk upload's missing last
    * name, or a parent it never had — is filled once (client 2026-10-22); the middle name is not.
@@ -3484,7 +3484,7 @@ export class AdmissionsService {
    * refusal leaves nothing behind. Client 2026-10-27: the primary contact's mobile is verified first,
    * and only that contact becomes a Parent member linked to the student — their existing profile here
    * when they have one (a sibling's parent, a teacher), and whatever school they belong to besides
-   * (BR-01 lifted). The other parents on the form keep their RingPe accounts, with no profile here.
+   * (BR-01 lifted). The other parents on the form keep their CampusOne accounts, with no profile here.
    */
   async approve(
     p: Principal,
@@ -3535,7 +3535,7 @@ export class AdmissionsService {
     }
     // The verified primary contact only (client 2026-10-27): linked without the name match a
     // sibling's parent needs, as the code proved the number is theirs. A contact with another
-    // country's number has no RingPe account, so no parent is linked.
+    // country's number has no CampusOne account, so no parent is linked.
     const primary = this.guardiansOf(this.dataOf(r).parents).find(
       (g) => g.mobile === r.primary_mobile,
     );
@@ -3711,7 +3711,7 @@ export class AdmissionsService {
           ? 'No'
           : '';
     return {
-      fileName: 'ringpe-existing-students-template.csv',
+      fileName: 'campusone-existing-students-template.csv',
       csv: toCsv([
         [
           ...IMPORT_COLUMNS.map(headerOf),
@@ -3961,7 +3961,7 @@ export class AdmissionsService {
       const checked = await this.sheetState(db, i.id, read.app, { childrenOptional: true });
       for (const e of checked.errors) err(columnOf(e.field, form), e.code as MessageKey, e.params);
       if (checked.state) {
-        // The parents who get a RingPe account with the student, as on an approval.
+        // The parents who get a CampusOne account with the student, as on an approval.
         const guardians = this.guardiansOf(checked.state.data.parents);
         if (guardians.length && !parentType) err('Primary contact', 'ADM.PARENT_TYPE_MISSING');
         // A parent who belongs to another school as well is no longer refused: one person, many
@@ -4059,7 +4059,7 @@ export class AdmissionsService {
           return app;
         });
         // No approval message to the family: the student is already at the school (client
-        // 2026-10-21). Their RingPe accounts, and the login details (client 2026-10-23).
+        // 2026-10-21). Their CampusOne accounts, and the login details (client 2026-10-23).
         await this.syncAccounts(i.id, done.id);
         await this.sendLogins(i.id, done.id, await this.logins(i.id, done.id));
         report.push({
@@ -4129,7 +4129,7 @@ export class AdmissionsService {
       relation: 'FATHER' | 'MOTHER' | 'GUARDIAN',
     ) => {
       if (!who?.mobile || guardians.some((g) => g.mobile === who.mobile)) return;
-      // A RingPe account is keyed on an Indian mobile: a parent with a number from another
+      // A CampusOne account is keyed on an Indian mobile: a parent with a number from another
       // country (client 2026-10-13) stays on the application, without an account for now.
       if (!PATTERNS.mobile.test(who.mobile)) return;
       const n = splitName(title(who.name));
@@ -4640,7 +4640,7 @@ export class AdmissionsService {
   /**
    * The payment link to the family (client 2026-10-22): by SMS and e-mail to the parents on the
    * application — and the student, once a member — through the school's channels, and in the app to
-   * those of them with a RingPe account at the school. Best effort: the link is shown either way and
+   * those of them with a CampusOne account at the school. Best effort: the link is shown either way and
    * the communication log records each send. Where it went, masked.
    */
   private async sendPayLink(
@@ -4675,7 +4675,7 @@ export class AdmissionsService {
       ),
     );
     // In the app: the student and their parents once members, and any parent whose mobile is a
-    // RingPe account at the school already (a brother or sister studies there).
+    // CampusOne account at the school already (a brother or sister studies there).
     const accounts = new Set<string>(
       r.member_profile_id
         ? ((await familyAccountsByStudent(db, [String(r.member_profile_id)])).get(
@@ -4814,7 +4814,7 @@ export class AdmissionsService {
       y += 22;
     }
     doc.line(48, y + 4, 547, y + 4, { color: [220, 226, 230] });
-    doc.text(48, y + 26, 'This receipt is generated by RingPe and needs no signature.', {
+    doc.text(48, y + 26, 'This receipt is generated by CampusOne and needs no signature.', {
       size: 8,
       color: [120, 130, 140],
     });

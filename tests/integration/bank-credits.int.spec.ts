@@ -18,7 +18,7 @@ import { buildHttpApp, codeOf } from './http-app';
 import { newPublicIdPair, uuidToBin } from '../../utils/idGenerator';
 import { hashSecret } from '../../utils/password';
 
-const PASSWORD = 'Ringpe@2026';
+const PASSWORD = 'CampusOne@2026';
 const mobile = () => `9${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`;
 
 describe.skipIf(!adminUrl)('partner clients and bank credits on real MySQL', () => {
@@ -130,8 +130,8 @@ describe.skipIf(!adminUrl)('partner clients and bank credits on real MySQL', () 
     return request(app)
       .post(`/api/v1/partners/bank/va/${endpoint}`)
       .set('Authorization', `Bearer ${bearer}`)
-      .set('X-RingPe-Timestamp', String(ts))
-      .set('X-RingPe-Signature', `v1=${sig}`)
+      .set('X-CampusOne-Timestamp', String(ts))
+      .set('X-CampusOne-Signature', `v1=${sig}`)
       .set('Content-Type', 'application/json')
       .send(raw);
   };

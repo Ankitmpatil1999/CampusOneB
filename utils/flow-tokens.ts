@@ -42,14 +42,14 @@ export function createFlowTokens(
   now: () => Date = () => new Date(),
 ): FlowTokens {
   const key = (p: FlowPurpose) => new Uint8Array(cipher.secret(`flow:${p}`));
-  const audience = (p: FlowPurpose) => `ringpe:${p}`;
+  const audience = (p: FlowPurpose) => `campusone:${p}`;
   return {
     async issue(purpose, claims, ttlSeconds) {
       const iat = Math.floor(now().getTime() / 1000);
       const exp = iat + ttlSeconds;
       const token = await new SignJWT(claims)
         .setProtectedHeader({ alg: 'HS256' })
-        .setIssuer('ringpe')
+        .setIssuer('campusone')
         .setAudience(audience(purpose))
         .setIssuedAt(iat)
         .setExpirationTime(exp)
@@ -59,7 +59,7 @@ export function createFlowTokens(
     async verify(purpose, token) {
       try {
         const { payload } = await jwtVerify(token, key(purpose), {
-          issuer: 'ringpe',
+          issuer: 'campusone',
           audience: audience(purpose),
           algorithms: ['HS256'],
           currentDate: now(),

@@ -3,7 +3,7 @@
  * is a guarded update. Callers pass the transaction so a sign-in or rotation is all-or-nothing.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, SurfaceCode } from '../models/ringpe_models';
+import type { Database, SurfaceCode } from '../models/campusone_models';
 
 type Db = Kysely<Database> | Transaction<Database>;
 

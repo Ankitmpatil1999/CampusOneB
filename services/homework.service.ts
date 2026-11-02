@@ -13,7 +13,7 @@
  *   the due time.
  */
 import { sql, type Kysely, type Transaction } from 'kysely';
-import type { Database, HomeworkKind } from '../models/ringpe_models';
+import type { Database, HomeworkKind } from '../models/campusone_models';
 import { CustomAPIError, PreconditionFailedError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';
 import { binToUuid, isUuid, newPublicIdPair, uuidToBin } from '../utils/idGenerator';

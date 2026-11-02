@@ -18,11 +18,11 @@ describe('operational metrics', () => {
     opsMetrics.jobRun('settlement-run', 'FAILED', 2.5);
     opsMetrics.commSent('ANNOUNCEMENT', 'SMS', 'SKIPPED');
     const text = await m.registry.metrics();
-    expect(text).toContain('ringpe_payment_refusals_total{check="V13",stage="VALIDATION"} 2');
+    expect(text).toContain('campusone_payment_refusals_total{check="V13",stage="VALIDATION"} 2');
     expect(text).not.toContain('check="P1"');
-    expect(text).toContain('ringpe_job_runs_total{job="settlement-run",status="FAILED"} 1');
+    expect(text).toContain('campusone_job_runs_total{job="settlement-run",status="FAILED"} 1');
     expect(text).toContain(
-      'ringpe_comm_messages_total{kind="ANNOUNCEMENT",channel="SMS",outcome="SKIPPED"} 1',
+      'campusone_comm_messages_total{kind="ANNOUNCEMENT",channel="SMS",outcome="SKIPPED"} 1',
     );
   });
 
@@ -34,6 +34,6 @@ describe('operational metrics', () => {
     setProcessMetrics(m);
     await request(app).get('/health/live');
     expect((await request(app).get('/health/live')).status).toBe(429);
-    expect(await m.registry.metrics()).toContain('ringpe_rate_limited_total{limiter="global"} 1');
+    expect(await m.registry.metrics()).toContain('campusone_rate_limited_total{limiter="global"} 1');
   });
 });

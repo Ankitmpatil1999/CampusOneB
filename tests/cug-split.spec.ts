@@ -1,5 +1,5 @@
 /**
- * The RingPe and CUG databases (client 2026-10-21; migration 0081, db/cug-tables.ts): which queries
+ * The CampusOne and CUG databases (client 2026-10-21; migration 0081, db/cug-tables.ts): which queries
  * go to the CUG database, how migrations name it, and that later migrations keep naming it.
  */
 import { join } from 'node:path';
@@ -27,7 +27,7 @@ import {
   type MigrationExecutor,
 } from '../db/migrator';
 import { CugSchemaPlugin } from '../models/cug-schema-plugin';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 
 const db = new Kysely<Database>({
   dialect: {
@@ -36,11 +36,11 @@ const db = new Kysely<Database>({
     createIntrospector: (k) => new MysqlIntrospector(k),
     createQueryCompiler: () => new MysqlQueryCompiler(),
   },
-  plugins: [new CugSchemaPlugin('ringpe_cug')],
+  plugins: [new CugSchemaPlugin('campusone_cug')],
 });
 
 describe('CUG tables in queries', () => {
-  it('sends school tables to the CUG database and leaves RingPe tables as written', () => {
+  it('sends school tables to the CUG database and leaves CampusOne tables as written', () => {
     const q = db
       .selectFrom('wallets as w')
       .innerJoin('member_profiles as m', 'm.id', 'w.owner_profile_id')
@@ -48,8 +48,8 @@ describe('CUG tables in queries', () => {
       .select(['w.id', 'a.mobile'])
       .where('w.kind', '=', 'CAMPUS')
       .compile().sql;
-    expect(q).toContain('from `ringpe_cug`.`wallets` as `w`');
-    expect(q).toContain('inner join `ringpe_cug`.`member_profiles` as `m`');
+    expect(q).toContain('from `campusone_cug`.`wallets` as `w`');
+    expect(q).toContain('inner join `campusone_cug`.`member_profiles` as `m`');
     expect(q).toContain('inner join `platform_accounts` as `a`');
     expect(q).toContain('`w`.`kind`');
   });
@@ -60,7 +60,7 @@ describe('CUG tables in queries', () => {
         .insertInto('cards')
         .values({} as never)
         .compile().sql,
-    ).toMatch(/^insert into `ringpe_cug`\.`cards`/);
+    ).toMatch(/^insert into `campusone_cug`\.`cards`/);
     expect(
       db
         .updateTable('fee_records')
@@ -68,7 +68,7 @@ describe('CUG tables in queries', () => {
         .where('fee_records.id', '=', '1')
         .compile().sql,
     ).toBe(
-      'update `ringpe_cug`.`fee_records` set `remarks` = ? where `ringpe_cug`.`fee_records`.`id` = ?',
+      'update `campusone_cug`.`fee_records` set `remarks` = ? where `campusone_cug`.`fee_records`.`id` = ?',
     );
     expect(db.deleteFrom('sessions').where('id', '=', '1').compile().sql).toBe(
       'delete from `sessions` where `id` = ?',
@@ -82,7 +82,7 @@ describe('CUG tables in queries', () => {
       .select('id')
       .compile().sql;
     expect(q).toBe(
-      'with `cards` as (select `id` from `ringpe_cug`.`cards`) select `id` from `cards`',
+      'with `cards` as (select `id` from `campusone_cug`.`cards`) select `id` from `cards`',
     );
   });
 
@@ -90,7 +90,7 @@ describe('CUG tables in queries', () => {
     const raw = sql`SELECT COUNT(*) FROM fee_records r JOIN classes c ON c.id = r.class_id
       WHERE EXISTS (SELECT 1 FROM approval_requests ar) AND r.year_id = ${1}`;
     const q = db.selectNoFrom(raw.as('n')).compile().sql;
-    expect(q).toContain('FROM `ringpe_cug`.`fee_records` r JOIN `ringpe_cug`.`classes` c');
+    expect(q).toContain('FROM `campusone_cug`.`fee_records` r JOIN `campusone_cug`.`classes` c');
     expect(q).toContain('FROM approval_requests ar');
     expect(
       qualifyCugSql(
@@ -106,9 +106,9 @@ describe('CUG tables in queries', () => {
     );
   });
 
-  it('names the CUG database after the RingPe one', () => {
-    expect(databaseOfUrl('mysql://u:p@db.local:3306/ringpe?charset=utf8mb4')).toBe('ringpe');
-    expect(cugDatabaseOf('ringpe')).toBe('ringpe_cug');
+  it('names the CUG database after the CampusOne one', () => {
+    expect(databaseOfUrl('mysql://u:p@db.local:3306/campusone?charset=utf8mb4')).toBe('campusone');
+    expect(cugDatabaseOf('campusone')).toBe('campusone_cug');
     expect(() => databaseOfUrl('mysql://u:p@db.local:3306/')).toThrow();
     expect(new Set(CUG_TABLES).size).toBe(CUG_TABLES.length);
     expect(isCugTable('institutions') && !isCugTable('platform_accounts')).toBe(true);
@@ -121,7 +121,7 @@ describe('migrations and the CUG database', () => {
     const ex: MigrationExecutor = {
       async query<T>(q: string): Promise<T[]> {
         if (q.startsWith('SELECT GET_LOCK')) return [{ got: 1 }] as T[];
-        if (q.startsWith('SELECT DATABASE()')) return [{ d: 'ringpe_it_x' }] as T[];
+        if (q.startsWith('SELECT DATABASE()')) return [{ d: 'campusone_it_x' }] as T[];
         return [];
       },
       async script(s: string) {
@@ -136,7 +136,7 @@ describe('migrations and the CUG database', () => {
       ]),
       { appliedBy: 'test' },
     );
-    expect(scripts).toEqual(['CREATE TABLE a (id INT);', 'RENAME TABLE a TO `ringpe_it_x_cug`.a;']);
+    expect(scripts).toEqual(['CREATE TABLE a (id INT);', 'RENAME TABLE a TO `campusone_it_x_cug`.a;']);
   });
 
   it('every migration after 0081 names the CUG database for school tables', () => {

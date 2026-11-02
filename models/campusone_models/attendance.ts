@@ -151,7 +151,7 @@ export interface StaffTimingsTable {
 export interface StaffTimingRolesTable {
   timing_id: Ref;
   institution_id: Ref;
-  /** roles.id (the RingPe database). */
+  /** roles.id (the CampusOne database). */
   role_id: Ref;
 }
 

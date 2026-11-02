@@ -6,7 +6,7 @@
  */
 import type { Kysely } from 'kysely';
 import { MODULES } from '../config/registers';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { plansRepository as repo, type PlanTerms } from '../repositories/plans.repository';
 import {
   CustomAPIError,

@@ -6,7 +6,7 @@ import { singleFileUpload, uploadErrors } from '../controllers/file.controller';
 import type { Loggers } from '../controllers/logger';
 import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import type { ReconReportsService } from '../services/recon-reports.service';
 import type { ReconciliationService } from '../services/reconciliation.service';
 import type { RefundsService } from '../services/refunds.service';

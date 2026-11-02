@@ -105,7 +105,7 @@ export const consoleSubscriptionSchema = z
         ifsc: z.string(),
         example: z.boolean(),
       })
-      .describe("RingPe's bank account for invoices paid by transfer"),
+      .describe("CampusOne's bank account for invoices paid by transfer"),
     plans: z.array(planSchema).describe('Plans the institution may ask for'),
     invoices: z.array(invoiceSchema),
     requests: z.array(planRequestSchema),

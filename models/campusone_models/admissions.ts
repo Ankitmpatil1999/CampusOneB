@@ -117,7 +117,7 @@ export interface AdmissionApplicationsTable {
   tc_due: NullableDate;
   declared_at: NullableTimestamp;
   declared_by: string | null;
-  /** Migration 0069: the family agreed to their details registering a RingPe account. */
+  /** Migration 0069: the family agreed to their details registering a CampusOne account. */
   registration_consent_at: NullableTimestamp;
   submitted_at: NullableTimestamp;
   decided_at: NullableTimestamp;
@@ -177,7 +177,7 @@ export interface AdmissionPaymentsTable {
   mode: 'ONLINE' | 'CASH' | null;
   gateway_order_id: string | null;
   gateway_payment_id: string | null;
-  /** The school gateway the payment was taken with (0065); null = RingPe's own or the test checkout. */
+  /** The school gateway the payment was taken with (0065); null = CampusOne's own or the test checkout. */
   gateway_id: ColumnType<Ref | null, Ref | null | undefined, Ref | null>;
   link_token_hash: Buffer | null;
   receipt_no: string | null;
@@ -207,7 +207,7 @@ export interface AdmissionImportsTable {
   created_at: Timestamp;
 }
 
-/** Whose RingPe account each person on an application has (0087, client 2026-10-23). */
+/** Whose CampusOne account each person on an application has (0087, client 2026-10-23). */
 export type AdmissionAccountPerson =
   'STUDENT' | 'FATHER' | 'MOTHER' | 'GUARDIAN' | 'LOCAL_GUARDIAN';
 export interface AdmissionAccountsTable {

@@ -4,7 +4,7 @@
  * redacted (no PAN, identity numbers, bank accounts, secrets) before they reach the table.
  */
 import type { Kysely, Transaction } from 'kysely';
-import type { Database } from '../models/ringpe_models';
+import type { Database } from '../models/campusone_models';
 import { getContext } from '../utils/request-context';
 import { NIL_UUID_BIN, isUuid, uuidToBin } from '../utils/idGenerator';
 import { ipToBin } from '../utils/ip';

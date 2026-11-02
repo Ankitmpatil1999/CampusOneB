@@ -1,9 +1,9 @@
--- 0081_cug_database.sql — forward-only migration (D-16). Client 2026-10-21: "separate the RingPe
+-- 0081_cug_database.sql — forward-only migration (D-16). Client 2026-10-21: "separate the CampusOne
 -- database and the CUG database … it should not affect the functionalities running now; divide the
 -- tables into two databases".
 --
 -- The school tables (db/cug-tables.ts, 158 tables) move to the CUG database beside this one —
--- {{CUG}} is filled in by the migrator: `ringpe` → `ringpe_cug`. Both stay on the same MySQL server,
+-- {{CUG}} is filled in by the migrator: `campusone` → `campusone_cug`. Both stay on the same MySQL server,
 -- so one connection, one transaction and the foreign keys still span them (RENAME TABLE keeps every
 -- foreign key, in both directions). The application keeps writing plain table names: CugSchemaPlugin
 -- (models/cug-schema-plugin.ts) sends the CUG tables to the CUG database.

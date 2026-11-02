@@ -24,7 +24,7 @@ import type {
   CommLogTable,
   CommOutcome,
   Database,
-} from '../models/ringpe_models';
+} from '../models/campusone_models';
 import type { JobContext } from '../schedulers';
 import { ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';
