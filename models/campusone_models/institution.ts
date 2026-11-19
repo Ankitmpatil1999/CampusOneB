@@ -15,7 +15,9 @@ export interface InstitutionsTable {
   identifier: string;
   name: string;
   short_name: string;
+  institution_type: WithDefault<string>;
   board: string | null;
+  affiliation: string | null;
   /** 0024: how it signed up and how it wants to start (customer portal). */
   signup_source: WithDefault<'OPERATOR' | 'PORTAL'>;
   start_preference: 'TRIAL' | 'PAY' | null;

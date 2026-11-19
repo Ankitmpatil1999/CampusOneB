@@ -34,7 +34,7 @@ import { TRIP } from '../config/registers/status/transport';
 import type { Database } from '../models/campusone_models';
 import { CustomAPIError, ValidationError } from '../utils/CustomAPIError';
 import { istBusinessDate } from '../utils/format';
-import { isUuid, uuidToBin } from '../utils/idGenerator';
+import { binToUuid, isUuid, uuidToBin } from '../utils/idGenerator';
 import { formatAmount, toMoneyDto } from '../utils/money';
 import type { Principal } from '../utils/principal';
 import { institutionOf, yearFor } from './academic-year';
@@ -1051,7 +1051,10 @@ function csvCell(c: Column, raw: unknown): string | number | null {
 
 const HOME_VARIANT: readonly (readonly [string, string])[] = [
   ['INSTITUTION_ADMIN', 'admin'],
+  ['CEO', 'management'],
   ['MANAGEMENT', 'management'],
+  ['PRINCIPAL_ASSISTANT', 'principal_assistant'],
+  ['HOD', 'hod'],
   ['ACCOUNTANT', 'accountant'],
   ['COUNSELLOR', 'counsellor'],
   ['ACADEMIC_COORDINATOR', 'coordinator'],
@@ -1303,6 +1306,81 @@ export class ReportsService {
         ? Math.round((n(f['paid']) * 1000) / n(f['raised'])) / 10
         : null;
       kpis['attendanceToday'] = await studentsToday();
+      const staff = await one(
+        sql`SELECT
+              COUNT(*) AS total,
+              (SELECT COUNT(*) FROM attendance_days d JOIN member_profiles m2 ON m2.id = d.profile_id
+                 JOIN user_types u2 ON u2.id = m2.user_type_id
+               WHERE d.institution_id = ${i} AND d.att_date = ${today}
+                 AND u2.category IN ('TEACHER','STAFF','PRINCIPAL','MANAGEMENT','CREW')
+                 AND d.status IN ('PRESENT','LATE','HALF_DAY')) AS attended,
+              (SELECT COUNT(*) FROM staff_leaves WHERE institution_id = ${i} AND final_status IS NULL) AS pendingLeaves
+            FROM member_profiles m JOIN user_types ut ON ut.id = m.user_type_id
+            WHERE m.institution_id = ${i} AND m.status = 'ACTIVE'
+              AND ut.category IN ('TEACHER','STAFF','PRINCIPAL','MANAGEMENT','CREW')`,
+      );
+      kpis['staffToday'] = { total: n(staff['total']), attended: n(staff['attended']) };
+      kpis['pendingStaffLeaves'] = n(staff['pendingLeaves']);
+    } else if (variant === 'hod') {
+      const dept = p.profileId && isUuid(p.profileId)
+        ? await db
+            .selectFrom('member_profiles as m')
+            .leftJoin('departments as d', 'd.id', 'm.department_id')
+            .select(['m.department_id', 'd.public_id', 'd.name'])
+            .where('m.public_id', '=', uuidToBin(p.profileId))
+            .where('m.institution_id', '=', i)
+            .executeTakeFirst()
+        : undefined;
+      const deptId = dept?.department_id ?? null;
+      const facultyCountRow = await one(
+        deptId
+          ? sql`SELECT COUNT(*) AS faculty,
+                  (SELECT COUNT(*) FROM attendance_days d JOIN member_profiles m2 ON m2.id = d.profile_id
+                   WHERE d.institution_id = ${i} AND d.att_date = ${today} AND m2.department_id = ${deptId}
+                     AND d.status IN ('PRESENT','LATE','HALF_DAY')) AS attended,
+                  (SELECT COUNT(*) FROM staff_leaves sl JOIN member_profiles m3 ON m3.id = sl.profile_id
+                   WHERE sl.institution_id = ${i} AND m3.department_id = ${deptId}
+                     AND sl.coordinator_status IS NULL AND sl.final_status IS NULL) AS leaves
+                FROM member_profiles m JOIN user_types ut ON ut.id = m.user_type_id
+                WHERE m.institution_id = ${i} AND m.status = 'ACTIVE' AND m.department_id = ${deptId}
+                  AND ut.category IN ('TEACHER','STAFF')`
+          : sql`SELECT COUNT(*) AS faculty,
+                  (SELECT COUNT(*) FROM attendance_days d JOIN member_profiles m2 ON m2.id = d.profile_id
+                     JOIN user_types u2 ON u2.id = m2.user_type_id
+                   WHERE d.institution_id = ${i} AND d.att_date = ${today} AND u2.category = 'TEACHER'
+                     AND d.status IN ('PRESENT','LATE','HALF_DAY')) AS attended,
+                  (SELECT COUNT(*) FROM staff_leaves WHERE institution_id = ${i}
+                     AND coordinator_status IS NULL AND final_status IS NULL) AS leaves
+                FROM member_profiles m JOIN user_types ut ON ut.id = m.user_type_id
+                WHERE m.institution_id = ${i} AND m.status = 'ACTIVE' AND ut.category = 'TEACHER'`,
+      );
+      kpis['department'] = dept?.public_id
+        ? { id: binToUuid(dept.public_id), name: dept.name ?? null }
+        : null;
+      kpis['departmentFaculty'] = {
+        total: n(facultyCountRow['faculty']),
+        attended: n(facultyCountRow['attended']),
+      };
+      kpis['departmentLeaveToReview'] = n(facultyCountRow['leaves']);
+      kpis['attendanceToday'] = await studentsToday();
+    } else if (variant === 'principal_assistant') {
+      const r = await one(
+        sql`SELECT
+              (SELECT COUNT(*) FROM member_profiles m JOIN user_types ut ON ut.id = m.user_type_id
+               WHERE m.institution_id = ${i} AND m.status = 'ACTIVE' AND ut.category = 'TEACHER') AS teachers,
+              (SELECT COUNT(*) FROM attendance_days d JOIN member_profiles m2 ON m2.id = d.profile_id
+                 JOIN user_types u2 ON u2.id = m2.user_type_id
+               WHERE d.institution_id = ${i} AND d.att_date = ${today} AND u2.category = 'TEACHER'
+                 AND d.status IN ('PRESENT','LATE','HALF_DAY')) AS teachersAttended,
+              (SELECT COUNT(*) FROM staff_leaves WHERE institution_id = ${i} AND final_status IS NULL) AS staffLeaves,
+              (SELECT COUNT(*) FROM tickets WHERE institution_id = ${i} AND status = 'OPEN') AS openTickets,
+              (SELECT COUNT(*) FROM approval_requests WHERE institution_id = ${i} AND status = 'PENDING') AS approvals`,
+      );
+      kpis['attendanceToday'] = await studentsToday();
+      kpis['teachersToday'] = { total: n(r['teachers']), attended: n(r['teachersAttended']) };
+      kpis['staffLeavesPending'] = n(r['staffLeaves']);
+      kpis['openTickets'] = n(r['openTickets']);
+      kpis['pendingApprovals'] = n(r['approvals']);
     } else if (variant === 'accountant') {
       const f = year
         ? await one(
@@ -1405,6 +1483,157 @@ export class ReportsService {
       date: today,
       year: year ? { id: year.publicId, label: year.label } : null,
       kpis,
+    };
+  }
+
+  /**
+   * RPT-006: Department-scoped overview for HOD / Dean / Coordinator / CEO views.
+   * Defaults to the signed-in profile's department if omitted, or allows inspecting any department.
+   */
+  async departmentOverview(p: Principal, query: { departmentId?: string | undefined }) {
+    const db = this.deps.db;
+    const inst = await institutionOf(db, p);
+    const today = istBusinessDate(this.now());
+    const year = await yearFor(db, inst.id, null).catch(() => null);
+
+    const depts = await db
+      .selectFrom('departments as d')
+      .innerJoin('user_types as ut', 'ut.id', 'd.user_type_id')
+      .select(['d.id', 'd.public_id', 'd.name', 'ut.category'])
+      .where('d.institution_id', '=', inst.id)
+      .where('ut.category', 'in', ['TEACHER', 'STAFF', 'PRINCIPAL', 'MANAGEMENT'])
+      .orderBy('d.name')
+      .execute();
+
+    const myDeptRow =
+      p.profileId && isUuid(p.profileId)
+        ? await db
+            .selectFrom('member_profiles')
+            .select(['department_id'])
+            .where('public_id', '=', uuidToBin(p.profileId))
+            .where('institution_id', '=', inst.id)
+            .executeTakeFirst()
+        : undefined;
+
+    let selected = depts[0];
+    if (query.departmentId && isUuid(query.departmentId)) {
+      const targetBin = uuidToBin(query.departmentId);
+      const found = depts.find((d) => Buffer.compare(d.public_id, targetBin) === 0);
+      if (found) selected = found;
+    } else if (myDeptRow?.department_id) {
+      const own = depts.find((d) => String(d.id) === String(myDeptRow.department_id));
+      if (own) selected = own;
+    }
+
+    const deptSummaries = await Promise.all(
+      depts.map(async (d) => {
+        const res = await db
+          .selectFrom('member_profiles as m')
+          .leftJoin('attendance_days as ad', (j) =>
+            j.onRef('ad.profile_id', '=', 'm.id').on('ad.att_date', '=', today),
+          )
+          .select([
+            sql<number>`COUNT(*)`.as('total'),
+            sql<number>`COALESCE(SUM(ad.status IN ('PRESENT','LATE','HALF_DAY')), 0)`.as('present'),
+          ])
+          .where('m.institution_id', '=', inst.id)
+          .where('m.department_id', '=', d.id)
+          .where('m.status', '=', 'ACTIVE')
+          .executeTakeFirst();
+        return {
+          id: binToUuid(d.public_id),
+          name: d.name,
+          category: d.category,
+          staffCount: Number(res?.total ?? 0),
+          presentToday: Number(res?.present ?? 0),
+        };
+      }),
+    );
+
+    if (!selected) {
+      return {
+        date: today,
+        year: year ? { id: year.publicId, label: year.label } : null,
+        departments: [],
+        selectedDepartment: null,
+        faculty: [],
+        pendingLeaves: [],
+      };
+    }
+
+    const facultyRows = await db
+      .selectFrom('member_profiles as m')
+      .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
+      .leftJoin('attendance_days as ad', (j) =>
+        j.onRef('ad.profile_id', '=', 'm.id').on('ad.att_date', '=', today),
+      )
+      .select([
+        'm.id',
+        'm.public_id',
+        'm.first_name',
+        'm.last_name',
+        'm.employee_no',
+        'm.status',
+        'ut.name as user_type',
+        'ut.category',
+        'ad.status as attendance_today',
+      ])
+      .where('m.institution_id', '=', inst.id)
+      .where('m.department_id', '=', selected.id)
+      .where('m.status', '!=', 'INACTIVE')
+      .orderBy('m.first_name')
+      .execute();
+
+    const leaveRows = await db
+      .selectFrom('staff_leaves as sl')
+      .innerJoin('member_profiles as m', 'm.id', 'sl.profile_id')
+      .select([
+        'sl.public_id',
+        'm.first_name',
+        'm.last_name',
+        'sl.leave_type',
+        'sl.from_date',
+        'sl.to_date',
+        'sl.days',
+        'sl.reason',
+        'sl.coordinator_status',
+        'sl.final_status',
+      ])
+      .where('sl.institution_id', '=', inst.id)
+      .where('m.department_id', '=', selected.id)
+      .where('sl.final_status', 'is', null)
+      .orderBy('sl.created_at', 'desc')
+      .limit(50)
+      .execute();
+
+    return {
+      date: today,
+      year: year ? { id: year.publicId, label: year.label } : null,
+      departments: deptSummaries,
+      selectedDepartment: {
+        id: binToUuid(selected.public_id),
+        name: selected.name,
+        category: selected.category,
+      },
+      faculty: facultyRows.map((f) => ({
+        id: binToUuid(f.public_id),
+        name: [f.first_name, f.last_name].filter(Boolean).join(' '),
+        employeeNo: f.employee_no,
+        userType: f.user_type,
+        category: f.category,
+        status: f.status,
+        attendanceToday: f.attendance_today ?? 'UNMARKED',
+      })),
+      pendingLeaves: leaveRows.map((l) => ({
+        id: binToUuid(l.public_id),
+        facultyName: [l.first_name, l.last_name].filter(Boolean).join(' '),
+        leaveType: l.leave_type,
+        fromDate: String(l.from_date).slice(0, 10),
+        toDate: String(l.to_date).slice(0, 10),
+        days: Number(l.days),
+        reason: l.reason,
+        coordinatorStatus: l.coordinator_status,
+      })),
     };
   }
 }

@@ -4363,6 +4363,32 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CustomFieldChange"
+  /api/v1/console/department-overview:
+    get:
+      operationId: RPT-006
+      summary: Department faculty, attendance today and pending leave overview (HOD / Dean / CEO views)
+      tags:
+        - Reporting
+      x-campusone-auth: academics.view,attendance.view,leave.view
+      responses:
+        "200":
+          description: Department overview
+        default:
+          description: Error (RFC 9457 problem details)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      security:
+        - bearer: []
+        - cookie: []
+      parameters:
+        - name: departmentId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 40
   /api/v1/console/enrolments:
     get:
       operationId: ACA-027
@@ -27037,6 +27063,13 @@ components:
           type: string
         shortName:
           type: string
+        institutionType:
+          default: SCHOOL
+          type: string
+        affiliation:
+          type:
+            - string
+            - "null"
         address:
           type: string
         city:
@@ -27313,6 +27346,7 @@ components:
         - identifier
         - name
         - shortName
+        - institutionType
         - address
         - city
         - pinCode
@@ -27364,13 +27398,21 @@ components:
           minLength: 1
           maxLength: 80
           pattern: ^[A-Za-z][A-Za-z .'-]*$
+        institutionType:
+          type: string
+          maxLength: 40
         pinCode:
           type: string
           pattern: ^\d{6}$
         board:
           anyOf:
             - type: string
-              maxLength: 40
+              maxLength: 80
+            - type: "null"
+        affiliation:
+          anyOf:
+            - type: string
+              maxLength: 100
             - type: "null"
         shortName:
           description: Shown on cards and receipts
@@ -27581,11 +27623,24 @@ components:
               type: string
             city:
               type: string
+            institutionType:
+              type: string
+            affiliation:
+              type:
+                - string
+                - "null"
+            logoUrl:
+              type:
+                - string
+                - "null"
           required:
             - id
             - name
             - shortName
             - city
+            - institutionType
+            - affiliation
+            - logoUrl
           additionalProperties: false
         roles:
           type: array
@@ -35459,6 +35514,13 @@ components:
           type: string
         shortName:
           type: string
+        institutionType:
+          default: SCHOOL
+          type: string
+        affiliation:
+          type:
+            - string
+            - "null"
         city:
           type: string
         address:
@@ -35730,6 +35792,7 @@ components:
         - identifier
         - name
         - shortName
+        - institutionType
         - city
         - address
         - pinCode
@@ -35770,13 +35833,21 @@ components:
           minLength: 1
           maxLength: 80
           pattern: ^[A-Za-z][A-Za-z .'-]*$
+        institutionType:
+          type: string
+          maxLength: 40
         pinCode:
           type: string
           pattern: ^\d{6}$
         board:
           anyOf:
             - type: string
-              maxLength: 40
+              maxLength: 80
+            - type: "null"
+        affiliation:
+          anyOf:
+            - type: string
+              maxLength: 100
             - type: "null"
         shortName:
           description: Shown on cards and receipts
@@ -35871,6 +35942,12 @@ components:
           type: string
         city:
           type: string
+        institutionType:
+          type: string
+        affiliation:
+          type:
+            - string
+            - "null"
         logoUrl:
           type:
             - string
@@ -35880,6 +35957,8 @@ components:
         - name
         - shortName
         - city
+        - institutionType
+        - affiliation
         - logoUrl
       additionalProperties: false
     InstitutionJobRun:
@@ -36023,6 +36102,13 @@ components:
                 type: string
               shortName:
                 type: string
+              institutionType:
+                default: SCHOOL
+                type: string
+              affiliation:
+                type:
+                  - string
+                  - "null"
               city:
                 type: string
               status:
@@ -36098,6 +36184,7 @@ components:
               - identifier
               - name
               - shortName
+              - institutionType
               - city
               - status
               - statusSince
@@ -36140,15 +36227,20 @@ components:
           minLength: 1
           maxLength: 80
           pattern: ^[A-Za-z][A-Za-z .'-]*$
-        board:
+        institutionType:
+          default: SCHOOL
           type: string
           enum:
-            - CBSE
-            - ICSE
-            - State
-            - State PU
-            - IB
-            - Other
+            - SCHOOL
+            - COLLEGE
+            - PU_COLLEGE
+            - INSTITUTE
+        board:
+          type: string
+          maxLength: 80
+        affiliation:
+          type: string
+          maxLength: 100
         primaryContact:
           type: object
           properties:
@@ -37197,6 +37289,12 @@ components:
                     type: string
                   shortName:
                     type: string
+                  institutionType:
+                    type: string
+                  affiliation:
+                    type:
+                      - string
+                      - "null"
                   logoUrl:
                     type:
                       - string
@@ -37205,6 +37303,8 @@ components:
                   - id
                   - name
                   - shortName
+                  - institutionType
+                  - affiliation
                   - logoUrl
                 additionalProperties: false
               userType:
@@ -37229,6 +37329,22 @@ components:
                   - CREW
                   - OTHER
                 description: "The user type category: the app picks the role home (teacher, principal, crew …) from it"
+              department:
+                anyOf:
+                  - type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      name:
+                        type: string
+                    required:
+                      - id
+                      - name
+                    additionalProperties: false
+                  - type: "null"
+                description: Department assigned to this member profile
               grade:
                 description: Grade and section this year (students)
                 type:
@@ -37248,11 +37364,16 @@ components:
                         type: array
                         items:
                           type: string
+                      roleCodes:
+                        type: array
+                        items:
+                          type: string
                     required:
                       - roles
+                      - roleCodes
                     additionalProperties: false
                   - type: "null"
-                description: "Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements (client 2026-10-23: Accounts, Co-ordinator, Counsellor); the roles by name. Null: none"
+                description: "Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements, HOD, CEO, Principal Assistant; the roles by name & code. Null: none"
             required:
               - id
               - memberNo
@@ -37261,6 +37382,7 @@ components:
               - userType
               - kind
               - category
+              - department
               - grade
               - status
               - office
@@ -44615,6 +44737,12 @@ components:
               type: string
             city:
               type: string
+            institutionType:
+              type: string
+            affiliation:
+              type:
+                - string
+                - "null"
             identifier:
               type: string
             status:
@@ -44629,6 +44757,8 @@ components:
             - name
             - shortName
             - city
+            - institutionType
+            - affiliation
             - identifier
             - status
           additionalProperties: false

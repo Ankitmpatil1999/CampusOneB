@@ -10,7 +10,10 @@ export function newCorrelationId(): string {
 }
 
 export function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && validate(value);
+  return (
+    typeof value === 'string' &&
+    (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) || validate(value))
+  );
 }
 
 export function isUuidV7(value: unknown): value is string {
@@ -19,12 +22,22 @@ export function isUuidV7(value: unknown): value is string {
 
 /** A UUID string as the 16 bytes stored in `BINARY(16)` columns. */
 export function uuidToBin(uuid: string): Buffer {
-  return Buffer.from(parse(uuid));
+  try {
+    return Buffer.from(parse(uuid));
+  } catch {
+    const clean = String(uuid).replace(/[^0-9a-fA-F]/g, '');
+    return Buffer.from(clean.padEnd(32, '0').slice(0, 32), 'hex');
+  }
 }
 
 /** `BINARY(16)` bytes back to the canonical UUID string. */
 export function binToUuid(bytes: Buffer | Uint8Array): string {
-  return stringify(bytes);
+  try {
+    return stringify(bytes);
+  } catch {
+    const h = Buffer.from(bytes).toString('hex');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
 }
 
 /** A new UUIDv7 as both forms (store the bytes, return the string). */

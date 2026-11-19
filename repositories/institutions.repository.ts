@@ -18,7 +18,9 @@ const INSTITUTION_COLUMNS = [
   'i.identifier',
   'i.name',
   'i.short_name',
+  'i.institution_type',
   'i.board',
+  'i.affiliation',
   'i.address_line1',
   'i.city',
   'i.state',
@@ -117,7 +119,9 @@ export const institutionsRepository = {
       identifier: string;
       name: string;
       shortName: string;
+      institutionType?: string;
       board: string | null;
+      affiliation?: string | null;
       address: string;
       city: string;
       nameAddressKey: string;
@@ -131,7 +135,9 @@ export const institutionsRepository = {
         identifier: v.identifier,
         name: v.name,
         short_name: v.shortName,
+        institution_type: v.institutionType ?? 'SCHOOL',
         board: v.board,
+        affiliation: v.affiliation ?? null,
         address_line1: v.address,
         address_line2: null,
         city: v.city,
@@ -165,7 +171,9 @@ export const institutionsRepository = {
     set: Partial<{
       name: string;
       short_name: string;
+      institution_type: string;
       board: string | null;
+      affiliation: string | null;
       address_line1: string;
       city: string;
       pin_code: string | null;

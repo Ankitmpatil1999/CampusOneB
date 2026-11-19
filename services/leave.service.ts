@@ -1301,7 +1301,11 @@ export class LeaveService {
     f: { status?: 'AWAITING' | 'COORDINATOR' | 'DECIDED' | undefined; yearId?: string | undefined },
   ) {
     const me = await memberOf(this.deps.db, p);
-    if (me.category !== 'PRINCIPAL' && me.category !== 'MANAGEMENT') {
+    if (
+      me.category !== 'PRINCIPAL' &&
+      me.category !== 'MANAGEMENT' &&
+      me.category !== 'DEAN'
+    ) {
       throw new CustomAPIError(403, 'ACA.PRINCIPAL_ONLY');
     }
     const year = await yearFor(this.deps.db, me.institutionId, f.yearId);
@@ -1373,7 +1377,9 @@ export class LeaveService {
     input: { decision: 'APPROVED' | 'REJECTED'; remarks?: string | null | undefined },
   ) {
     const me = await memberOf(this.deps.db, p);
-    if (me.category !== 'PRINCIPAL') throw new CustomAPIError(403, 'ACA.PRINCIPAL_ONLY');
+    if (me.category !== 'PRINCIPAL' && me.category !== 'DEAN') {
+      throw new CustomAPIError(403, 'ACA.PRINCIPAL_ONLY');
+    }
     const remarks = (input.remarks ?? '').trim() || null;
     this.remarksRule(
       input.decision,

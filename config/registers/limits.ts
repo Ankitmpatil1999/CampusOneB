@@ -853,9 +853,9 @@ export const LIMITS = {
   }),
   accessTokenMinutes: def({
     key: 'auth.access.ttlMinutes',
-    value: 15,
+    value: 60,
     unit: 'min',
-    adjustable: { min: 5, max: 60 },
+    adjustable: { min: 5, max: 720 },
     scope: 'P',
     basis: 'adopted',
     refs: ['brief §6.2', 'C-22'],
@@ -907,9 +907,9 @@ export const LIMITS = {
   }),
   idleConsoleMinutes: def({
     key: 'auth.idle.consoleMinutes',
-    value: 15,
+    value: 720,
     unit: 'min',
-    adjustable: { min: 5, max: 240 },
+    adjustable: { min: 5, max: 1440 },
     scope: 'P',
     basis: 'adopted',
     srsValue: 'none',

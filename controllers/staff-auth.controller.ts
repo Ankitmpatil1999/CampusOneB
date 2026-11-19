@@ -19,13 +19,14 @@ import type { FieldCipher } from '../utils/fieldEncryption';
 
 const iso = (d: Date) => d.toISOString();
 
-const challenge = (c: StaffChallenge) => ({
+const challenge = (c: StaffChallenge & { surface?: 'console' | 'ops' }) => ({
   challengeId: c.challengeId,
   expiresAt: iso(c.expiresAt),
   resendAfterSeconds: c.resendAfterSeconds,
   sentTo: c.sentTo,
   channel: c.channel,
   emailFallback: c.emailFallback,
+  ...(c.surface ? { surface: c.surface } : {}),
   ...(c.alreadySent ? { alreadySent: true } : {}),
   ...(c.testCode ? { testCode: c.testCode } : {}),
 });
@@ -47,6 +48,12 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
       res.setHeader('Cache-Control', 'no-store');
       res.status(202).json(challenge(await service.signIn(surface, body)));
     });
+
+  const autoSignIn = wrap(async (req, res) => {
+    const body = staffSignInSchema.parse(req.body ?? {});
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(202).json(challenge(await service.signInAuto(body)));
+  });
 
   const resend = (surface: StaffSurface) =>
     wrap(async (req, res) => {
@@ -191,6 +198,7 @@ export function staffAuthController(service: StaffAuthService, cipher: FieldCiph
 
   return {
     signIn,
+    autoSignIn,
     resend,
     verify,
     appVerify,

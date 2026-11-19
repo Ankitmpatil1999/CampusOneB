@@ -70,7 +70,12 @@ export async function memberOf(db: Db, p: Principal, forProfile?: string): Promi
 
 export async function teacherOf(db: Db, p: Principal) {
   const m = await memberOf(db, p);
-  if (m.category !== 'TEACHER' && m.category !== 'PRINCIPAL') {
+  if (
+    m.category !== 'TEACHER' &&
+    m.category !== 'PRINCIPAL' &&
+    m.category !== 'DEAN' &&
+    m.category !== 'COORDINATOR'
+  ) {
     throw new CustomAPIError(403, 'ACA.TEACHERS_ONLY');
   }
   return m;
@@ -78,7 +83,12 @@ export async function teacherOf(db: Db, p: Principal) {
 
 export async function principalOf(db: Db, p: Principal) {
   const m = await memberOf(db, p);
-  if (m.category !== 'PRINCIPAL' && m.category !== 'MANAGEMENT') {
+  if (
+    m.category !== 'PRINCIPAL' &&
+    m.category !== 'MANAGEMENT' &&
+    m.category !== 'DEAN' &&
+    m.category !== 'COORDINATOR'
+  ) {
     throw new CustomAPIError(403, 'ACA.PRINCIPAL_ONLY');
   }
   return m;

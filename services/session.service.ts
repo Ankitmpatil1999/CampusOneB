@@ -78,11 +78,18 @@ export function sessionLimits(
       return { absoluteMs: hours(n(LIMITS.sessionTerminalHours)) };
     case 'console':
     case 'ops':
-    case 'portal':
+    case 'portal': {
+      const configuredIdle = process.env.SESSION_IDLE_MINUTES
+        ? Number(process.env.SESSION_IDLE_MINUTES)
+        : n(LIMITS.idleConsoleMinutes);
+      const configuredHours = process.env.SESSION_CONSOLE_HOURS
+        ? Number(process.env.SESSION_CONSOLE_HOURS)
+        : n(LIMITS.sessionConsoleHours);
       return {
-        absoluteMs: hours(n(LIMITS.sessionConsoleHours)),
-        idleMs: n(LIMITS.idleConsoleMinutes) * 60_000,
+        absoluteMs: hours(configuredHours),
+        idleMs: configuredIdle * 60_000,
       };
+    }
   }
 }
 
@@ -436,7 +443,10 @@ export class SessionService {
 
   private async accessTtlSeconds(): Promise<number> {
     const v = await this.settingValues();
-    return (v[LIMITS.accessTokenMinutes.key] ?? LIMITS.accessTokenMinutes.value) * 60;
+    const minutes = process.env.SESSION_ACCESS_TOKEN_MINUTES
+      ? Number(process.env.SESSION_ACCESS_TOKEN_MINUTES)
+      : (v[LIMITS.accessTokenMinutes.key] ?? LIMITS.accessTokenMinutes.value);
+    return minutes * 60;
   }
 
   private async revokeAccessTokens(sessionPublicIds: readonly string[]): Promise<void> {

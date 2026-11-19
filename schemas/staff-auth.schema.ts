@@ -111,6 +111,9 @@ export const consoleSessionSchema = z
       name: z.string(),
       shortName: z.string(),
       city: z.string(),
+      institutionType: z.string(),
+      affiliation: z.string().nullable(),
+      logoUrl: z.string().nullable(),
     }),
     roles: z.array(
       z.object({ code: z.string().nullable(), name: z.string(), readOnly: z.boolean() }),
@@ -140,6 +143,8 @@ export const portalSessionSchema = z
       name: z.string(),
       shortName: z.string(),
       city: z.string(),
+      institutionType: z.string(),
+      affiliation: z.string().nullable(),
       identifier: z.string(),
       status: z.enum(['PENDING_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CANCELLED']),
     }),

@@ -98,10 +98,12 @@ export const accessRepository = {
         'i.name as institution_name',
         'i.short_name',
         'i.city',
+        'i.institution_type',
+        'i.board',
       ])
       .where('p.account_id', '=', accountId)
       .where('p.status', '=', 'ACTIVE')
-      .where('i.status', '=', 'ACTIVE')
+      .where('i.status', 'in', ['ACTIVE', 'PENDING_ACTIVATION'])
       .where('ut.category', '<>', 'STUDENT')
       .where(({ exists, selectFrom }) =>
         exists(
@@ -140,6 +142,8 @@ export const accessRepository = {
         'i.city',
         'i.identifier',
         'i.status as institution_status',
+        'i.institution_type',
+        'i.board',
       ])
       .where('p.account_id', '=', accountId)
       .where('p.status', '=', 'ACTIVE')
@@ -166,6 +170,8 @@ export const accessRepository = {
         'i.name as institution_name',
         'i.short_name',
         'i.city',
+        'i.institution_type',
+        'i.board',
       ])
       .where((eb) =>
         eb.or([eb('m.account_id', '=', accountId), eb('m.own_account_id', '=', accountId)]),
@@ -261,6 +267,8 @@ export const accessRepository = {
         'i.name as institution_name',
         'i.short_name',
         'i.city',
+        'i.institution_type',
+        'i.board',
       ])
       .where('p.public_id', '=', profilePublicId)
       .executeTakeFirst();

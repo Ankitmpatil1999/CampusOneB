@@ -123,11 +123,14 @@ export class StaffAuthService {
     return op ? ({ surface, op } as const) : undefined;
   }
 
-  /** IDN-031 / IDN-035: e-mail and password; a code goes to the account mobile. */
-  async signIn(
-    surface: StaffSurface,
+  /**
+   * Verifies work e-mail + password once, enforces account lockouts, and resets failure counts on
+   * success so unified sign-in never double-counts one wrong attempt across surfaces.
+   */
+  private async verifyPasswordOnce(
+    logSurface: StaffSurface | 'auto',
     input: { email: string; password: string },
-  ): Promise<StaffChallenge> {
+  ) {
     const email = String(input.email ?? '')
       .trim()
       .toLowerCase();
@@ -140,7 +143,10 @@ export class StaffAuthService {
     const account = await accessRepository.findAccountByEmail(this.deps.db, email);
     if (!account) {
       await verifyAgainstDummy(password);
-      this.deps.loggers.security.warn('auth.staff_signin_refused', { surface, reason: 'unknown' });
+      this.deps.loggers.security.warn('auth.staff_signin_refused', {
+        surface: logSurface,
+        reason: 'unknown',
+      });
       throw this.refused();
     }
     if (account.signin_lock === 'LOCKED') throw this.locked();
@@ -156,7 +162,7 @@ export class StaffAuthService {
         account.failed_signins + 1 >= max ? new Date(now.getTime() + minutes * 60_000) : null;
       await accountRepository.signinFailure(this.deps.db, account.id, lockUntil);
       this.deps.loggers.security.warn('auth.staff_signin_refused', {
-        surface,
+        surface: logSurface,
         reason: 'password',
         locked: lockUntil !== null,
       });
@@ -172,38 +178,35 @@ export class StaffAuthService {
       });
     }
     await accountRepository.resetFailures(this.deps.db, account.id);
-    // Institutions the back office registered for this (verified) e-mail before the account
-    // existed: the account becomes their administrator now (client 2026-10-06; every one of them,
-    // client 2026-10-27).
-    if (
-      surface !== 'ops' &&
-      account.status === 'ACTIVE' &&
-      account.email &&
-      account.email_verified_at
-    ) {
-      const claimed = await institutionsRepository.claimPendingAdministrator(this.deps.db, {
-        id: String(account.id),
-        email: account.email,
-        firstName: account.first_name,
-        lastName: account.last_name,
+    return account;
+  }
+
+  /** Institutions registered for this verified e-mail before the account existed claim admin access. */
+  private async claimPendingAdminsIfEligible(
+    account: NonNullable<Awaited<ReturnType<typeof accessRepository.findAccountByEmail>>>,
+  ): Promise<void> {
+    if (account.status !== 'ACTIVE' || !account.email || !account.email_verified_at) return;
+    const claimed = await institutionsRepository.claimPendingAdministrator(this.deps.db, {
+      id: String(account.id),
+      email: account.email,
+      firstName: account.first_name,
+      lastName: account.last_name,
+    });
+    for (const joined of claimed) {
+      await recordAudit(this.deps.db, {
+        institutionId: String(joined.institution_id),
+        action: 'ADMINISTRATOR_LINKED',
+        entityType: 'institution',
+        entityRef: binToUuid(joined.public_id),
+        after: { email: account.email, via: 'console sign-in' },
       });
-      for (const joined of claimed) {
-        await recordAudit(this.deps.db, {
-          institutionId: String(joined.institution_id),
-          action: 'ADMINISTRATOR_LINKED',
-          entityType: 'institution',
-          entityRef: binToUuid(joined.public_id),
-          after: { email: account.email, via: 'console sign-in' },
-        });
-      }
     }
-    if (account.status !== 'ACTIVE' || !(await this.eligible(surface, account.id))) {
-      this.deps.loggers.security.warn('auth.staff_signin_refused', {
-        surface,
-        reason: 'no_access',
-      });
-      throw this.refused();
-    }
+  }
+
+  private async issueSignInChallenge(
+    surface: StaffSurface,
+    account: NonNullable<Awaited<ReturnType<typeof accessRepository.findAccountByEmail>>>,
+  ): Promise<StaffChallenge> {
     const challenge = await this.deps.otp.issue({
       purpose: PURPOSE[surface],
       channel: 'SMS',
@@ -216,6 +219,48 @@ export class StaffAuthService {
       channel: 'SMS',
       emailFallback: account.email ? maskEmail(account.email) : null,
     };
+  }
+
+  /** IDN-031 / IDN-035: e-mail and password; a code goes to the account mobile. */
+  async signIn(
+    surface: StaffSurface,
+    input: { email: string; password: string },
+  ): Promise<StaffChallenge> {
+    const account = await this.verifyPasswordOnce(surface, input);
+    if (surface !== 'ops') await this.claimPendingAdminsIfEligible(account);
+    if (account.status !== 'ACTIVE' || !(await this.eligible(surface, account.id))) {
+      this.deps.loggers.security.warn('auth.staff_signin_refused', {
+        surface,
+        reason: 'no_access',
+      });
+      throw this.refused();
+    }
+    return this.issueSignInChallenge(surface, account);
+  }
+
+  /**
+   * Unified staff sign-in (/signin): checks credentials once (preventing 2x failure increments)
+   * then routes to console (school staff) first or ops (back office) if console isn't eligible.
+   */
+  async signInAuto(input: {
+    email: string;
+    password: string;
+  }): Promise<StaffChallenge & { readonly surface: 'console' | 'ops' }> {
+    const account = await this.verifyPasswordOnce('auto', input);
+    await this.claimPendingAdminsIfEligible(account);
+    if (account.status === 'ACTIVE') {
+      for (const candidate of ['console', 'ops'] as const) {
+        if (await this.eligible(candidate, account.id)) {
+          const challenge = await this.issueSignInChallenge(candidate, account);
+          return { ...challenge, surface: candidate };
+        }
+      }
+    }
+    this.deps.loggers.security.warn('auth.staff_signin_refused', {
+      surface: 'auto',
+      reason: 'no_access',
+    });
+    throw this.refused();
   }
 
   /**
@@ -588,6 +633,8 @@ export class StaffAuthService {
         name: prof.institution_name,
         shortName: prof.short_name,
         city: prof.city,
+        institutionType: prof.institution_type ?? 'SCHOOL',
+        affiliation: prof.board ?? null,
         // The school's logo for the console's menu (client 2026-10-15).
         logoUrl: logo ? logoPath(logo.institutionId, logo.fileId) : null,
       },
@@ -617,6 +664,8 @@ export class StaffAuthService {
         name: ctx.institution_name,
         shortName: ctx.short_name,
         city: ctx.city,
+        institutionType: ctx.institution_type ?? 'SCHOOL',
+        affiliation: ctx.board ?? null,
         identifier: ctx.identifier,
         status: ctx.institution_status,
       },

@@ -47,6 +47,8 @@ export interface InstitutionItem {
   readonly name: string;
   readonly shortName: string;
   readonly city: string;
+  readonly institutionType: string;
+  readonly affiliation: string | null;
   readonly logoUrl: string | null;
 }
 
@@ -59,6 +61,8 @@ export async function institutionItems(
     readonly institution_name: string;
     readonly short_name: string;
     readonly city: string;
+    readonly institution_type?: string | null;
+    readonly board?: string | null;
   }[],
 ): Promise<InstitutionItem[]> {
   const items: InstitutionItem[] = [];
@@ -71,6 +75,8 @@ export async function institutionItems(
       name: r.institution_name,
       shortName: r.short_name,
       city: r.city,
+      institutionType: r.institution_type ?? 'SCHOOL',
+      affiliation: r.board ?? null,
       logoUrl: await logoUrlOf(db, String(r.institution_id)),
     });
   }

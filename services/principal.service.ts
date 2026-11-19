@@ -44,14 +44,21 @@ export class PrincipalService {
     const db = this.deps.db;
     const year = await yearFor(db, me.institutionId, undefined);
     const today = istBusinessDate(this.now());
-    const [people, staffLeave, studentLeave, onLeave, academics] = await Promise.all([
+    const [people, staffLeave, studentLeave, onLeave, academics, departments] = await Promise.all([
       db
         .selectFrom('member_profiles as m')
         .innerJoin('user_types as ut', 'ut.id', 'm.user_type_id')
         .select(['ut.category', sql<number>`COUNT(*)`.as('n')])
         .where('m.institution_id', '=', me.institutionId)
         .where('m.status', '!=', 'INACTIVE')
-        .where('ut.category', 'in', ['STUDENT', 'TEACHER', 'PRINCIPAL', 'STAFF'])
+        .where('ut.category', 'in', [
+          'STUDENT',
+          'TEACHER',
+          'PRINCIPAL',
+          'DEAN',
+          'COORDINATOR',
+          'STAFF',
+        ])
         .groupBy('ut.category')
         .execute(),
       db
@@ -83,6 +90,30 @@ export class PrincipalService {
         .where('to_date', '>=', today)
         .executeTakeFirst(),
       this.deps.exams.principalAcademics(p, {}),
+      db
+        .selectFrom('departments as d')
+        .leftJoin('member_profiles as mp', (join) =>
+          join
+            .onRef('mp.department_id', '=', 'd.id')
+            .on('mp.status', '!=', 'INACTIVE')
+            .on('mp.institution_id', '=', me.institutionId),
+        )
+        .leftJoin('user_types as ut', 'ut.id', 'mp.user_type_id')
+        .select([
+          'd.id',
+          'd.name',
+          sql<number>`COUNT(DISTINCT CASE WHEN ut.category = 'STUDENT' THEN mp.id END)`.as(
+            'students',
+          ),
+          sql<number>`COUNT(DISTINCT CASE WHEN ut.category IN ('TEACHER', 'PRINCIPAL', 'DEAN', 'COORDINATOR') THEN mp.id END)`.as(
+            'faculty',
+          ),
+        ])
+        .where('d.institution_id', '=', me.institutionId)
+        .groupBy(['d.id', 'd.name'])
+        .having(sql`COUNT(DISTINCT mp.id) > 0`)
+        .orderBy(sql`COUNT(DISTINCT CASE WHEN ut.category = 'STUDENT' THEN mp.id END)`, 'desc')
+        .execute(),
     ]);
     const att = await db
       .selectFrom('attendance_days as d')
@@ -124,15 +155,25 @@ export class PrincipalService {
       year: yearView(year),
       date: today,
       principal: { name: me.name },
-      // The principal is counted with the teachers, as on the console's attendance overview.
+      role: me.category,
+      // The principal and dean are counted with the teachers, as on the console's attendance overview.
       people: {
         students: count('STUDENT'),
-        teachers: count('TEACHER', 'PRINCIPAL'),
+        teachers: count('TEACHER', 'PRINCIPAL', 'DEAN', 'COORDINATOR'),
         staff: count('STAFF'),
       },
+      departments: departments.map((d) => ({
+        id: Number(d.id),
+        name: d.name,
+        students: Number(d.students ?? 0),
+        faculty: Number(d.faculty ?? 0),
+      })),
       attendanceToday: {
         students: day(['STUDENT'], count('STUDENT')),
-        teachers: day(['TEACHER', 'PRINCIPAL'], count('TEACHER', 'PRINCIPAL')),
+        teachers: day(
+          ['TEACHER', 'PRINCIPAL', 'DEAN', 'COORDINATOR'],
+          count('TEACHER', 'PRINCIPAL', 'DEAN', 'COORDINATOR'),
+        ),
         staff: day(['STAFF'], count('STAFF')),
       },
       staffOnLeaveToday: Number(onLeave?.n ?? 0),

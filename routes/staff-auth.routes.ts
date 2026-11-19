@@ -216,6 +216,7 @@ export function staffAuthRoutes(deps: {
   const c = staffAuthController(deps.service, deps.cipher);
   const router = Router();
   const limit = deps.authLimiter;
+  router.post('/auth/staff/signin', limit, c.autoSignIn);
   router.post('/auth/console/signin', limit, c.signIn('console'));
   router.post('/auth/console/otp/resend', limit, c.resend('console'));
   router.post('/auth/console/otp/verify', limit, c.verify('console'));

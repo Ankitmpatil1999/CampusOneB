@@ -104,6 +104,8 @@ export const institutionItemSchema = z
     name: z.string(),
     shortName: z.string(),
     city: z.string(),
+    institutionType: z.string(),
+    affiliation: z.string().nullable(),
     logoUrl: z.string().nullable(),
   })
   .meta({ id: 'InstitutionItem' });
@@ -138,7 +140,11 @@ export const memberSessionSchema = z
   .meta({ id: 'MemberSession' });
 
 export const signInSchema = z
-  .strictObject({ mobile: req(10), password: req(128), device: deviceSchema })
+  .strictObject({
+    mobile: z.string().trim().min(3).max(128).describe('Mobile number or registered email address'),
+    password: req(128),
+    device: deviceSchema,
+  })
   .meta({ id: 'MemberSignIn' });
 
 /** IDN-091 (client 2026-10-23): an account the school made — its own password, and what it lacks. */
@@ -271,6 +277,8 @@ export const meSchema = z
             id: z.uuid(),
             name: z.string(),
             shortName: z.string(),
+            institutionType: z.string(),
+            affiliation: z.string().nullable(),
             logoUrl: z.string().nullable(),
           }),
           userType: z.string(),
@@ -290,13 +298,20 @@ export const meSchema = z
             .describe(
               'The user type category: the app picks the role home (teacher, principal, crew …) from it',
             ),
+          department: z
+            .object({ id: z.uuid(), name: z.string() })
+            .nullable()
+            .describe('Department assigned to this member profile'),
           grade: z.string().nullable().describe('Grade and section this year (students)'),
           status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']),
           office: z
-            .object({ roles: z.array(z.string()) })
+            .object({
+              roles: z.array(z.string()),
+              roleCodes: z.array(z.string()),
+            })
             .nullable()
             .describe(
-              'Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements (client 2026-10-23: Accounts, Co-ordinator, Counsellor); the roles by name. Null: none',
+              'Office work this profile’s console roles open in the staff app — fees, admissions, leave, attendance, announcements, HOD, CEO, Principal Assistant; the roles by name & code. Null: none',
             ),
         }),
       )

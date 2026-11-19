@@ -87,7 +87,9 @@ export interface RegisterInput {
   readonly name: string;
   readonly address: string;
   readonly city: string;
+  readonly institutionType?: string | undefined;
   readonly board?: string | undefined;
+  readonly affiliation?: string | undefined;
   readonly primaryContact: ContactInput;
   readonly secondaryContact?: ContactInput | undefined;
   readonly adminEmail: string;
@@ -101,8 +103,10 @@ export interface DetailsInput {
   readonly name?: string | undefined;
   readonly address?: string | undefined;
   readonly city?: string | undefined;
+  readonly institutionType?: string | undefined;
   readonly pinCode?: string | undefined;
   readonly board?: string | null | undefined;
+  readonly affiliation?: string | null | undefined;
   readonly shortName?: string | undefined;
   readonly officePhone?: string | null | undefined;
   readonly officeEmail?: string | undefined;
@@ -308,6 +312,8 @@ export class InstitutionsService {
           identifier: r.identifier,
           name: r.name,
           shortName: r.short_name,
+          institutionType: (r as any).institution_type ?? 'SCHOOL',
+          affiliation: (r as any).affiliation ?? null,
           city: r.city,
           status: r.status,
           statusSince: iso(r.status === 'SUSPENDED' ? r.suspended_at : r.cancelled_at),
@@ -366,6 +372,8 @@ export class InstitutionsService {
       identifier: row.identifier,
       name: row.name,
       shortName: row.short_name,
+      institutionType: (row as any).institution_type ?? 'SCHOOL',
+      affiliation: (row as any).affiliation ?? null,
       city: row.city,
       address: row.address_line1,
       pinCode: row.pin_code,
@@ -535,12 +543,15 @@ export class InstitutionsService {
         ? newAdmin.name
         : (contactName ?? adminEmail);
     const out = await this.deps.db.transaction().execute(async (trx) => {
+      const instType = input.institutionType?.trim() || 'SCHOOL';
       const id = await repo.insert(trx, {
         publicId: inst.bin,
         identifier: `TMP${inst.id.replace(/-/g, '').slice(0, 21).toUpperCase()}`,
         name,
         shortName: shortNameOf(name),
+        institutionType: instType,
         board: input.board ?? null,
+        affiliation: input.affiliation ?? null,
         address,
         city: input.city.trim(),
         nameAddressKey: key,
@@ -549,7 +560,7 @@ export class InstitutionsService {
       const identifier = institutionIdentifier(name, address, id, at);
       await repo.setIdentifier(trx, id, identifier);
       await repo.insertSettings(trx, id, consent);
-      // Every institution starts with the current school year (RC-22; CR-13).
+      // Every institution starts with the current school/academic year (RC-22; CR-13).
       const year = schoolYearOf(istBusinessDate(at));
       await academicsRepository.insertYear(trx, {
         publicId: newPublicIdPair().bin,
@@ -575,12 +586,14 @@ export class InstitutionsService {
       }
       // The default user type and department (RNG-ONB-024/036).
       const ut = newPublicIdPair();
+      const staffLabel = instType === 'COLLEGE' ? 'Faculty & Staff' : 'Staff';
+      const staffDept = instType === 'COLLEGE' ? 'Dean Office & Admin' : 'Administration';
       const userType = await trx
         .insertInto('user_types')
         .values({
           public_id: ut.bin,
           institution_id: id,
-          name: 'Staff',
+          name: staffLabel,
           category: 'STAFF',
           created_by: by,
         })
@@ -591,9 +604,23 @@ export class InstitutionsService {
           public_id: newPublicIdPair().bin,
           institution_id: id,
           user_type_id: String(userType.insertId),
-          name: 'Administration',
+          name: staffDept,
         })
         .executeTakeFirstOrThrow();
+
+      if (instType === 'COLLEGE') {
+        // Additional academic faculty department
+        await trx
+          .insertInto('departments')
+          .values({
+            public_id: newPublicIdPair().bin,
+            institution_id: id,
+            user_type_id: String(userType.insertId),
+            name: 'Computer Science & Engineering',
+          })
+          .execute();
+      }
+
       // The students' user type and its department (client 2026-10-21): students are onboarded,
       // admitted and uploaded under it from the first day.
       const student = await trx
@@ -612,7 +639,7 @@ export class InstitutionsService {
           public_id: newPublicIdPair().bin,
           institution_id: id,
           user_type_id: String(student.insertId),
-          name: 'Academics',
+          name: instType === 'COLLEGE' ? 'Degree Programs' : 'Academics',
         })
         .execute();
       let accountId = admin ? String(admin.id) : null;
@@ -790,6 +817,8 @@ export class InstitutionsService {
         name,
         address_line1: address,
         name_address_key: key,
+        ...(input.institutionType !== undefined ? { institution_type: input.institutionType } : {}),
+        ...(input.affiliation !== undefined ? { affiliation: input.affiliation } : {}),
         ...(input.city !== undefined ? { city: input.city.trim() } : {}),
         ...(input.pinCode !== undefined ? { pin_code: input.pinCode } : {}),
         ...(input.board !== undefined ? { board: input.board } : {}),
@@ -1351,6 +1380,8 @@ export class InstitutionsService {
       identifier: row.identifier,
       name: row.name,
       shortName: row.short_name,
+      institutionType: (row as any).institution_type ?? 'SCHOOL',
+      affiliation: (row as any).affiliation ?? null,
       address: row.address_line1,
       city: row.city,
       pinCode: row.pin_code,

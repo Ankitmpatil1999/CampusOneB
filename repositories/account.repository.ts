@@ -63,6 +63,14 @@ export const accountRepository = {
       .executeTakeFirst();
   },
 
+  async findByEmail(db: Db, email: string) {
+    return db
+      .selectFrom('platform_accounts')
+      .select(ACCOUNT_COLUMNS)
+      .where('email', '=', email.toLowerCase().trim())
+      .executeTakeFirst();
+  },
+
   async lockByMobile(db: Db, mobile: string) {
     return db
       .selectFrom('platform_accounts')

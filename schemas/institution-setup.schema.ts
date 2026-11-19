@@ -9,6 +9,8 @@ const CATEGORIES = [
   'MERCHANT',
   'PRINCIPAL',
   'MANAGEMENT',
+  'DEAN',
+  'COORDINATOR',
   'CREW',
   'OTHER',
 ] as const;

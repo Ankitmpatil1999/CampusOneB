@@ -307,7 +307,47 @@ export const LIFECYCLE: Readonly<
 };
 
 /** Boards offered at registration (prototype `ob.inst.new`). */
-export const BOARDS = ['CBSE', 'ICSE', 'State', 'State PU', 'IB', 'Other'] as const;
+export const INSTITUTION_TYPES = ['SCHOOL', 'COLLEGE', 'PU_COLLEGE', 'INSTITUTE'] as const;
+export type InstitutionType = (typeof INSTITUTION_TYPES)[number];
+
+export const BOARDS_BY_TYPE = {
+  SCHOOL: ['CBSE', 'ICSE', 'State', 'State Board', 'IB', 'Cambridge', 'Other'],
+  COLLEGE: [
+    'State University',
+    'Central University',
+    'Autonomous',
+    'Deemed University',
+    'Technical Board / DTE',
+    'Private University',
+    'Other',
+  ],
+  PU_COLLEGE: ['State PU', 'State PU Board', 'State Board (HSC)', 'CBSE (XI-XII)', 'ISC (XI-XII)', 'Other'],
+  INSTITUTE: ['Private / Autonomous', 'Govt. Recognized', 'Certification Partner', 'Other'],
+} as const;
+
+export const BOARDS = [
+  'CBSE',
+  'ICSE',
+  'State',
+  'State Board',
+  'State PU',
+  'State PU Board',
+  'State Board (HSC)',
+  'CBSE (XI-XII)',
+  'ISC (XI-XII)',
+  'State University',
+  'Central University',
+  'Autonomous',
+  'Deemed University',
+  'Technical Board / DTE',
+  'Private University',
+  'Private / Autonomous',
+  'Govt. Recognized',
+  'Certification Partner',
+  'IB',
+  'Cambridge',
+  'Other',
+] as const;
 
 /** Institution-defined field entities (OI-ONB-14 disposition: the prototype's four). */
 export const CF_ENTITIES = {

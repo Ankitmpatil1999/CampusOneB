@@ -3,7 +3,7 @@ import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { defineRoute } from '../config/openapi-registry';
 import type { Loggers } from '../controllers/logger';
-import { authorize, requireSurface, requireTenant } from '../middlewares/auth.middleware';
+import { authorize, authorizeAny, requireSurface, requireTenant } from '../middlewares/auth.middleware';
 import { idempotency } from '../middlewares/idempotency.middleware';
 import type { Database } from '../models/campusone_models';
 import type { ReportExportsService } from '../services/report-exports.service';
@@ -63,6 +63,15 @@ doc({
   idempotent: 'required',
   responses: { 202: { description: 'Requested' } },
 });
+doc({
+  id: 'RPT-006',
+  method: 'get',
+  path: '/api/v1/console/department-overview',
+  summary: 'Department faculty, attendance today and pending leave overview (HOD / Dean / CEO views)',
+  auth: 'academics.view,attendance.view,leave.view',
+  query: z.object({ departmentId: uuid.optional() }),
+  responses: { 200: { description: 'Department overview' } },
+});
 
 export function reportsRoutes(deps: {
   db: Kysely<Database>;
@@ -99,6 +108,17 @@ export function reportsRoutes(deps: {
     ...console,
     authorize('home.view', L),
     json((req) => deps.reports.home(principal(req))),
+  );
+  router.get(
+    '/console/department-overview',
+    ...console,
+    authorizeAny(['academics.view', 'attendance.view', 'leave.view'], L),
+    json((req) =>
+      deps.reports.departmentOverview(principal(req), {
+        departmentId:
+          typeof req.query['departmentId'] === 'string' ? req.query['departmentId'] : undefined,
+      }),
+    ),
   );
   router.get(
     '/console/reports',
