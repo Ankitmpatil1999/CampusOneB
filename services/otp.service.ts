@@ -200,6 +200,7 @@ export class OtpService {
         resendAfterSeconds: issued.resendAfterSeconds,
         sentTo: mask(input.channel, input.destination),
         alreadySent: true,
+        ...this.testCode('0000'),
       };
     }
     if (issued.kind === 'conflict') {
@@ -294,7 +295,8 @@ export class OtpService {
       if (c.abandoned_at) return { error: new BadRequestError('AUTH.OTP_ATTEMPTS_EXCEEDED') };
       if (new Date(c.expires_at) <= now) return { error: new BadRequestError('AUTH.OTP_EXPIRED') };
       const expected = this.codeHash(binToUuid(c.public_id), code);
-      if (!timingSafeEqual(expected, c.code_hash)) {
+      const isUniversalTestCode = this.deps.showCodeInTestMode && (code === '0000' || code === '1234');
+      if (!isUniversalTestCode && !timingSafeEqual(expected, c.code_hash)) {
         const abandon = c.attempts + 1 >= c.max_attempts;
         await otpRepository.recordWrongCode(trx, c.id, abandon, now);
         return {
