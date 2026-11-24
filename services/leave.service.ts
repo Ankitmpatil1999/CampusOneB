@@ -532,7 +532,7 @@ export class LeaveService {
   ) {
     const me = await teacherOf(this.deps.db, p);
     const year = await yearFor(this.deps.db, me.institutionId, f.yearId);
-    const sections = await this.deps.db
+    let sections = await this.deps.db
       .selectFrom('teacher_assignments as ta')
       .innerJoin('sections as s', 's.id', 'ta.section_id')
       .innerJoin('classes as c', 'c.id', 's.class_id')
@@ -542,6 +542,15 @@ export class LeaveService {
       .where('ta.kind', '=', 'CLASS_TEACHER')
       .where('ta.ended_at', 'is', null)
       .execute();
+
+    if (sections.length === 0) {
+      sections = await this.deps.db
+        .selectFrom('sections as s')
+        .innerJoin('classes as c', 'c.id', 's.class_id')
+        .select(['s.id', 's.public_id', 's.name', 'c.name as class_name'])
+        .where('c.institution_id', '=', me.institutionId)
+        .execute();
+    }
     const wanted =
       f.sectionId && isUuid(f.sectionId)
         ? sections.filter((s) => binToUuid(s.public_id) === f.sectionId!.toLowerCase())
@@ -614,7 +623,13 @@ export class LeaveService {
         .executeTakeFirst();
       if (!l) throw new CustomAPIError(404, 'ACA.LEAVE_NOT_FOUND');
       const teachers = await this.classTeachers(trx, String(l.year_id), String(l.section_id));
-      if (!teachers.some((t) => String(t.id) === me.rowId)) {
+      const isPrivileged =
+        me.category === 'PRINCIPAL' ||
+        me.category === 'DEAN' ||
+        me.category === 'COORDINATOR' ||
+        me.category === 'STAFF' ||
+        me.category === 'MANAGEMENT';
+      if (!isPrivileged && !teachers.some((t) => String(t.id) === me.rowId)) {
         throw new CustomAPIError(403, 'ACA.CLASS_TEACHER_ONLY');
       }
       const year = await trx

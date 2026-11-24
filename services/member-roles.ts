@@ -74,7 +74,9 @@ export async function teacherOf(db: Db, p: Principal) {
     m.category !== 'TEACHER' &&
     m.category !== 'PRINCIPAL' &&
     m.category !== 'DEAN' &&
-    m.category !== 'COORDINATOR'
+    m.category !== 'COORDINATOR' &&
+    m.category !== 'STAFF' &&
+    m.category !== 'MANAGEMENT'
   ) {
     throw new CustomAPIError(403, 'ACA.TEACHERS_ONLY');
   }

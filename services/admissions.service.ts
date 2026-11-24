@@ -178,8 +178,6 @@ export function idsRequired(
   hostel: boolean,
 ): IdHolder[] {
   return [
-    'father',
-    'mother',
     ...(primary === 'GUARDIAN' ? (['guardian'] as const) : []),
     ...(hostel ? (['localGuardian'] as const) : []),
   ];
@@ -2140,17 +2138,17 @@ export class AdmissionsService {
       .where('application_id', '=', r.id)
       .execute();
     const has = (t: AdmissionDocType) => docs.some((d) => d.doc_type === t);
-    // The Aadhaar number and PAN, with both sides of each card (client 2026-10-13): the father's
-    // and the mother's, a guardian's who is the primary contact, and the local guardian's of a
-    // hostel student. The student's are optional.
+    // The student's Aadhaar and PAN numbers and cards are mandatory (client requirement).
+    need(r.student_aadhaar_enc, 'student.aadhaar');
+    need(r.student_pan_enc, 'student.pan');
+    for (const t of STUDENT_CARDS) need(has(t), `documents.${t}`);
     for (const h of idsRequired(r.primary_relation, !!data.parents?.hostel)) {
       const [aadhaarEnc, , panEnc] = ID_COLUMNS[h];
       need(r[aadhaarEnc], `parents.${h}.aadhaar`);
       need(r[panEnc], `parents.${h}.pan`);
       for (const t of PERSON_CARDS[h]) need(has(t), `documents.${t}`);
     }
-    need(has('BIRTH'), 'documents.BIRTH');
-    need(has('ADDRESS'), 'documents.ADDRESS');
+    need(has('ADDRESS') || has('ELECTRIC_BILL'), 'documents.ADDRESS');
     const order = r.class_name ? classOrder(r.class_name) : null;
     // Grade 1 and above bring the last report card (prototype p.form).
     if (order !== null && order >= 3) need(has('REPORT'), 'documents.REPORT');
