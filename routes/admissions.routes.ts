@@ -81,6 +81,8 @@ const linkView = z
     status: z.enum(['ACTIVE', 'REPLACED']),
     url: z.string().nullable(),
     qrSvg: z.string().nullable(),
+    brochureUrl: z.string().nullable().optional(),
+    brochureQrSvg: z.string().nullable().optional(),
     year: z.string().nullable(),
     expiresAt: z.string().nullable(),
     expired: z.boolean(),

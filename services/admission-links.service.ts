@@ -89,12 +89,15 @@ export class AdmissionLinksService {
     year_label: string | null;
   }) {
     const url = this.urlOf(l.token);
+    const brochureUrl = `${url}/brochure`;
     const active = l.status === 'ACTIVE';
     return {
       id: binToUuid(l.public_id),
       status: l.status,
       url: active ? url : null,
       qrSvg: active ? qrSvg(url) : null,
+      brochureUrl: active ? brochureUrl : null,
+      brochureQrSvg: active ? qrSvg(brochureUrl) : null,
       year: l.year_label,
       expiresAt: iso(l.expires_at),
       expired: !!l.expires_at && new Date(l.expires_at).getTime() <= this.now().getTime(),
