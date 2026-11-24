@@ -24,7 +24,12 @@ const email = z
   .max(254, { message: 'VALIDATION.EMAIL' })
   .regex(PATTERNS.email, { message: 'VALIDATION.EMAIL' });
 const date = z.iso.date({ message: 'VALIDATION.DATE' });
-const uuid = z.uuid({ message: 'VALIDATION.FORMAT' });
+const uuid = z
+  .string({ message: 'VALIDATION.FORMAT' })
+  .trim()
+  .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+    message: 'VALIDATION.FORMAT',
+  });
 const gender = z.enum(['MALE', 'FEMALE', 'OTHER'], { message: 'VALIDATION.FORMAT' });
 const relation = z.enum(['FATHER', 'MOTHER', 'GUARDIAN'], { message: 'VALIDATION.FORMAT' });
 const reason = z
@@ -53,13 +58,13 @@ export const membersQuerySchema = z
   })
   .meta({ id: 'MembersQuery' });
 
-const ref = z.object({ id: z.uuid(), name: z.string() });
+const ref = z.object({ id: uuid, name: z.string() });
 
 export const memberListSchema = z
   .object({
-    year: z.object({ id: z.uuid(), label: z.string() }).nullable(),
-    columns: z.array(z.object({ id: z.uuid(), label: z.string() })),
-    filters: z.array(z.object({ id: z.uuid(), label: z.string(), options: z.array(z.string()) })),
+    year: z.object({ id: uuid, label: z.string() }).nullable(),
+    columns: z.array(z.object({ id: uuid, label: z.string() })),
+    filters: z.array(z.object({ id: uuid, label: z.string(), options: z.array(z.string()) })),
     counts: z.object({
       tabs: z.object({
         STUDENTS: z.number().int(),
@@ -76,18 +81,18 @@ export const memberListSchema = z
     }),
     items: z.array(
       z.object({
-        id: z.uuid(),
+        id: uuid,
         memberNo: z.string(),
         name: z.string(),
         kind,
-        userType: z.object({ id: z.uuid(), name: z.string(), category: z.string() }),
+        userType: z.object({ id: uuid, name: z.string(), category: z.string() }),
         department: ref.nullable(),
         admissionNo: z.string().nullable(),
         employeeNo: z.string().nullable(),
         grade: z.object({ class: z.string(), section: z.string().nullable() }).nullable(),
         mobile: z.string().nullable(),
         children: z
-          .array(z.object({ id: z.uuid(), name: z.string(), grade: z.string().nullable() }))
+          .array(z.object({ id: uuid, name: z.string(), grade: z.string().nullable() }))
           .optional(),
         relation: z.string().nullable().optional(),
         linked: z.boolean().describe('Linked to a CampusOne account'),
@@ -109,13 +114,13 @@ export const memberListSchema = z
 
 export const memberDetailSchema = z
   .object({
-    id: z.uuid(),
+    id: uuid,
     memberNo: z.string(),
     name: z.string(),
     firstName: z.string(),
     lastName: z.string().nullable(),
     kind,
-    userType: z.object({ id: z.uuid(), name: z.string(), category: z.string() }),
+    userType: z.object({ id: uuid, name: z.string(), category: z.string() }),
     department: ref.nullable(),
     gender: gender.nullable(),
     dateOfBirth: z.string().nullable(),
@@ -125,9 +130,9 @@ export const memberDetailSchema = z
     grade: z
       .object({
         class: z.string(),
-        classId: z.uuid(),
+        classId: uuid,
         section: z.string().nullable(),
-        sectionId: z.uuid(),
+        sectionId: uuid,
         year: z.string().nullable(),
       })
       .nullable(),
@@ -135,7 +140,7 @@ export const memberDetailSchema = z
     account: z.object({ linked: z.boolean(), mobileMasked: z.string().nullable() }),
     guardians: z.array(
       z.object({
-        id: z.uuid(),
+        id: uuid,
         name: z.string(),
         relation: z.string(),
         mobile: z.string().nullable(),
@@ -145,7 +150,7 @@ export const memberDetailSchema = z
     ),
     wards: z.array(
       z.object({
-        id: z.uuid(),
+        id: uuid,
         name: z.string(),
         relation: z.string(),
         grade: z.string().nullable(),
@@ -173,7 +178,7 @@ export const memberDetailSchema = z
     pending: z.object({ suspension: z.boolean(), delink: z.boolean() }),
     customFields: z.array(
       z.object({
-        id: z.uuid(),
+        id: uuid,
         label: z.string(),
         type: z.string(),
         required: z.boolean(),
@@ -242,7 +247,7 @@ export const eligibilityResultSchema = z
       .describe('The mobile is used at another institution too (never named; client 2026-10-27)'),
     profiles: z.array(
       z.object({
-        id: z.uuid(),
+        id: uuid,
         category: z.string(),
         name: z.string(),
         userType: z.string(),
@@ -283,7 +288,7 @@ export const familyLookupResultSchema = z
       .object({
         children: z.array(
           z.object({
-            id: z.uuid(),
+            id: uuid,
             name: z.string(),
             grade: z.string().nullable(),
             admissionNo: z.string().nullable(),
@@ -292,7 +297,7 @@ export const familyLookupResultSchema = z
         ),
         parents: z.array(
           z.object({
-            id: z.uuid(),
+            id: uuid,
             relation: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).nullable(),
             firstName: z.string(),
             lastName: z.string().nullable(),
@@ -314,7 +319,7 @@ export const familyLookupResultSchema = z
       ),
     staff: z
       .object({
-        id: z.uuid(),
+        id: uuid,
         firstName: z.string(),
         lastName: z.string().nullable(),
         name: z.string(),
@@ -362,7 +367,7 @@ export const onboardSchema = z
   .meta({ id: 'MemberOnboard' });
 
 export const onboardResultSchema = z
-  .object({ id: z.uuid(), memberNo: z.string(), guardians: z.array(z.uuid()) })
+  .object({ id: uuid, memberNo: z.string(), guardians: z.array(uuid) })
   .meta({ id: 'MemberOnboarded' });
 
 export const staffSchema = z
@@ -388,7 +393,7 @@ export const staffSchema = z
 
 export const staffResultSchema = z
   .object({
-    id: z.uuid(),
+    id: uuid,
     memberNo: z.string(),
     employeeNo: z.string(),
     newAccount: z.boolean().describe('A CampusOne account was created with a temporary password'),
@@ -409,7 +414,7 @@ export const statusChangeSchema = z
 export const statusResultSchema = z
   .object({
     status: status.nullable().describe('The new status; null when the change waits for a checker'),
-    approvalId: z.uuid().nullable(),
+    approvalId: uuid.nullable(),
   })
   .meta({ id: 'MemberStatusResult' });
 
@@ -428,7 +433,7 @@ export const sessionEndResultSchema = z
   .meta({ id: 'MemberSessionEndResult' });
 
 export const delinkResultSchema = z
-  .object({ delinked: z.boolean(), approvalId: z.uuid().nullable() })
+  .object({ delinked: z.boolean(), approvalId: uuid.nullable() })
   .meta({ id: 'MemberDelinkResult' });
 
 export const memberHistorySchema = z
@@ -454,7 +459,7 @@ export const searchResultSchema = z
   .object({
     members: z.array(
       z.object({
-        id: z.uuid(),
+        id: uuid,
         memberNo: z.string(),
         name: z.string(),
         kind,
@@ -479,7 +484,7 @@ export const uploadSchema = z
 
 export const uploadResultSchema = z
   .object({
-    id: z.uuid(),
+    id: uuid,
     kind: uploadKindSchema,
     fileName: z.string(),
     status: z.enum(['VALIDATED', 'COMMITTED']),
@@ -529,7 +534,7 @@ export const yearsSchema = z
   .object({
     items: z.array(
       z.object({
-        id: z.uuid(),
+        id: uuid,
         label: z.string(),
         startsOn: z.string(),
         endsOn: z.string(),
@@ -559,7 +564,7 @@ export const yearActionSchema = z
   .meta({ id: 'AcademicYearAction' });
 
 const sectionOut = z.object({
-  id: z.uuid(),
+  id: uuid,
   name: z.string(),
   capacity: z.number().int().nullable(),
   students: z.number().int().describe('Active students placed this year'),
@@ -567,7 +572,7 @@ const sectionOut = z.object({
 
 export const classSchema = z
   .object({
-    id: z.uuid(),
+    id: uuid,
     name: z.string(),
     order: z.number().int(),
     sections: z.array(sectionOut),
@@ -578,7 +583,7 @@ export const classSchema = z
 
 export const classesSchema = z
   .object({
-    year: z.object({ id: z.uuid(), label: z.string() }).nullable(),
+    year: z.object({ id: uuid, label: z.string() }).nullable(),
     items: z.array(classSchema),
   })
   .meta({ id: 'Classes' });

@@ -21,7 +21,12 @@ const required = (max: number) =>
     .trim()
     .min(1, { message: 'VALIDATION.REQUIRED' })
     .max(max, { message: 'VALIDATION.FORMAT' });
-const uuid = z.uuid({ message: 'VALIDATION.FORMAT' });
+const uuid = z
+  .string({ message: 'VALIDATION.FORMAT' })
+  .trim()
+  .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+    message: 'VALIDATION.FORMAT',
+  });
 const pin = z
   .string({ message: 'IDN.TPIN_FORMAT' })
   .regex(PATTERNS.tpin, { message: 'IDN.TPIN_FORMAT' });

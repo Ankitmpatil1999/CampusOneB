@@ -4,7 +4,12 @@
  */
 import { z } from 'zod';
 
-const uuid = z.uuid({ message: 'VALIDATION.FORMAT' });
+const uuid = z
+  .string({ message: 'VALIDATION.FORMAT' })
+  .trim()
+  .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
+    message: 'VALIDATION.FORMAT',
+  });
 const money = z.object({ amount: z.string(), currency: z.literal('INR') });
 
 export const consoleRolesSchema = z
